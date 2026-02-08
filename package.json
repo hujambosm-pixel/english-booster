@@ -1,0 +1,29 @@
+{
+  "name": "english-booster",
+  "version": "11.61.0",
+  "description": "Advanced vocabulary learning app with AI-powered exercises",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve .",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "vocabulary",
+    "learning",
+    "education",
+    "english",
+    "ai",
+    "supabase",
+    "react"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/english-booster"
+  },
+  "devDependencies": {
+    "serve": "^14.2.0",
+    "vercel": "^33.0.0"
+  }
+}
