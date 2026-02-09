@@ -3426,38 +3426,38 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.61</span>
+                                        English Booster <span className="version-text">v11.62</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
-                                        <span className="text-xs lg:text-sm font-black text-indigo-400 tracking-wider">{totalCount}</span>
+                                        <span className="text-base lg:text-lg font-black text-indigo-400 tracking-wider">{totalCount}</span>
                                         
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
                                                 onClick={() => {setEditingWord(null); setShowAddModal(true);}} 
-                                                className="p-1.5 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
+                                                className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
-                                                <i className="fas fa-plus text-xs lg:text-base"></i>
+                                                <i className="fas fa-plus text-xl lg:text-base"></i>
                                             </button>
                                             
                                             {/* Recycle Bin */}
                                             <button 
                                                 onClick={loadRecycleBin} 
-                                                className={`p-1.5 lg:p-2 rounded-lg border transition-colors ${recycleBinCount > 0 ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'border-slate-700/30 text-slate-500 hover:text-red-400 hover:border-red-500/30'}`}
+                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${recycleBinCount > 0 ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'border-slate-700/30 text-slate-500 hover:text-red-400 hover:border-red-500/30'}`}
                                                 title={`Recycle Bin${recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}`}
                                             >
-                                                <i className="fas fa-trash-restore text-xs lg:text-base"></i>
+                                                <i className="fas fa-trash-restore text-xl lg:text-base"></i>
                                             </button>
                                             
                                             {/* Change History */}
                                             <button 
                                                 onClick={loadChangeHistory} 
-                                                className={`p-1.5 lg:p-2 rounded-lg border transition-colors ${changeHistoryCount > 0 ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'border-slate-700/30 text-slate-500 hover:text-blue-400 hover:border-blue-500/30'}`}
+                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${changeHistoryCount > 0 ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'border-slate-700/30 text-slate-500 hover:text-blue-400 hover:border-blue-500/30'}`}
                                                 title={`Change History${changeHistoryCount > 0 ? ` (${changeHistoryCount})` : ''}`}
                                             >
-                                                <i className="fas fa-history text-xs lg:text-base"></i>
+                                                <i className="fas fa-history text-xl lg:text-base"></i>
                                             </button>
                                         </div>
                                         
@@ -3483,8 +3483,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             
                                             {/* Settings */}
-                                            <button onClick={() => setShowSettings(true)} className="p-1.5 lg:p-2 text-slate-400 hover:text-white transition-colors" title="Settings">
-                                                <i className="fas fa-cog text-xs lg:text-base"></i>
+                                            <button onClick={() => setShowSettings(true)} className="p-2 lg:p-2 text-slate-400 hover:text-white transition-colors" title="Settings">
+                                                <i className="fas fa-cog text-xl lg:text-base"></i>
                                             </button>
                                         </div>
                                     </div>
