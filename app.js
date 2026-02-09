@@ -3462,25 +3462,25 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
                                         
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
-                                            {/* 🆕 V11.60: Exercises button with text */}
-                                            <button 
-                                                onClick={() => setShowExercisesModal(true)} 
-                                                className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors flex items-center gap-1.5"
-                                                title="Practice Exercises"
-                                            >
-                                                <i className="fas fa-dumbbell text-xs lg:text-sm"></i>
-                                                <span className="text-[10px] sm:text-xs lg:text-sm font-bold">Exercises</span>
-                                            </button>
+                                           {/* 🆕 V11.60: Exercises button with text */}
+<button 
+    onClick={() => setShowExercisesModal(true)} 
+    className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors flex items-center gap-1.5"
+    title="Practice Exercises"
+>
+    <i className="fas fa-dumbbell text-xs lg:text-sm"></i>
+    <span className="text-[10px] sm:text-xs lg:text-sm font-bold">Exercises</span>
+</button>
                                             
-                                            {/* 🆕 V11.60: Stats button with text */}
-                                            <button 
-                                                onClick={() => loadStats()} 
-                                                className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
-                                                title="Statistics"
-                                            >
-                                                <i className="fas fa-chart-bar text-xs lg:text-sm"></i>
-                                                <span className="text-[10px] sm:text-xs lg:text-sm font-bold">Stats</span>
-                                            </button>
+                                           {/* 🆕 V11.62: Stats button - icon only on mobile */}
+<button 
+    onClick={() => loadStats()} 
+    className="p-2 lg:px-3 lg:py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
+    title="Statistics"
+>
+    <i className="fas fa-chart-bar text-xl lg:text-sm"></i>
+    <span className="hidden lg:inline text-sm font-bold">Stats</span>
+</button>
                                             
                                             {/* Settings */}
                                             <button onClick={() => setShowSettings(true)} className="p-1.5 lg:p-2 text-slate-400 hover:text-white transition-colors" title="Settings">
