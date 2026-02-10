@@ -1,0 +1,182 @@
+/* English Booster v11.61 - Custom Styles */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #0f172a; 
+    color: white; 
+    overflow: hidden; 
+    margin: 0; 
+}
+
+.glass-card { 
+    background: rgba(30, 41, 59, 0.7); 
+    backdrop-filter: blur(12px); 
+    border: 1px solid rgba(255, 255, 255, 0.1); 
+}
+
+.custom-scroll::-webkit-scrollbar { 
+    width: 6px; 
+}
+
+.custom-scroll::-webkit-scrollbar-thumb { 
+    background: #334155; 
+    border-radius: 10px; 
+}
+
+.main-gradient { 
+    background: linear-gradient(to right, #818cf8, #f472b6); 
+    -webkit-background-clip: text; 
+    -webkit-text-fill-color: transparent; 
+}
+
+.version-text { 
+    color: #6366f1; 
+    font-size: 0.85rem; 
+    font-weight: 800; 
+    margin-left: 10px; 
+    display: inline-block; 
+    padding-right: 8px; 
+    white-space: nowrap; 
+}
+
+select, input, textarea { 
+    background: #1e293b !important; 
+    border: 1px solid #334155 !important; 
+    color: white !important; 
+    outline: none; 
+}
+
+/* Star ratings */
+.star-on { 
+    color: #eab308; 
+}
+
+.star-half { 
+    color: #eab308; 
+}
+
+.star-off { 
+    color: rgba(255, 255, 255, 0.15); 
+}
+
+/* Magic button */
+.magic-btn { 
+    background: linear-gradient(135deg, #a78bfa 0%, #f472b6 50%, #fbbf24 100%);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+    box-shadow: 0 4px 12px rgba(167, 139, 250, 0.4);
+}
+
+.magic-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 6px 20px rgba(244, 114, 182, 0.6);
+}
+
+.magic-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: scale(1);
+}
+
+/* Improve button */
+.improve-btn {
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+    box-shadow: none;
+}
+
+.improve-btn:hover {
+    transform: scale(1.15);
+    box-shadow: none;
+}
+
+.improve-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: scale(1);
+}
+
+/* Tooltips */
+.tooltip { 
+    position: relative; 
+}
+
+.tooltip:hover::after {
+    content: attr(data-tip); 
+    position: absolute; 
+    bottom: 125%; 
+    left: 50%; 
+    transform: translateX(-50%);
+    background: #1e293b; 
+    color: #fff; 
+    padding: 12px; 
+    border-radius: 8px; 
+    font-size: 11px; 
+    width: 220px;
+    z-index: 100; 
+    border: 1px solid #475569; 
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5); 
+    font-weight: 400; 
+    text-transform: none;
+}
+
+/* Animations */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+    animation: spin 2s linear infinite;
+}
+
+/* Mobile-First Responsive Design */
+.mobile-cards { 
+    display: none; 
+}
+
+.desktop-table { 
+    display: block; 
+}
+
+@media (max-width: 1024px) {
+    body { 
+        overflow-y: auto; 
+    }
+    
+    /* Hide desktop table on mobile */
+    .desktop-table { 
+        display: none !important; 
+    }
+    
+    /* Show mobile cards */
+    .mobile-cards { 
+        display: block !important; 
+    }
+    
+    /* Mobile card styling */
+    .vocab-card {
+        background: rgba(30, 41, 59, 0.9);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Adjust tooltips for mobile */
+    .tooltip:hover::after { 
+        display: none; 
+    }
+    
+    /* Mobile header adjustments */
+    .version-text { 
+        display: block; 
+        margin: 5px 0; 
+    }
+}
