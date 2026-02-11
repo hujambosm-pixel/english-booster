@@ -6,6 +6,7 @@
 
 Advanced vocabulary learning app with AI-powered exercises, now optimized for production deployment.
 
+
 ---
 
 ## 📋 Table of Contents
