@@ -9,10 +9,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
             // Note: Anon key is public by design and safe to include in frontend code
             const [supabaseUrl, setSupabaseUrl] = useState(
-                localStorage.getItem('supabase_url') || 'https://hswnwproeongfxavkjey.supabase.co'
+                localStorage.getItem('supabase_url') || ''
             );
             const [supabaseKey, setSupabaseKey] = useState(
-                localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzd253cHJvZW9uZ2Z4YXZramV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxMDk2NDksImV4cCI6MjA4NDY4NTY0OX0.zUK7ulrqOe0wSo6z4YG7XU39MYlRm-plB1K0vmSSXSE'
+                localStorage.getItem('supabase_key') || ''
             );
             
             // Initialize Supabase client synchronously using useMemo (available immediately on first render)
@@ -127,19 +127,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [selectionTimeLeft, setSelectionTimeLeft] = useState(0);
             const [selectionOptionsVisible, setSelectionOptionsVisible] = useState(false);
             
-            // 🆕 V11.16: Writing exercise states
-            const [showWriting, setShowWriting] = useState(false);
-            const [writingWords, setWritingWords] = useState([]);
-            const [writingIndex, setWritingIndex] = useState(0);
-            const [writingInput, setWritingInput] = useState('');
-            const [showWritingAnswer, setShowWritingAnswer] = useState(false);
-            const [writingDifficulty, setWritingDifficulty] = useState('');
-            const [writingAttempts, setWritingAttempts] = useState(0);
-            const [writingAIValidating, setWritingAIValidating] = useState(false);
-            const [writingAIResult, setWritingAIResult] = useState(null);
-            const [showWritingHint, setShowWritingHint] = useState(false); // 🆕 V11.20
-            const [writingHintMeaning, setWritingHintMeaning] = useState(''); // 🆕 V11.22
-            const [writingHintLoading, setWritingHintLoading] = useState(false); // 🆕 V11.22
+            // 🆕 V11.16: Guesswork exercise states
+            const [showGuesswork, setShowGuesswork] = useState(false);
+            const [guessworkWords, setGuessworkWords] = useState([]);
+            const [guessworkIndex, setGuessworkIndex] = useState(0);
+            const [guessworkInput, setGuessworkInput] = useState('');
+            const [showGuessworkAnswer, setShowGuessworkAnswer] = useState(false);
+            const [guessworkDifficulty, setGuessworkDifficulty] = useState('');
+            const [guessworkAttempts, setGuessworkAttempts] = useState(0);
+            const [guessworkAIValidating, setGuessworkAIValidating] = useState(false);
+            const [guessworkAIResult, setGuessworkAIResult] = useState(null);
+            const [showGuessworkHint, setShowGuessworkHint] = useState(false); // 🆕 V11.20
+            const [guessworkHintMeaning, setGuessworkHintMeaning] = useState(''); // 🆕 V11.22
+            const [guessworkHintLoading, setGuessworkHintLoading] = useState(false); // 🆕 V11.22
             
             // 🆕 V11.31: Translation exercise states
             const [showTranslation, setShowTranslation] = useState(false);
@@ -281,9 +281,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
             }, [showDictation, showDictationAnswer, dictationIndex, dictationWords, dictationDifficulty]);
 
-            // 🆕 V11.26: Handle second Enter key in Writing (after answer shown)
+            // 🆕 V11.26: Handle second Enter key in Guesswork (after answer shown)
             useEffect(() => {
-                if (!showWriting || !showWritingAnswer) return;
+                if (!showGuesswork || !showGuessworkAnswer) return;
                 
                 const handleEnterAfterCheck = async (e) => {
                     // Ignore if Enter comes from textarea/input to prevent double execution
@@ -291,46 +291,46 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         return;
                     }
                     
-                    if (e.key === 'Enter' && showWritingAnswer) {
+                    if (e.key === 'Enter' && showGuessworkAnswer) {
                         e.preventDefault();
                         
                         // Save difficulty
                         try {
-                            const currentWritingWord = writingWords[writingIndex];
+                            const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                         } catch (error) {
                             console.error('Error saving difficulty:', error);
                         }
                         
                         // Move to next word or finish
-                        if (writingIndex < writingWords.length - 1) {
-                            setWritingIndex(writingIndex + 1);
-                            setWritingInput('');
-                            setShowWritingAnswer(false);
-                            setWritingDifficulty('');
-                            setWritingAttempts(0);
-                            setWritingAIResult(null);
+                        if (guessworkIndex < guessworkWords.length - 1) {
+                            setGuessworkIndex(guessworkIndex + 1);
+                            setGuessworkInput('');
+                            setShowGuessworkAnswer(false);
+                            setGuessworkDifficulty('');
+                            setGuessworkAttempts(0);
+                            setGuessworkAIResult(null);
                         } else {
                             alert('🎉 Exercise completed!');
-                            setShowWriting(false);
-                            setWritingWords([]);
-                            setWritingIndex(0);
-                            setWritingInput('');
-                            setShowWritingAnswer(false);
-                            setWritingDifficulty('');
-                            setWritingAttempts(0);
-                            setWritingAIResult(null);
+                            setShowGuesswork(false);
+                            setGuessworkWords([]);
+                            setGuessworkIndex(0);
+                            setGuessworkInput('');
+                            setShowGuessworkAnswer(false);
+                            setGuessworkDifficulty('');
+                            setGuessworkAttempts(0);
+                            setGuessworkAIResult(null);
                         }
                     }
                 };
                 
                 window.addEventListener('keydown', handleEnterAfterCheck);
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
-            }, [showWriting, showWritingAnswer, writingIndex, writingWords, writingDifficulty]);
+            }, [showGuesswork, showGuessworkAnswer, guessworkIndex, guessworkWords, guessworkDifficulty]);
 
             // 🆕 V11.32: Handle second Enter key in Translation (after answer shown)
             useEffect(() => {
@@ -485,8 +485,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
                         );
                     }
-                    if (showWriting) {
-                        setWritingWords(prevWords => 
+                    if (showGuesswork) {
+                        setGuessworkWords(prevWords => 
                             prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
                         );
                     }
@@ -1014,6 +1014,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             async function fetchWords(pageNum, isNewSearch = false) {
                 if (loading && !isNewSearch) return;
+                if (!supabase) {
+                    alert("⚠️ Supabase not configured!\n\nPlease configure your Supabase credentials in Settings (⚙️) to use the app.");
+                    setLoading(false);
+                    return;
+                }
                 console.log('🔥 fetchWords called:', { pageNum, isNewSearch, currentFilters: { search, familyFilter, emptyFilter, favouriteLevel } });
                 setLoading(true);
                 const PAGE_SIZE = 50;
@@ -1281,7 +1286,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const total = allWords.length;
                     const practiced = allWords.filter(w => 
                         w.flashcard_count > 0 || w.dictation_count > 0 || 
-                        w.selection_count > 0 || w.writing_count > 0 || w.translation_count > 0
+                        w.selection_count > 0 || w.guesswork_count > 0 || w.translation_count > 0
                     ).length;
                     const pending = total - practiced;
                     const favourites = allWords.filter(w => w.favourite).length;
@@ -1302,7 +1307,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         ? (selectionPracticed.reduce((sum, w) => sum + (w.selection_attempts_total || 0), 0) / selectionPracticed.reduce((sum, w) => sum + w.selection_count, 0)).toFixed(2)
                         : 0;
                     
-                    const writingPracticed = allWords.filter(w => w.writing_count > 0).length;
+                    const guessworkPracticed = allWords.filter(w => w.guesswork_count > 0).length;
                     const translationPracticed = allWords.filter(w => w.translation_count > 0);
                     
                     const gradeC2 = translationPracticed.filter(w => w.translation_best_grade === 'C2').length;
@@ -1330,7 +1335,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             flashcard: flashcardPracticed,
                             dictation: { count: dictationPracticed.length, avgErrors: dictationAvgErrors },
                             selection: { count: selectionPracticed.length, avgAttempts: selectionAvgAttempts },
-                            writing: writingPracticed,
+                            guesswork: guessworkPracticed,
                             translation: { count: translationPracticed.length, gradeC2, gradeC1, gradeB2, gradeB1 }
                         },
                         hardest: { byErrors: hardestByErrors, byAttempts: hardestByAttempts }
@@ -1381,10 +1386,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             );
                             break;
                             
-                        case 'writing':
+                        case 'guesswork':
                             // Words with Passive/Emerging difficulty that have been practiced
                             difficultWords = allWords.filter(w => 
-                                w.writing_count > 0 && 
+                                w.guesswork_count > 0 && 
                                 (w.difficulty === 'Passive' || w.difficulty === 'Emerging')
                             );
                             break;
@@ -1489,15 +1494,15 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         setShowSelection(true);
                         break;
                         
-                    case 'writing':
-                        setWritingWords(sortedWords);
-                        setWritingIndex(0);
-                        setWritingInput('');
-                        setShowWritingAnswer(false);
-                        setWritingDifficulty('');
-                        setWritingAttempts(0);
-                        setWritingAIResult(null);
-                        setShowWriting(true);
+                    case 'guesswork':
+                        setGuessworkWords(sortedWords);
+                        setGuessworkIndex(0);
+                        setGuessworkInput('');
+                        setShowGuessworkAnswer(false);
+                        setGuessworkDifficulty('');
+                        setGuessworkAttempts(0);
+                        setGuessworkAIResult(null);
+                        setShowGuesswork(true);
                         break;
                         
                     case 'translation':
@@ -1544,7 +1549,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 try {
                     await supabase.from('vocabulary_v4').update({
                         flashcard_count: 0, dictation_count: 0, dictation_errors_total: 0,
-                        selection_count: 0, selection_attempts_total: 0, writing_count: 0,
+                        selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
                     alert('✅ Exercise stats reset!');
@@ -1566,7 +1571,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 try {
                     await supabase.from('vocabulary_v4').update({
                         difficulty: null, flashcard_count: 0, dictation_count: 0, dictation_errors_total: 0,
-                        selection_count: 0, selection_attempts_total: 0, writing_count: 0,
+                        selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
                     alert('✅ All progress reset!');
@@ -1878,15 +1883,15 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return options.sort(() => Math.random() - 0.5);
             }
 
-            // 🆕 V11.22: Generate meaning for Writing hint with AI
-            async function generateWritingHintMeaning(word) {
+            // 🆕 V11.22: Generate meaning for Guesswork hint with AI
+            async function generateGuessworkHintMeaning(word) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey || apiKey === '') {
-                    setWritingHintMeaning('⚠️ API key not configured. Please set your Groq API Key in Settings.');
+                    setGuessworkHintMeaning('⚠️ API key not configured. Please set your Groq API Key in Settings.');
                     return;
                 }
 
-                setWritingHintLoading(true);
+                setGuessworkHintLoading(true);
 
                 try {
                     const prompt = `What does "${word}" mean? Provide ONLY the definition/meaning in British English. Keep it simple and clear, maximum 2 sentences. IMPORTANT: Do NOT mention the word "${word}" itself in your response - just explain what it means. Do NOT include examples, synonyms, or usage notes.`;
@@ -1911,17 +1916,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
                     const data = await response.json();
                     const meaning = data.choices?.[0]?.message?.content || 'Unable to generate meaning.';
-                    setWritingHintMeaning(meaning.trim());
+                    setGuessworkHintMeaning(meaning.trim());
                 } catch (error) {
                     console.error('Generate meaning error:', error);
-                    setWritingHintMeaning('❌ Error generating meaning. Please try again.');
+                    setGuessworkHintMeaning('❌ Error generating meaning. Please try again.');
                 } finally {
-                    setWritingHintLoading(false);
+                    setGuessworkHintLoading(false);
                 }
             }
 
-            // 🆕 V11.16: Load Writing Exercise
-            async function loadWriting() {
+            // 🆕 V11.16: Load Guesswork Exercise
+            async function loadGuesswork() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
                     
@@ -1972,20 +1977,20 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             sortedData = sortedData.sort(() => Math.random() - 0.5);
                         }
                         
-                        setWritingWords(sortedData);
-                        setWritingIndex(0);
-                        setWritingInput('');
-                        setShowWritingAnswer(false);
-                        setWritingDifficulty('');
-                        setWritingAttempts(0);
-                        setWritingAIResult(null);
-                        setShowWriting(true);
+                        setGuessworkWords(sortedData);
+                        setGuessworkIndex(0);
+                        setGuessworkInput('');
+                        setShowGuessworkAnswer(false);
+                        setGuessworkDifficulty('');
+                        setGuessworkAttempts(0);
+                        setGuessworkAIResult(null);
+                        setShowGuesswork(true);
                     } else {
                         alert('No words with context found!');
                     }
                 } catch (err) {
-                    console.error('Error loading writing:', err);
-                    alert('Error loading writing');
+                    console.error('Error loading guesswork:', err);
+                    alert('Error loading guesswork');
                 }
             }
 
@@ -2107,15 +2112,15 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                 }
             }
 
-            // 🆕 V11.16: Validate answer with AI for Writing exercise
-            async function validateWritingWithAI(userAnswer, correctAnswer, context) {
+            // 🆕 V11.16: Validate answer with AI for Guesswork exercise
+            async function validateGuessworkWithAI(userAnswer, correctAnswer, context) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) {
                     alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
 
-                setWritingAIValidating(true);
+                setGuessworkAIValidating(true);
                 try {
                     const prompt = `You are an English language expert. Analyze the user's answer and evaluate its quality.
 
@@ -2183,7 +2188,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     alert('❌ AI validation failed. Please check your API key.');
                     return null;
                 } finally {
-                    setWritingAIValidating(false);
+                    setGuessworkAIValidating(false);
                 }
             }
 
@@ -2528,7 +2533,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                                 dictation_errors_total: convertToInt(d.dictation_errors_total, 'dictation_errors_total'),
                                 selection_count: convertToInt(d.selection_count, 'selection_count'),
                                 selection_attempts_total: convertToInt(d.selection_attempts_total, 'selection_attempts_total'),
-                                writing_count: convertToInt(d.writing_count, 'writing_count'),
+                                guesswork_count: convertToInt(d.guesswork_count, 'guesswork_count'),
                                 translation_count: convertToInt(d.translation_count, 'translation_count'),
                                 translation_best_grade: convertToString(d.translation_best_grade, 'translation_best_grade'),
                                 last_practiced_date: convertToDate(d.last_practiced_date, 'last_practiced_date'),
@@ -2756,7 +2761,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
-                        alert('✨ Fields auto-filled successfully!');
+                        
                     } else if (wordId || currentData) {
                         // 🆕 V11.8: Respect existing data - only update empty fields
                         const updateData = {
@@ -2800,20 +2805,20 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             newSelection[selectionIndex] = updatedWord;
                             setSelectionWords(newSelection);
                         }
-                        if (showWriting) {
-                            const newWriting = [...writingWords];
-                            newWriting[writingIndex] = updatedWord;
-                            setWritingWords(newWriting);
+                        if (showGuesswork) {
+                            const newGuesswork = [...guessworkWords];
+                            newGuesswork[guessworkIndex] = updatedWord;
+                            setGuessworkWords(newGuesswork);
                         }
                         
                         // Update main table if not in exercise
-                        if (!showFlashcards && !showDictation && !showSelection && !showWriting) {
+                        if (!showFlashcards && !showDictation && !showSelection && !showGuesswork) {
                             setWords(prevWords => 
                                 prevWords.map(w => w.id === targetId ? updatedWord : w)
                             );
                         }
                         
-                        alert('✨ Word auto-filled successfully!');
+                        
                     }
 
                 } catch (error) {
@@ -2850,7 +2855,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                    flashcardWords.find(w => w.id === wordId) ||
                                    dictationWords.find(w => w.id === wordId) ||
                                    selectionWords.find(w => w.id === wordId) ||
-                                   writingWords.find(w => w.id === wordId);
+                                   guessworkWords.find(w => w.id === wordId);
                 
                 if (!currentWord) {
                     alert('❌ Word not found');
@@ -2996,7 +3001,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                        flashcardWords.find(w => w.id === wordId) ||
                                        dictationWords.find(w => w.id === wordId) ||
                                        selectionWords.find(w => w.id === wordId) ||
-                                       writingWords.find(w => w.id === wordId);
+                                       guessworkWords.find(w => w.id === wordId);
                     
                     if (!currentWord) {
                         throw new Error('Word not found in current context');
@@ -3284,10 +3289,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         newSelection[selectionIndex] = updatedWord;
                         setSelectionWords(newSelection);
                     }
-                    if (showWriting) {
-                        const newWriting = [...writingWords];
-                        newWriting[writingIndex] = updatedWord;
-                        setWritingWords(newWriting);
+                    if (showGuesswork) {
+                        const newGuesswork = [...guessworkWords];
+                        newGuesswork[guessworkIndex] = updatedWord;
+                        setGuessworkWords(newGuesswork);
                     }
                     if (showTranslation) {
                         const newTranslation = [...translationWords];
@@ -3300,7 +3305,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     }
                     
                     // 🆕 V11.20: Update main table state without refreshing filters
-                    if (!showFlashcards && !showDictation && !showSelection && !showWriting && !showTranslation) {
+                    if (!showFlashcards && !showDictation && !showSelection && !showGuesswork && !showTranslation) {
                         // Only update if editing from main table
                         setWords(prevWords => 
                             prevWords.map(w => w.id === editingWord.id ? updatedWord : w)
@@ -3977,19 +3982,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-sm text-white/80">Choose the correct word from multiple options to complete sentences.</p>
                                     </button>
                                     
-                                    {/* Writing */}
+                                    {/* Guesswork */}
                                     <button
                                         onClick={() => {
                                             setShowExercisesModal(false);
-                                            loadWriting();
+                                            loadGuesswork();
                                         }}
                                         className="group relative overflow-hidden bg-orange-600 hover:bg-orange-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">✍️</span>
-                                            <h3 className="text-xl font-black text-white uppercase">Writing</h3>
+                                            <span className="text-4xl">🤔</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Guesswork</h3>
                                         </div>
-                                        <p className="text-sm text-white/80">Write sentences using vocabulary words. AI evaluates your writing.</p>
+                                        <p className="text-sm text-white/80">Write sentences using vocabulary words. AI evaluates your guesswork.</p>
                                     </button>
                                     
                                     {/* Translation */}
@@ -4217,7 +4222,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (drag to AI panel →)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (📱 Tap | 🖥️ Drag to AI panel →)</div>
                                             <div className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4246,9 +4251,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('synonym', syn);
                                                             e.dataTransfer.setData('improveSynSource', 'current');
                                                         }}
-                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none"
+                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
-                                                            // 🆕 V11.21: Tap to move to green panel (mobile-friendly)
+                                                            // 📱 MOBILE: Tap to move between panels (drag&drop not supported on touch devices) to green panel (mobile-friendly)
                                                             const currentSyns = (improveData.selections?.currentSynonyms || []).filter(s => s !== syn);
                                                             const improvedSyns = improveData.selections?.improvedSynonyms || [];
                                                             setImproveData({
@@ -4268,7 +4273,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (drag to AI panel →)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (📱 Tap | 🖥️ Drag to AI panel →)</div>
                                             <div 
                                                 className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4337,7 +4342,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Synonyms (drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Synonyms (📱 Tap | 🖥️ Drag to current panel)</div>
                                             <div className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4366,7 +4371,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('synonym', syn);
                                                             e.dataTransfer.setData('improveSynSource', 'improved');
                                                         }}
-                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none"
+                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
                                                             // 🆕 V11.21: Tap to move to red panel (mobile-friendly)
                                                             const improvedSyns = (improveData.selections?.improvedSynonyms || []).filter(s => s !== syn);
@@ -4388,7 +4393,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Context (drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Context (📱 Tap | 🖥️ Drag to current panel)</div>
                                             <div 
                                                 className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4466,7 +4471,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     flashcardWords.find(w => w.id === improveData.wordId) ||
                                                     dictationWords.find(w => w.id === improveData.wordId) ||
                                                     selectionWords.find(w => w.id === improveData.wordId) ||
-                                                    writingWords.find(w => w.id === improveData.wordId)),
+                                                    guessworkWords.find(w => w.id === improveData.wordId)),
                                                 ...updateData
                                             };
                                             
@@ -4485,14 +4490,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 newSelection[selectionIndex] = updatedWord;
                                                 setSelectionWords(newSelection);
                                             }
-                                            if (showWriting) {
-                                                const newWriting = [...writingWords];
-                                                newWriting[writingIndex] = updatedWord;
-                                                setWritingWords(newWriting);
+                                            if (showGuesswork) {
+                                                const newGuesswork = [...guessworkWords];
+                                                newGuesswork[guessworkIndex] = updatedWord;
+                                                setGuessworkWords(newGuesswork);
                                             }
                                             
                                             // Update main table if not in exercise
-                                            if (!showFlashcards && !showDictation && !showSelection && !showWriting) {
+                                            if (!showFlashcards && !showDictation && !showSelection && !showGuesswork) {
                                                 setWords(prevWords => 
                                                     prevWords.map(w => w.id === improveData.wordId ? updatedWord : w)
                                                 );
@@ -4561,7 +4566,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
                                             <h2 className="text-3xl font-black text-white">🔀 Drag & Drop Merge</h2>
-                                            <p className="text-slate-400 text-sm mt-1">Drag synonyms and context between panels. RED = Delete | GREEN = Keep</p>
+                                            <p className="text-slate-400 text-sm mt-1">📱 MOBILE: Tap items to move | 🖥️ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
                                         </div>
                                         <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
@@ -5643,32 +5648,32 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* 🆕 V11.16: WRITING EXERCISE MODAL */}
-                    {showWriting && writingWords.length > 0 && (
+                    {/* 🆕 V11.16: GUESSWORK EXERCISE MODAL */}
+                    {showGuesswork && guessworkWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 {/* Header */}
                                 <ExerciseHeader
-                                    title="✍️ Writing"
-                                    currentIndex={writingIndex}
-                                    totalCount={writingWords.length}
-                                    currentWord={writingWords[writingIndex].vocabulary}
+                                    title="🤔 Guesswork"
+                                    currentIndex={guessworkIndex}
+                                    totalCount={guessworkWords.length}
+                                    currentWord={guessworkWords[guessworkIndex].vocabulary}
                                     exerciseMode={exerciseMode}
                                     audioEnabled={false}
                                     onClose={() => {
-                                        setShowWriting(false);
-                                        setWritingWords([]);
-                                        setWritingIndex(0);
-                                        setWritingInput('');
-                                        setShowWritingAnswer(false);
-                                        setWritingDifficulty('');
-                                        setWritingAttempts(0);
-                                        setWritingAIResult(null);
+                                        setShowGuesswork(false);
+                                        setGuessworkWords([]);
+                                        setGuessworkIndex(0);
+                                        setGuessworkInput('');
+                                        setShowGuessworkAnswer(false);
+                                        setGuessworkDifficulty('');
+                                        setGuessworkAttempts(0);
+                                        setGuessworkAIResult(null);
                                     }}
                                     onModeToggle={() => {
                                         setExerciseMode(exerciseMode === 'random' ? 'memory' : 'random');
-                                        setShowWriting(false);
-                                        setTimeout(() => loadWriting(), 100);
+                                        setShowGuesswork(false);
+                                        setTimeout(() => loadGuesswork(), 100);
                                     }}
                                     onAudioToggle={null}
                                     onDictionary={(word) => {
@@ -5676,11 +5681,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setShowDictionaryModal(true);
                                     }}
                                     onEdit={() => {
-                                        setEditingWord(writingWords[writingIndex]);
-                                        setOriginalEditData({...writingWords[writingIndex]});
+                                        setEditingWord(guessworkWords[guessworkIndex]);
+                                        setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('✍️ WRITING EXERCISE\n\n📊 SCORING:\n✅ Exact match = Easy\n🤖 AI evaluates quality when not exact match:\n  • Active = Excellent answer (correct grammar, perfect fit)\n  • Emerging = Acceptable answer (minor issues, generally correct)\n  • Passive = Poor answer (significant errors)\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Easy\n🤖 AI evaluates quality when not exact match:\n  • Active = Excellent answer (correct grammar, perfect fit)\n  • Emerging = Acceptable answer (minor issues, generally correct)\n  • Passive = Poor answer (significant errors)\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
@@ -5688,8 +5693,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* Hint button in top-right corner */}
                                     <button
                                         onClick={async () => {
-                                            setShowWritingHint(true);
-                                            await generateWritingHintMeaning(writingWords[writingIndex].vocabulary);
+                                            setShowGuessworkHint(true);
+                                            await generateGuessworkHintMeaning(guessworkWords[guessworkIndex].vocabulary);
                                         }}
                                         className="absolute top-4 right-4 bg-yellow-500 hover:bg-yellow-400 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg transition-all hover:scale-110"
                                         title="Show hint"
@@ -5700,81 +5705,81 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="text-center">
                                         <h3 className="text-white/70 text-sm font-bold uppercase mb-4">Complete the sentence:</h3>
                                         <p className="text-white text-2xl font-bold leading-relaxed">
-                                            {hideWordInContext(writingWords[writingIndex].context, writingWords[writingIndex].vocabulary)}
+                                            {hideWordInContext(guessworkWords[guessworkIndex].context, guessworkWords[guessworkIndex].vocabulary)}
                                         </p>
                                     </div>
                                 </div>
 
-                                {!showWritingAnswer ? (
+                                {!showGuessworkAnswer ? (
                                     <>
                                         {/* Input field */}
                                         <input
                                             type="text"
-                                            value={writingInput}
-                                            onChange={(e) => setWritingInput(e.target.value)}
+                                            value={guessworkInput}
+                                            onChange={(e) => setGuessworkInput(e.target.value)}
                                             onKeyDown={async (e) => {
                                                 if (e.key === 'Enter') {
                                                     e.preventDefault();
                                                     
-                                                    if (!showWritingAnswer && writingInput.trim()) {
+                                                    if (!showGuessworkAnswer && guessworkInput.trim()) {
                                                         // First Enter: Check answer
-                                                        const userAnswer = writingInput.trim().toLowerCase();
-                                                        const correctAnswer = writingWords[writingIndex].vocabulary.toLowerCase();
+                                                        const userAnswer = guessworkInput.trim().toLowerCase();
+                                                        const correctAnswer = guessworkWords[guessworkIndex].vocabulary.toLowerCase();
                                                         
                                                         if (userAnswer === correctAnswer) {
                                                             // Exact match - Easy
-                                                            setWritingDifficulty('Active');
-                                                            setWritingAttempts(prev => prev + 1);
-                                                            setWritingAIResult({
+                                                            setGuessworkDifficulty('Active');
+                                                            setGuessworkAttempts(prev => prev + 1);
+                                                            setGuessworkAIResult({
                                                                 is_correct: true,
                                                                 explanation: 'Perfect! Exact match.',
                                                                 score: 'Active'
                                                             });
-                                                            setShowWritingAnswer(true);
+                                                            setShowGuessworkAnswer(true);
                                                         } else {
                                                             // Not exact - validate with AI
-                                                            const aiResult = await validateWritingWithAI(
+                                                            const aiResult = await validateGuessworkWithAI(
                                                                 userAnswer,
                                                                 correctAnswer,
-                                                                writingWords[writingIndex].context
+                                                                guessworkWords[guessworkIndex].context
                                                             );
                                                             if (aiResult) {
-                                                                setWritingAIResult(aiResult);
-                                                                setWritingDifficulty(aiResult.score || 'Passive');
-                                                                setWritingAttempts(prev => prev + 1);
-                                                                setShowWritingAnswer(true);
+                                                                setGuessworkAIResult(aiResult);
+                                                                setGuessworkDifficulty(aiResult.score || 'Passive');
+                                                                setGuessworkAttempts(prev => prev + 1);
+                                                                setShowGuessworkAnswer(true);
                                                             }
                                                         }
-                                                    } else if (showWritingAnswer) {
+                                                    } else if (showGuessworkAnswer) {
                                                         // Second Enter: Save and move to next word
                                                         try {
-                                                            const currentWritingWord = writingWords[writingIndex];
+                                                            const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                                                         } catch (error) {
                                                             console.error('Error saving difficulty:', error);
                                                         }
                                                         
-                                                        if (writingIndex < writingWords.length - 1) {
-                                                            setWritingIndex(writingIndex + 1);
-                                                            setWritingInput('');
-                                                            setShowWritingAnswer(false);
-                                                            setWritingAttempts(0);
-                                                            setWritingDifficulty('');
-                                                            setWritingAIResult(null);
+                                                        if (guessworkIndex < guessworkWords.length - 1) {
+                                                            setGuessworkIndex(guessworkIndex + 1);
+                                                            setGuessworkInput('');
+                                                            setShowGuessworkAnswer(false);
+                                                            setGuessworkAttempts(0);
+                                                            setGuessworkDifficulty('');
+                                                            setGuessworkAIResult(null);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
-                                                            setShowWriting(false);
-                                                            setWritingWords([]);
-                                                            setWritingIndex(0);
-                                                            setWritingInput('');
-                                                            setShowWritingAnswer(false);
-                                                            setWritingAttempts(0);
-                                                            setWritingDifficulty('');
-                                                            setWritingAIResult(null);
+                                                            setShowGuesswork(false);
+                                                            setGuessworkWords([]);
+                                                            setGuessworkIndex(0);
+                                                            setGuessworkInput('');
+                                                            setShowGuessworkAnswer(false);
+                                                            setGuessworkAttempts(0);
+                                                            setGuessworkDifficulty('');
+                                                            setGuessworkAIResult(null);
                                                         }
                                                     }
                                                 }
@@ -5787,63 +5792,63 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="flex gap-4">
                                             <button
                                                 onClick={async () => {
-                                                    if (!writingInput.trim()) return;
+                                                    if (!guessworkInput.trim()) return;
                                                     
-                                                    const userAnswer = writingInput.trim().toLowerCase();
-                                                    const correctAnswer = writingWords[writingIndex].vocabulary.toLowerCase();
+                                                    const userAnswer = guessworkInput.trim().toLowerCase();
+                                                    const correctAnswer = guessworkWords[guessworkIndex].vocabulary.toLowerCase();
                                                     
                                                     if (userAnswer === correctAnswer) {
                                                         // Exact match - Easy
-                                                        setWritingDifficulty('Active');
-                                                        setWritingAttempts(prev => prev + 1);
-                                                        setWritingAIResult({
+                                                        setGuessworkDifficulty('Active');
+                                                        setGuessworkAttempts(prev => prev + 1);
+                                                        setGuessworkAIResult({
                                                             is_correct: true,
                                                             explanation: 'Perfect! Exact match.',
                                                             score: 'Active'
                                                         });
-                                                        setShowWritingAnswer(true);
+                                                        setShowGuessworkAnswer(true);
                                                     } else {
                                                         // Not exact - validate with AI
-                                                        const aiResult = await validateWritingWithAI(
+                                                        const aiResult = await validateGuessworkWithAI(
                                                             userAnswer,
                                                             correctAnswer,
-                                                            writingWords[writingIndex].context
+                                                            guessworkWords[guessworkIndex].context
                                                         );
                                                         if (aiResult) {
-                                                            setWritingAIResult(aiResult);
+                                                            setGuessworkAIResult(aiResult);
                                                             // 🆕 V11.18: Use AI's score evaluation directly (Easy/Medium/Hard)
-                                                            setWritingDifficulty(aiResult.score || 'Passive');
-                                                            setWritingAttempts(prev => prev + 1);
-                                                            setShowWritingAnswer(true);
+                                                            setGuessworkDifficulty(aiResult.score || 'Passive');
+                                                            setGuessworkAttempts(prev => prev + 1);
+                                                            setShowGuessworkAnswer(true);
                                                         }
                                                     }
                                                 }}
-                                                disabled={writingAIValidating || !writingInput.trim()}
+                                                disabled={guessworkAIValidating || !guessworkInput.trim()}
                                                 className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {writingAIValidating ? '🤖 AI Validating...' : '✅ Check Answer'}
+                                                {guessworkAIValidating ? '🤖 AI Validating...' : '✅ Check Answer'}
                                             </button>
                                             
                                             <button
                                                 onClick={() => {
                                                     // Skip to next word
-                                                    if (writingIndex < writingWords.length - 1) {
-                                                        setWritingIndex(writingIndex + 1);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                    if (guessworkIndex < guessworkWords.length - 1) {
+                                                        setGuessworkIndex(guessworkIndex + 1);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     } else {
                                                         alert('🎉 Exercise completed!');
-                                                        setShowWriting(false);
-                                                        setWritingWords([]);
-                                                        setWritingIndex(0);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                        setShowGuesswork(false);
+                                                        setGuessworkWords([]);
+                                                        setGuessworkIndex(0);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     }
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -5857,19 +5862,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {/* Result display */}
                                         <div className="space-y-6">
                                             {/* AI Result */}
-                                            {writingAIResult && (
+                                            {guessworkAIResult && (
                                                 <div className={`p-6 rounded-2xl border-2 ${
-                                                    writingAIResult.is_correct 
+                                                    guessworkAIResult.is_correct 
                                                         ? 'bg-green-900/20 border-green-500' 
                                                         : 'bg-red-900/20 border-red-500'
                                                 }`}>
                                                     <div className="flex items-center gap-3 mb-3">
-                                                        <span className="text-3xl">{writingAIResult.is_correct ? '✅' : '❌'}</span>
+                                                        <span className="text-3xl">{guessworkAIResult.is_correct ? '✅' : '❌'}</span>
                                                         <h4 className="text-xl font-black text-white">
-                                                            {writingAIResult.is_correct ? 'Correct!' : 'Incorrect'}
+                                                            {guessworkAIResult.is_correct ? 'Correct!' : 'Incorrect'}
                                                         </h4>
                                                     </div>
-                                                    <p className="text-white/90 text-sm leading-relaxed">{writingAIResult.explanation}</p>
+                                                    <p className="text-white/90 text-sm leading-relaxed">{guessworkAIResult.explanation}</p>
                                                 </div>
                                             )}
                                             
@@ -5878,13 +5883,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div>
                                                     <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Answer:</h4>
                                                     <div className="bg-slate-800 p-4 rounded-xl text-lg text-white font-bold">
-                                                        {writingInput || '(empty)'}
+                                                        {guessworkInput || '(empty)'}
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xs uppercase font-black text-green-400 mb-2">Correct Answer:</h4>
                                                     <div className="bg-green-900/20 border border-green-500/30 p-4 rounded-xl text-lg text-green-100 font-bold">
-                                                        {writingWords[writingIndex].vocabulary}
+                                                        {guessworkWords[guessworkIndex].vocabulary}
                                                     </div>
                                                 </div>
                                             </div>
@@ -5893,15 +5898,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <div className="flex justify-center items-center gap-4 p-4 bg-slate-800/50 rounded-2xl">
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Attempts</p>
-                                                    <p className="text-2xl font-black text-white">{writingAttempts}</p>
+                                                    <p className="text-2xl font-black text-white">{guessworkAttempts}</p>
                                                 </div>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Difficulty</p>
                                                     <p className={`text-2xl font-black ${
-                                                        writingDifficulty === 'Active' ? 'text-green-400' :
-                                                        writingDifficulty === 'Emerging' ? 'text-yellow-400' : 'text-red-400'
+                                                        guessworkDifficulty === 'Active' ? 'text-green-400' :
+                                                        guessworkDifficulty === 'Emerging' ? 'text-yellow-400' : 'text-red-400'
                                                     }`}>
-                                                        {writingDifficulty}
+                                                        {guessworkDifficulty}
                                                     </p>
                                                 </div>
                                             </div>
@@ -5913,38 +5918,38 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 onClick={async () => {
                                                     // Save difficulty
                                                     try {
-                                                        const currentWritingWord = writingWords[writingIndex];
+                                                        const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                                                     } catch (error) {
                                                         console.error('Error saving difficulty:', error);
                                                     }
                                                     
-                                                    if (writingIndex < writingWords.length - 1) {
-                                                        setWritingIndex(writingIndex + 1);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                    if (guessworkIndex < guessworkWords.length - 1) {
+                                                        setGuessworkIndex(guessworkIndex + 1);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     } else {
                                                         alert('🎉 Exercise completed!');
-                                                        setShowWriting(false);
-                                                        setWritingWords([]);
-                                                        setWritingIndex(0);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                        setShowGuesswork(false);
+                                                        setGuessworkWords([]);
+                                                        setGuessworkIndex(0);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     }
                                                 }}
                                                 className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {writingIndex < writingWords.length - 1 ? 'Next Word →' : '✅ Finish'}
+                                                {guessworkIndex < guessworkWords.length - 1 ? 'Next Word →' : '✅ Finish'}
                                             </button>
                                         </div>
                                     </>
@@ -5954,18 +5959,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="mt-6 bg-slate-800 rounded-full h-2 overflow-hidden">
                                     <div 
                                         className="bg-gradient-to-r from-orange-500 to-red-500 h-full transition-all duration-300"
-                                        style={{ width: `${((writingIndex + 1) / writingWords.length) * 100}%` }}
+                                        style={{ width: `${((guessworkIndex + 1) / guessworkWords.length) * 100}%` }}
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 🆕 V11.20: Writing Hint Modal */}
-                    {showWritingHint && writingWords.length > 0 && (
+                    {/* 🆕 V11.20: Guesswork Hint Modal */}
+                    {showGuessworkHint && guessworkWords.length > 0 && (
                         <div 
                             className="fixed inset-0 bg-black/80 z-[150] flex items-center justify-center p-4"
-                            onClick={() => setShowWritingHint(false)}
+                            onClick={() => setShowGuessworkHint(false)}
                         >
                             <div 
                                 className="bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-yellow-500/30"
@@ -5976,7 +5981,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         💡 Hint
                                     </h3>
                                     <button 
-                                        onClick={() => setShowWritingHint(false)}
+                                        onClick={() => setShowGuessworkHint(false)}
                                         className="text-slate-400 hover:text-white text-3xl"
                                     >
                                         ×
@@ -5988,7 +5993,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">First Letter</p>
                                         <p className="text-6xl font-black text-white">
-                                            {writingWords[writingIndex].vocabulary[0].toUpperCase()}
+                                            {guessworkWords[guessworkIndex].vocabulary[0].toUpperCase()}
                                             <span className="text-slate-700">______</span>
                                         </p>
                                     </div>
@@ -5996,14 +6001,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* 🆕 V11.22: Show AI-generated meaning */}
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Meaning</p>
-                                        {writingHintLoading ? (
+                                        {guessworkHintLoading ? (
                                             <div className="flex items-center gap-2 text-yellow-400">
                                                 <i className="fas fa-spinner fa-spin"></i>
                                                 <span className="text-sm">Generating meaning...</span>
                                             </div>
                                         ) : (
                                             <p className="text-lg text-yellow-300 leading-relaxed">
-                                                {writingHintMeaning || 'Click the Hint button to generate meaning.'}
+                                                {guessworkHintMeaning || 'Click the Hint button to generate meaning.'}
                                             </p>
                                         )}
                                     </div>
@@ -6012,13 +6017,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Family</p>
                                         <p className="text-2xl font-bold text-yellow-300">
-                                            {writingWords[writingIndex].family || 'Not specified'}
+                                            {guessworkWords[guessworkIndex].family || 'Not specified'}
                                         </p>
                                     </div>
                                 </div>
                                 
                                 <button
-                                    onClick={() => setShowWritingHint(false)}
+                                    onClick={() => setShowGuessworkHint(false)}
                                     className="w-full mt-6 bg-yellow-600 hover:bg-yellow-500 text-white py-3 rounded-xl font-black uppercase text-sm"
                                 >
                                     Close
@@ -6357,7 +6362,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex items-center gap-3">
                                         <h2 className="text-3xl font-black main-gradient uppercase italic">📊 Statistics Dashboard</h2>
                                         <button 
-                                            onClick={() => alert('ℹ️ HOW EFFORT LEVELS WORK\n\n🎯 SYSTEM: Single "Difficulty" level per word\n\n📝 UPDATES:\n• Each exercise you complete updates the word\'s effort level\n• The LAST exercise result overwrites previous level\n• Example: Flashcard (Active) → Dictation fails (Passive) → Level becomes Passive\n\n💡 THIS MEANS:\n• "Difficulty" filter shows current overall difficulty\n• Not exercise-specific (coming in future version)\n• Stats show average performance per exercise\n\n📊 DIFFICULT WORDS CRITERIA:\n🎴 Flashcards: Passive/Emerging + practiced\n🎤 Dictation: Avg >2 errors per attempt\n✓ Selection: Avg >2 attempts per question  \n✏️ Writing: Passive/Emerging + practiced\n🌐 Translation: B1/B2 Cambridge grade\n\n💾 BACKUPS:\n✅ All exercise data saved in JSON/CSV exports\n✅ Includes: counts, errors, grades, dates\n\n📌 Click exercise lines to practice difficult words!')}
+                                            onClick={() => alert('ℹ️ HOW EFFORT LEVELS WORK\n\n🎯 SYSTEM: Single "Difficulty" level per word\n\n📝 UPDATES:\n• Each exercise you complete updates the word\'s effort level\n• The LAST exercise result overwrites previous level\n• Example: Flashcard (Active) → Dictation fails (Passive) → Level becomes Passive\n\n💡 THIS MEANS:\n• "Difficulty" filter shows current overall difficulty\n• Not exercise-specific (coming in future version)\n• Stats show average performance per exercise\n\n📊 DIFFICULT WORDS CRITERIA:\n🎴 Flashcards: Passive/Emerging + practiced\n🎤 Dictation: Avg >2 errors per attempt\n✓ Selection: Avg >2 attempts per question  \n✏️ Guesswork: Passive/Emerging + practiced\n🌐 Translation: B1/B2 Cambridge grade\n\n💾 BACKUPS:\n✅ All exercise data saved in JSON/CSV exports\n✅ Includes: counts, errors, grades, dates\n\n📌 Click exercise lines to practice difficult words!')}
                                             className="text-blue-400 hover:text-blue-300 text-xl"
                                             title="How Effort levels work"
                                         >
@@ -6443,11 +6448,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     <span className="text-green-300 text-lg font-bold">{statsData.exercises.selection.count} practiced • Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
                                                 </button>
                                                 <button 
-                                                    onClick={() => openExerciseDrillDown('writing')}
+                                                    onClick={() => openExerciseDrillDown('guesswork')}
                                                     className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-orange-500"
                                                 >
-                                                    <span className="text-white font-bold">✏️ Writing</span>
-                                                    <span className="text-orange-300 text-lg font-bold">{statsData.exercises.writing} practiced</span>
+                                                    <span className="text-white font-bold">✏️ Guesswork</span>
+                                                    <span className="text-orange-300 text-lg font-bold">{statsData.exercises.guesswork} practiced</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => openExerciseDrillDown('translation')}
@@ -6519,7 +6524,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <button 
                                                     onClick={resetExerciseStats} 
                                                     className="bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 py-4 rounded-xl font-bold"
-                                                    title="Reset all exercise counters and statistics (flashcard, dictation, selection, writing, translation counts and grades). Your vocabulary and difficulty ratings will remain intact."
+                                                    title="Reset all exercise counters and statistics (flashcard, dictation, selection, guesswork, translation counts and grades). Your vocabulary and difficulty ratings will remain intact."
                                                 >
                                                     🟠 Reset Exercise Stats
                                                 </button>
@@ -6543,14 +6548,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {drillDownExercise === 'flashcard' && '🎴 Flashcard Difficult Words'}
                                             {drillDownExercise === 'dictation' && '🎤 Dictation Difficult Words'}
                                             {drillDownExercise === 'selection' && '✓ Selection Difficult Words'}
-                                            {drillDownExercise === 'writing' && '✏️ Writing Difficult Words'}
+                                            {drillDownExercise === 'guesswork' && '✏️ Guesswork Difficult Words'}
                                             {drillDownExercise === 'translation' && '🌍 Translation Difficult Words'}
                                         </h2>
                                         <p className="text-slate-400 text-sm mt-2">
                                             {drillDownExercise === 'flashcard' && 'Words marked as Passive/Emerging in flashcard practice'}
                                             {drillDownExercise === 'dictation' && 'Words with >2 average errors per attempt'}
                                             {drillDownExercise === 'selection' && 'Words with >2 average attempts per question'}
-                                            {drillDownExercise === 'writing' && 'Words marked as Passive/Emerging in writing practice'}
+                                            {drillDownExercise === 'guesswork' && 'Words marked as Passive/Emerging in guesswork practice'}
                                             {drillDownExercise === 'translation' && 'Words with B1/B2 Cambridge grades'}
                                         </p>
                                     </div>
@@ -6688,7 +6693,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <p className="text-slate-400 ml-6 mb-1">• Flashcard practice counts</p>
                                                 <p className="text-slate-400 ml-6 mb-1">• Dictation errors and attempts</p>
                                                 <p className="text-slate-400 ml-6 mb-1">• Selection attempts</p>
-                                                <p className="text-slate-400 ml-6 mb-1">• Writing practice counts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">• Guesswork practice counts</p>
                                                 <p className="text-slate-400 ml-6 mb-2">• Translation grades</p>
                                                 <p className="text-green-400 mt-4">✅ Keep your vocabulary list intact</p>
                                                 <p className="text-green-400">✅ Keep difficulty ratings</p>
