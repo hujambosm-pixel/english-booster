@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
 
         function App() {
-            // ðŸ†• V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
+            // 🆕 V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
             // Note: Anon key is public by design and safe to include in frontend code
             const [supabaseUrl, setSupabaseUrl] = useState(
                 localStorage.getItem('supabase_url') || ''
@@ -37,25 +37,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [familyFilter, setFamilyFilter] = useState('All');
             const [emptyFilter, setEmptyFilter] = useState('None');
             const [difficultyFilter, setDifficultyFilter] = useState('All');
-            const [favouriteLevel, setFavouriteLevel] = useState(0); // ðŸ†• V11.42: 0=all, 1=level1, 2=level2, 3=both
+            const [favouriteLevel, setFavouriteLevel] = useState(0); // 🆕 V11.42: 0=all, 1=level1, 2=level2, 3=both
             const [showAddModal, setShowAddModal] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
-            const [showExercisesModal, setShowExercisesModal] = useState(false); // ðŸ†• V11.59: Exercises modal
-            const [showDictionaryModal, setShowDictionaryModal] = useState(false); // ðŸ†• V11.55: Dictionary modal
-            const [selectedWordForDict, setSelectedWordForDict] = useState(''); // ðŸ†• V11.55: Selected word for dictionary
+            const [showExercisesModal, setShowExercisesModal] = useState(false); // 🆕 V11.59: Exercises modal
+            const [showDictionaryModal, setShowDictionaryModal] = useState(false); // 🆕 V11.55: Dictionary modal
+            const [selectedWordForDict, setSelectedWordForDict] = useState(''); // 🆕 V11.55: Selected word for dictionary
             const [editingWord, setEditingWord] = useState(null);
             const [clickAction, setClickAction] = useState(localStorage.getItem('click_action') || 'wordreference');
             const [aiPrompt, setAiPrompt] = useState(localStorage.getItem('ai_prompt') || DEFAULT_PROMPT);
             
-            // ðŸ†• V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
+            // 🆕 V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
             const [aiSearchPrompt, setAiSearchPrompt] = useState(
-                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\nÂ· Meaning.\nÂ· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\nÂ· Synonyms: some exact British English synonyms.\nÂ· Context: Some natural sentences using this "{word}" in a sentence in British English.\nÂ· Level: give the related level according to the Cambridge school.'
+                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.'
             );
             
-            // ðŸ†• V11.9: Undo history (stores last change for each word)
+            // 🆕 V11.9: Undo history (stores last change for each word)
             const [undoHistory, setUndoHistory] = useState({});
             
-            // ðŸ†• V11.9: Original data before editing (for restore in modal)
+            // 🆕 V11.9: Original data before editing (for restore in modal)
             const [originalEditData, setOriginalEditData] = useState(null);
             
             const [geminiKey, setGeminiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
@@ -79,38 +79,38 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 deleteSynonyms: []
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
-            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   Ã¢â€º"Ã¯Â¸ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   Ã¢â€º"Ã¯Â¸ DO NOT use synonyms - use "{word}" EXACTLY as written\n   Ã¢â€º"Ã¯Â¸ DO NOT substitute with similar words\n   Ã¢Å“â€¦ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   Ã¢Å“â€¦ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
+            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
             
-            // ðŸ†• V11.2: New states
-            // ðŸ†• V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
+            // 🆕 V11.2: New states
+            // 🆕 V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
             const [searchMode, setSearchMode] = useState(0);
             const [deepSearchLoading, setDeepSearchLoading] = useState(false);
             const [showRecycleBin, setShowRecycleBin] = useState(false);
             const [deletedWords, setDeletedWords] = useState([]);
             const [selectedForRestore, setSelectedForRestore] = useState([]);
             
-            // ðŸ†• V11.21: Change History states
+            // 🆕 V11.21: Change History states
             const [showChangeHistory, setShowChangeHistory] = useState(false);
             const [changedWords, setChangedWords] = useState([]);
             const [selectedForHistory, setSelectedForHistory] = useState([]);
             
-            // ðŸ†• V11.4: Recycle bin count & Dictation
+            // 🆕 V11.4: Recycle bin count & Dictation
             const [recycleBinCount, setRecycleBinCount] = useState(0);
-            const [changeHistoryCount, setChangeHistoryCount] = useState(0); // ðŸ†• V11.24
+            const [changeHistoryCount, setChangeHistoryCount] = useState(0); // 🆕 V11.24
             const [showDictation, setShowDictation] = useState(false);
             const [dictationWords, setDictationWords] = useState([]);
             const [dictationIndex, setDictationIndex] = useState(0);
             const [dictationInput, setDictationInput] = useState('');
             const [showDictationAnswer, setShowDictationAnswer] = useState(false);
-            const [dictationErrorCount, setDictationErrorCount] = useState(0); // ðŸ†• V11.5
-            const [dictationDifficulty, setDictationDifficulty] = useState(''); // ðŸ†• V11.5
+            const [dictationErrorCount, setDictationErrorCount] = useState(0); // 🆕 V11.5
+            const [dictationDifficulty, setDictationDifficulty] = useState(''); // 🆕 V11.5
             
-            // ðŸ†• V11.12: Dictation playback control
+            // 🆕 V11.12: Dictation playback control
             const [dictationPlayCount, setDictationPlayCount] = useState(0);
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // ðŸ†• V11.11: Selection exercise states
+            // 🆕 V11.11: Selection exercise states
             const [showSelection, setShowSelection] = useState(false);
             const [selectionWords, setSelectionWords] = useState([]);
             const [selectionIndex, setSelectionIndex] = useState(0);
@@ -128,14 +128,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V11.64: Guesswork synonym state
             const [showGuessworkSynonymModal, setShowGuessworkSynonymModal] = useState(false);
             
-            // ðŸ†• V11.16: Selection countdown (blur options)
+            // 🆕 V11.16: Selection countdown (blur options)
             const [selectionCountdown, setSelectionCountdown] = useState(
                 parseInt(localStorage.getItem('selection_countdown') || '5')
             );
             const [selectionTimeLeft, setSelectionTimeLeft] = useState(0);
             const [selectionOptionsVisible, setSelectionOptionsVisible] = useState(false);
             
-            // ðŸ†• V11.16: Guesswork exercise states
+            // 🆕 V11.16: Guesswork exercise states
             const [showGuesswork, setShowGuesswork] = useState(false);
             const [guessworkWords, setGuessworkWords] = useState([]);
             const [guessworkIndex, setGuessworkIndex] = useState(0);
@@ -145,11 +145,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [guessworkAttempts, setGuessworkAttempts] = useState(0);
             const [guessworkAIValidating, setGuessworkAIValidating] = useState(false);
             const [guessworkAIResult, setGuessworkAIResult] = useState(null);
-            const [showGuessworkHint, setShowGuessworkHint] = useState(false); // ðŸ†• V11.20
-            const [guessworkHintMeaning, setGuessworkHintMeaning] = useState(''); // ðŸ†• V11.22
-            const [guessworkHintLoading, setGuessworkHintLoading] = useState(false); // ðŸ†• V11.22
+            const [showGuessworkHint, setShowGuessworkHint] = useState(false); // 🆕 V11.20
+            const [guessworkHintMeaning, setGuessworkHintMeaning] = useState(''); // 🆕 V11.22
+            const [guessworkHintLoading, setGuessworkHintLoading] = useState(false); // 🆕 V11.22
             
-            // ðŸ†• V11.31: Translation exercise states
+            // 🆕 V11.31: Translation exercise states
             const [showTranslation, setShowTranslation] = useState(false);
             const [translationWords, setTranslationWords] = useState([]);
             const [translationIndex, setTranslationIndex] = useState(0);
@@ -161,31 +161,31 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [translationAIValidating, setTranslationAIValidating] = useState(false);
             const [translationAIResult, setTranslationAIResult] = useState(null);
             const [translationLoading, setTranslationLoading] = useState(false);
-            const [translationVoiceListening, setTranslationVoiceListening] = useState(false); // ðŸ†• V11.38: Voice-to-text
+            const [translationVoiceListening, setTranslationVoiceListening] = useState(false); // 🆕 V11.38: Voice-to-text
             
-            // ðŸ†• V11.41: Stats dashboard states
+            // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
             const [statsData, setStatsData] = useState(null);
             const [loadingStats, setLoadingStats] = useState(false);
             
-            // ðŸ†• V11.47: Reset confirmation modal
+            // 🆕 V11.47: Reset confirmation modal
             const [showResetConfirm, setShowResetConfirm] = useState(false);
             const [resetType, setResetType] = useState(null); // 'difficulty', 'stats', 'all'
             
-            // ðŸ†• V11.44: Exercise drill-down states
+            // 🆕 V11.44: Exercise drill-down states
             const [showExerciseDrillDown, setShowExerciseDrillDown] = useState(false);
             const [drillDownExercise, setDrillDownExercise] = useState(null);
             const [drillDownWords, setDrillDownWords] = useState([]);
             const [selectedDrillDownWords, setSelectedDrillDownWords] = useState([]);
 
             
-            // ðŸ†• V11.6: Exercise modes and audio control
+            // 🆕 V11.6: Exercise modes and audio control
             const [exerciseMode, setExerciseMode] = useState('random'); // 'random' or 'memory'
             const [flashcardAudioEnabled, setFlashcardAudioEnabled] = useState(
                 localStorage.getItem('flashcard_audio') !== 'false'
             );
             
-            // ðŸ†• V11.7: Preferred voice selection
+            // 🆕 V11.7: Preferred voice selection
             const [preferredVoice, setPreferredVoice] = useState(
                 localStorage.getItem('preferred_voice') || 'auto'
             );
@@ -193,7 +193,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             const searchInputRef = useRef(null);
 
-            // ðŸ†• V11.7: Load available voices
+            // 🆕 V11.7: Load available voices
             useEffect(() => {
                 const loadVoices = () => {
                     const voices = window.speechSynthesis.getVoices();
@@ -210,14 +210,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }, []);
 
-            // ðŸ†• V11.28: Auto-focus search input on mount
+            // 🆕 V11.28: Auto-focus search input on mount
             useEffect(() => {
                 if (searchInputRef.current) {
                     searchInputRef.current.focus();
                 }
             }, []);
 
-            // ðŸ†• V11.6: Auto-play audio when flashcard flips
+            // 🆕 V11.6: Auto-play audio when flashcard flips
             useEffect(() => {
                 if (showFlashcards && isFlipped && flashcardAudioEnabled && flashcardWords[flashcardIndex]?.context) {
                     // Small delay to let the flip animation complete
@@ -227,12 +227,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }, [isFlipped, flashcardIndex, showFlashcards]);
 
-            // ðŸ†• V11.14: Handle second Enter key in Dictation (after answer shown)
+            // 🆕 V11.14: Handle second Enter key in Dictation (after answer shown)
             useEffect(() => {
                 if (!showDictation || !showDictationAnswer) return;
                 
                 const handleEnterAfterCheck = async (e) => {
-                    // ðŸ†• V11.18: Ignore if Enter comes from textarea/input to prevent double execution
+                    // 🆕 V11.18: Ignore if Enter comes from textarea/input to prevent double execution
                     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
                         return;
                     }
@@ -271,7 +271,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                 }
                             }, 500);
                         } else {
-                            alert('ðŸŽ‰ Exercise completed!');
+                            alert('🎉 Exercise completed!');
                             setShowDictation(false);
                             setDictationWords([]);
                             setDictationIndex(0);
@@ -289,7 +289,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
             }, [showDictation, showDictationAnswer, dictationIndex, dictationWords, dictationDifficulty]);
 
-            // ðŸ†• V11.26: Handle second Enter key in Guesswork (after answer shown)
+            // 🆕 V11.26: Handle second Enter key in Guesswork (after answer shown)
             useEffect(() => {
                 if (!showGuesswork || !showGuessworkAnswer) return;
                 
@@ -323,7 +323,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             setGuessworkAttempts(0);
                             setGuessworkAIResult(null);
                         } else {
-                            alert('ðŸŽ‰ Exercise completed!');
+                            alert('🎉 Exercise completed!');
                             setShowGuesswork(false);
                             setGuessworkWords([]);
                             setGuessworkIndex(0);
@@ -340,7 +340,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
             }, [showGuesswork, showGuessworkAnswer, guessworkIndex, guessworkWords, guessworkDifficulty]);
 
-            // ðŸ†• V11.32: Handle second Enter key in Translation (after answer shown)
+            // 🆕 V11.32: Handle second Enter key in Translation (after answer shown)
             useEffect(() => {
                 if (!showTranslation || !showTranslationAnswer) return;
                 
@@ -381,7 +381,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             // Generate translation for next word
                             await generateSpanishTranslation(translationWords[nextIndex].context);
                         } else {
-                            alert('ðŸŽ‰ Exercise completed!');
+                            alert('🎉 Exercise completed!');
                             setShowTranslation(false);
                             setTranslationWords([]);
                             setTranslationIndex(0);
@@ -399,7 +399,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
             }, [showTranslation, showTranslationAnswer, translationIndex, translationWords, translationDifficulty]);
 
-            // ðŸ†• V11.16: Selection countdown timer
+            // 🆕 V11.16: Selection countdown timer
             useEffect(() => {
                 if (!showSelection || selectionCountdown === 0) {
                     setSelectionOptionsVisible(true);
@@ -423,19 +423,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return () => clearInterval(interval);
             }, [showSelection, selectionIndex, selectionCountdown]);
 
-            // ðŸ†• V11.4: Auto-refresh when searchMode changes
+            // 🆕 V11.4: Auto-refresh when searchMode changes
             useEffect(() => { 
-                console.log('ðŸ“„ Filters changed, fetching words...', { search, familyFilter, emptyFilter, favouriteLevel, searchMode });
+                console.log('📄 Filters changed, fetching words...', { search, familyFilter, emptyFilter, favouriteLevel, searchMode });
                 fetchWords(0, true); 
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
 
-            // ðŸ†• V11.4: Check recycle bin count on mount
+            // 🆕 V11.4: Check recycle bin count on mount
             useEffect(() => {
                 checkRecycleBinCount();
-                checkChangeHistoryCount(); // ðŸ†• V11.24
+                checkChangeHistoryCount(); // 🆕 V11.24
             }, []);
 
-            // ðŸ†• V11.2: Auto-cleanup deleted words older than 48h
+            // 🆕 V11.2: Auto-cleanup deleted words older than 48h
             useEffect(() => {
                 const cleanupInterval = setInterval(async () => {
                     const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
@@ -444,13 +444,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         .delete()
                         .not('deleted_at', 'is', null)
                         .lt('deleted_at', fortyEightHoursAgo);
-                    checkRecycleBinCount(); // ðŸ†• V11.4: Update count after cleanup
+                    checkRecycleBinCount(); // 🆕 V11.4: Update count after cleanup
                 }, 60 * 60 * 1000); // Check every hour
 
                 return () => clearInterval(cleanupInterval);
             }, []);
 
-            // ðŸ†• V11.4: Check recycle bin count
+            // 🆕 V11.4: Check recycle bin count
             async function checkRecycleBinCount() {
                 const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
                 const { count } = await supabase
@@ -462,7 +462,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 setRecycleBinCount(count || 0);
             }
 
-            // ðŸ†• V11.42: Toggle favourite level (0 â†’ 1 â†’ 2 â†’ 0)
+            // 🆕 V11.42: Toggle favourite level (0 → 1 → 2 → 0)
             async function toggleFavourite(wordId, currentLevel) {
                 const nextLevel = (currentLevel + 1) % 3;
                 
@@ -508,7 +508,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.24: Check change history count
+            // 🆕 V11.24: Check change history count
             async function checkChangeHistoryCount() {
                 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
                 const { count } = await supabase
@@ -523,7 +523,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
 
-            // ðŸ†• V11.42: Star icon component for favourite levels
+            // 🆕 V11.42: Star icon component for favourite levels
             const StarIcon = ({ level, size = "text-xl", onClick }) => {
                 const getStarClass = () => {
                     if (level === 0) return 'far fa-star star-off';
@@ -543,7 +543,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             };
 
 
-            // ðŸ†• V11.26: Smart partial matching - finds phrases even with missing words
+            // 🆕 V11.26: Smart partial matching - finds phrases even with missing words
             function highlightWordInContext(context, vocabulary) {
                 if (!context || !vocabulary) return context;
                 
@@ -645,7 +645,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 
                 // Define word types
                 const stopWords = ['not', 'to', 'a', 'an', 'the', 'in', 'on', 'at', 'of', 'for', 'with', 'by', 'is', 'are', 'was', 'were', 'just'];
-                const flexibleWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'these', 'those', 'a', 'an', 'the', 'some', 'any', 'it']; // ðŸ†• V11.29: Added 'it' for optional pronouns
+                const flexibleWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'these', 'those', 'a', 'an', 'the', 'some', 'any', 'it']; // 🆕 V11.29: Added 'it' for optional pronouns
                 const keyWords = vocabWords.filter(w => !stopWords.includes(w) && !flexibleWords.includes(w) && w.length > 2);
                 
                 let bestMatch = null;
@@ -659,8 +659,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     let contextIdx = start;
                     let endIdx = start;
                     let lastMatchIdx = start;
-                    let firstMatchIdx = -1; // ðŸ†• V11.28: Track where first match starts
-                    let matchedIndices = []; // ðŸ†• V11.29: Track exact indices of matched words
+                    let firstMatchIdx = -1; // 🆕 V11.28: Track where first match starts
+                    let matchedIndices = []; // 🆕 V11.29: Track exact indices of matched words
                     
                     while (vocabIdx < vocabWords.length && contextIdx < contextWords.length) {
                         const vocabWord = vocabWords[vocabIdx];
@@ -677,17 +677,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                                     contextWord === vocabWord.replace(/y$/, 'ies') ||
                                                     contextWord === vocabWord.replace(/y$/, 'ied');
                         
-                        // ðŸ†• V11.27: Allow flexible word substitutions (yourâ†’its, myâ†’her, etc.)
+                        // 🆕 V11.27: Allow flexible word substitutions (your→its, my→her, etc.)
                         const isFlexibleMatch = flexibleWords.includes(vocabWord) && flexibleWords.includes(contextWord);
                         
                         const isMatch = isConjugationMatch || isFlexibleMatch;
                         
                         if (isMatch) {
-                            // ðŸ†• V11.28: Save first match index
+                            // 🆕 V11.28: Save first match index
                             if (firstMatchIdx === -1) {
                                 firstMatchIdx = contextIdx;
                             }
-                            matchedIndices.push(contextIdx); // ðŸ†• V11.29: Save this match index
+                            matchedIndices.push(contextIdx); // 🆕 V11.29: Save this match index
                             matchedTotal++;
                             if (keyWords.includes(vocabWord)) {
                                 matchedKeyWords++;
@@ -697,16 +697,22 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             vocabIdx++;
                             contextIdx++;
                         } else {
-                            // ðŸ†• V11.30: If vocab word is optional and doesn't match, skip it without breaking
+                            // 🆕 V11.30: If vocab word is optional and doesn't match, skip it without breaking
                             if (flexibleWords.includes(vocabWord)) {
                                 // Optional word not found in context - skip it and continue
                                 vocabIdx++;
                                 // Don't increment contextIdx - try matching next vocab word at same context position
                             } else {
                                 // Not optional - search forward in context
+                                // 🆕 V11.67: Only skip stopWords/flexibleWords - never skip content words
+                                const currentContextWord = contextWordsLower[contextIdx]?.replace(/[^\w]/g, '') || '';
+                                const isContextStopWord = stopWords.includes(currentContextWord) || flexibleWords.includes(currentContextWord) || currentContextWord.length <= 2;
+                                if (!isContextStopWord) {
+                                    // Content word mismatch - this phrase doesn't fit here
+                                    break;
+                                }
                                 contextIdx++;
-                                // ðŸ†• V11.27: More generous skip allowance (up to 5 words)
-                                if (matchedTotal > 0 && contextIdx - lastMatchIdx > 5) break;
+                                if (matchedTotal > 0 && contextIdx - lastMatchIdx > 3) break;
                             }
                         }
                     }
@@ -715,7 +721,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const keyWordScore = keyWords.length > 0 ? matchedKeyWords / keyWords.length : 0;
                     const totalScore = vocabWords.length > 0 ? matchedTotal / vocabWords.length : 0;
                     
-                    // ðŸ†• V11.27: Prioritize key word matches even more strongly
+                    // 🆕 V11.27: Prioritize key word matches even more strongly
                     const finalScore = keyWords.length > 0 ? (keyWordScore * 2 + totalScore) / 3 : totalScore;
                     
                     // Accept match if: 70% of key words found OR 50% total words found OR at least 2 words matched
@@ -726,16 +732,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     )) {
                         bestScore = finalScore;
                         bestMatch = {
-                            start: firstMatchIdx !== -1 ? firstMatchIdx : start, // ðŸ†• V11.28: Use first match index
+                            start: firstMatchIdx !== -1 ? firstMatchIdx : start, // 🆕 V11.28: Use first match index
                             end: endIdx,
                             words: matchedTotal,
                             keyWords: matchedKeyWords,
-                            matchedIndices: matchedIndices // ðŸ†• V11.29: Save matched indices
+                            matchedIndices: matchedIndices // 🆕 V11.29: Save matched indices
                         };
                     }
                 }
                 
-                // ðŸ†• V11.29: Highlight only matched words, not intermediate words
+                // 🆕 V11.29: Highlight only matched words, not intermediate words
                 if (bestMatch && bestMatch.words >= 2) {
                     const matchedSet = new Set(bestMatch.matchedIndices);
                     const result = [];
@@ -759,7 +765,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return context;
             }
 
-            // ðŸ†• V11.27: Ultra-flexible matching for hiding words too
+            // 🆕 V11.27: Ultra-flexible matching for hiding words too
             function hideWordInContext(context, vocabulary) {
                 if (!context || !vocabulary) return context;
                 
@@ -809,13 +815,26 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                 }
                 
-                // Partial word-by-word matching
+                // 🆕 V11.67: Flexible gap-matching: allows 1-2 words between vocab words
+                // e.g. "keep in check" matches "keep inflation in check"
+                const gapCoreWords = coreVocab.split(/\s+/);
+                if (gapCoreWords.length >= 2) {
+                    const escapedGapWords = gapCoreWords.map(w => w.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'));
+                    const gapPatStr = escapedGapWords.join('(?:\\s+(?:\\w+\\s+){0,2}?)');
+                    const flexGapRegex = new RegExp('\\b' + gapPatStr + '\\b', 'gi');
+                    if (context.match(flexGapRegex)) {
+                        return context.replace(flexGapRegex, '______');
+                    }
+                }
+                
+
+                 Partial word-by-word matching
                 const vocabWords = coreVocab.split(/\s+/);
                 const contextWords = context.split(/\s+/);
                 const contextWordsLower = contextWords.map(w => w.toLowerCase());
                 
                 const stopWords = ['not', 'to', 'a', 'an', 'the', 'in', 'on', 'at', 'of', 'for', 'with', 'by', 'is', 'are', 'was', 'were', 'just'];
-                const flexibleWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'these', 'those', 'a', 'an', 'the', 'some', 'any', 'it']; // ðŸ†• V11.29: Added 'it' for optional pronouns
+                const flexibleWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'these', 'those', 'a', 'an', 'the', 'some', 'any', 'it']; // 🆕 V11.29: Added 'it' for optional pronouns
                 const keyWords = vocabWords.filter(w => !stopWords.includes(w) && !flexibleWords.includes(w) && w.length > 2);
                 
                 let bestMatch = null;
@@ -828,7 +847,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     let contextIdx = start;
                     let endIdx = start;
                     let lastMatchIdx = start;
-                    let firstMatchIdx = -1; // ðŸ†• V11.28: Track where first match starts
+                    let firstMatchIdx = -1; // 🆕 V11.28: Track where first match starts
                     
                     while (vocabIdx < vocabWords.length && contextIdx < contextWords.length) {
                         const vocabWord = vocabWords[vocabIdx];
@@ -848,7 +867,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         const isMatch = isConjugationMatch || isFlexibleMatch;
                         
                         if (isMatch) {
-                            // ðŸ†• V11.28: Save first match index
+                            // 🆕 V11.28: Save first match index
                             if (firstMatchIdx === -1) {
                                 firstMatchIdx = contextIdx;
                             }
@@ -861,15 +880,22 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             vocabIdx++;
                             contextIdx++;
                         } else {
-                            // ðŸ†• V11.30: If vocab word is optional and doesn't match, skip it without breaking
+                            // 🆕 V11.30: If vocab word is optional and doesn't match, skip it without breaking
                             if (flexibleWords.includes(vocabWord)) {
                                 // Optional word not found in context - skip it and continue
                                 vocabIdx++;
                                 // Don't increment contextIdx - try matching next vocab word at same context position
                             } else {
-                                // Not optional - search forward in context
-                                contextIdx++;
-                                if (matchedTotal > 0 && contextIdx - lastMatchIdx > 5) break;
+                                // 🆕 V11.67: Only skip if vocab word is a stopWord (can appear at different positions)
+                                // Never skip over content words in the context
+                                if (stopWords.includes(vocabWord)) {
+                                    // StopWord in vocab (e.g. 'in' in 'keep in check') - allow skipping 1 context word
+                                    contextIdx++;
+                                    if (matchedTotal > 0 && contextIdx - lastMatchIdx > 2) break;
+                                } else {
+                                    // KeyWord in vocab doesn't match context word - break immediately
+                                    break;
+                                }
                             }
                         }
                     }
@@ -885,7 +911,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     )) {
                         bestScore = finalScore;
                         bestMatch = {
-                            start: firstMatchIdx !== -1 ? firstMatchIdx : start, // ðŸ†• V11.28: Use first match index
+                            start: firstMatchIdx !== -1 ? firstMatchIdx : start, // 🆕 V11.28: Use first match index
                             end: endIdx,
                             words: matchedTotal
                         };
@@ -901,7 +927,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return context;
             }
 
-            // ðŸ†• V11.12: Updated speakText with speed control
+            // 🆕 V11.12: Updated speakText with speed control
             function speakText(text, speed = 1.0, useDelay = true) {
                 if ('speechSynthesis' in window) {
                     window.speechSynthesis.cancel(); // Cancel any ongoing speech
@@ -915,7 +941,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         utterance.pitch = 1.0; // Natural pitch
                         utterance.volume = 1.0; // Full volume
                         
-                        // ðŸ†• V11.7: Use preferred voice if selected
+                        // 🆕 V11.7: Use preferred voice if selected
                         if (preferredVoice !== 'auto') {
                             const selectedVoice = voices.find(v => v.name === preferredVoice);
                             if (selectedVoice) {
@@ -954,22 +980,22 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         window.speechSynthesis.speak(utterance);
                     };
                     
-                    // ðŸ†• V11.8: Apply delay by default (changed from V11.7)
+                    // 🆕 V11.8: Apply delay by default (changed from V11.7)
                     if (useDelay) {
                         setTimeout(doSpeak, 150);
                     } else {
                         doSpeak();
                     }
                 } else {
-                    alert('âŒ Text-to-speech not supported in this browser');
+                    alert('❌ Text-to-speech not supported in this browser');
                 }
             }
 
-            // ðŸ†• V11.5: Compare user input with correct answer and highlight differences
+            // 🆕 V11.5: Compare user input with correct answer and highlight differences
             function highlightDifferences(userInput, correctAnswer) {
                 if (!correctAnswer) return { highlighted: '', errorCount: 0 };
                 
-                // ðŸ†• V11.6: Empty input should be marked as error
+                // 🆕 V11.6: Empty input should be marked as error
                 if (!userInput || userInput.trim() === '') {
                     // Count all words as errors
                     const correctWords = correctAnswer.toLowerCase().trim().split(/\s+/);
@@ -1013,7 +1039,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return { highlighted, errorCount };
             }
 
-            // ðŸ†• V11.5: Calculate difficulty based on error count
+            // 🆕 V11.5: Calculate difficulty based on error count
             function calculateDifficulty(errorCount) {
                 if (errorCount <= 1) return 'Active';
                 if (errorCount === 2) return 'Emerging';
@@ -1023,20 +1049,20 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             async function fetchWords(pageNum, isNewSearch = false) {
                 if (loading && !isNewSearch) return;
                 if (!supabase) {
-                    alert("âš ï¸ Supabase not configured!\n\nPlease configure your Supabase credentials in Settings (âš™ï¸) to use the app.");
+                    alert("⚠️ Supabase not configured!\n\nPlease configure your Supabase credentials in Settings (⚙️) to use the app.");
                     setLoading(false);
                     return;
                 }
-                console.log('ðŸ”¥ fetchWords called:', { pageNum, isNewSearch, currentFilters: { search, familyFilter, emptyFilter, favouriteLevel } });
+                console.log('🔥 fetchWords called:', { pageNum, isNewSearch, currentFilters: { search, familyFilter, emptyFilter, favouriteLevel } });
                 setLoading(true);
                 const PAGE_SIZE = 50;
                 try {
                     let query = supabase.from('vocabulary_v4').select('*', { count: 'exact' });
                     
-                    // ðŸ†• V11.2: Exclude deleted items
+                    // 🆕 V11.2: Exclude deleted items
                     query = query.is('deleted_at', null);
                     
-                    // ðŸ†• V11.24: Search modes (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
+                    // 🆕 V11.24: Search modes (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
                     if (search) {
                         if (searchMode === 0) {
                             // Mode 0: Search only in vocabulary column
@@ -1060,12 +1086,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
                     
-                    // ðŸ†• V11.54: Fixed to include literal string "NULL" as well
+                    // 🆕 V11.54: Fixed to include literal string "NULL" as well
                     if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq.');
                     else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
                     else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
@@ -1076,13 +1102,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         .range(pageNum * PAGE_SIZE, (pageNum * PAGE_SIZE) + PAGE_SIZE - 1);
 
                     if (error && error.code === 'PGRST103') {
-                        console.log('âš ï¸ No more data to load (reached end)');
+                        console.log('⚠️ No more data to load (reached end)');
                         setHasMore(false);
                         setLoading(false);
                         return;
                     }
 
-                    console.log('ðŸ“¦ Received data:', { count, dataLength: data?.length, isNewSearch, hasData: !!data });
+                    console.log('📦 Received data:', { count, dataLength: data?.length, isNewSearch, hasData: !!data });
                     setTotalCount(count || 0);
                     
                     if (data) {
@@ -1095,18 +1121,18 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         }
                         setHasMore(data.length === PAGE_SIZE);
                     } else {
-                        console.warn('âš ï¸ Received null data, not updating state');
+                        console.warn('⚠️ Received null data, not updating state');
                         setHasMore(false);
                     }
                 } catch (err) {
-                    console.error('âŒ fetchWords error:', err);
+                    console.error('❌ fetchWords error:', err);
                     setHasMore(false);
                 } finally { 
                     setLoading(false); 
                 }
             }
 
-            // ðŸ†• V11.2: Get AI synonyms for deep search
+            // 🆕 V11.2: Get AI synonyms for deep search
             async function getAISynonyms(word) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) return [];
@@ -1135,7 +1161,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const data = await response.json();
                     const synonymsText = data.choices?.[0]?.message?.content || '';
                     const synonyms = synonymsText.split(',').map(s => s.trim()).filter(s => s);
-                    console.log('ðŸ” Deep Search synonyms:', synonyms);
+                    console.log('🔍 Deep Search synonyms:', synonyms);
                     return synonyms;
                 } catch (error) {
                     console.error('Deep Search error:', error);
@@ -1145,7 +1171,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.2: Load recycle bin
+            // 🆕 V11.2: Load recycle bin
             async function loadRecycleBin() {
                 const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
                 const { data } = await supabase
@@ -1159,11 +1185,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 setShowRecycleBin(true);
             }
 
-            // ðŸ†• V11.21: Load change history from last 2 hours
+            // 🆕 V11.21: Load change history from last 2 hours
             async function loadChangeHistory() {
                 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
                 
-                console.log('ðŸ” Loading change history from:', twoHoursAgo);
+                console.log('🔍 Loading change history from:', twoHoursAgo);
                 
                 const { data, error } = await supabase
                     .from('vocabulary_v4')
@@ -1175,18 +1201,18 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     .order('modified_at', { ascending: false });
                 
                 if (error) {
-                    console.error('âŒ Change history error:', error);
+                    console.error('❌ Change history error:', error);
                     alert('Error loading change history: ' + error.message);
                 }
                 
-                console.log('ðŸ“Š Change history data:', data);
-                console.log('ðŸ“Š Found', data?.length || 0, 'changed words');
+                console.log('📊 Change history data:', data);
+                console.log('📊 Found', data?.length || 0, 'changed words');
                 
                 setChangedWords(data || []);
                 setShowChangeHistory(true);
             }
 
-            // ðŸ†• V11.21: Restore previous versions of selected words
+            // 🆕 V11.21: Restore previous versions of selected words
             async function restorePreviousVersions() {
                 if (selectedForHistory.length === 0) {
                     alert('Please select words to restore');
@@ -1209,10 +1235,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         }
                     }
                     
-                    alert(`âœ… Restored ${selectedForHistory.length} word(s) to previous version`);
+                    alert(`✅ Restored ${selectedForHistory.length} word(s) to previous version`);
                     setSelectedForHistory([]);
                     loadChangeHistory();
-                    checkChangeHistoryCount(); // ðŸ†• V11.24
+                    checkChangeHistoryCount(); // 🆕 V11.24
                     fetchWords(0, true);
                 } catch (error) {
                     console.error('Restore error:', error);
@@ -1220,7 +1246,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.2: Restore words from recycle bin
+            // 🆕 V11.2: Restore words from recycle bin
             async function restoreWords() {
                 if (selectedForRestore.length === 0) {
                     alert('Please select words to restore');
@@ -1235,25 +1261,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             .eq('id', id);
                     }
                     
-                    alert(`âœ… Restored ${selectedForRestore.length} word(s)`);
+                    alert(`✅ Restored ${selectedForRestore.length} word(s)`);
                     setSelectedForRestore([]);
                     loadRecycleBin();
                     fetchWords(0, true);
-                    checkRecycleBinCount(); // ðŸ†• V11.4
+                    checkRecycleBinCount(); // 🆕 V11.4
                 } catch (error) {
                     console.error('Restore error:', error);
                     alert('Error restoring words');
                 }
             }
 
-            // ðŸ†• V11.2: Permanently delete from recycle bin
+            // 🆕 V11.2: Permanently delete from recycle bin
             async function permanentlyDelete() {
                 if (selectedForRestore.length === 0) {
                     alert('Please select words to delete permanently');
                     return;
                 }
 
-                if (!confirm(`âš ï¸ Permanently delete ${selectedForRestore.length} word(s)? This cannot be undone!`)) {
+                if (!confirm(`⚠️ Permanently delete ${selectedForRestore.length} word(s)? This cannot be undone!`)) {
                     return;
                 }
 
@@ -1265,17 +1291,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             .eq('id', id);
                     }
                     
-                    alert(`âœ… Permanently deleted ${selectedForRestore.length} word(s)`);
+                    alert(`✅ Permanently deleted ${selectedForRestore.length} word(s)`);
                     setSelectedForRestore([]);
                     loadRecycleBin();
-                    checkRecycleBinCount(); // ðŸ†• V11.4
+                    checkRecycleBinCount(); // 🆕 V11.4
                 } catch (error) {
                     console.error('Permanent delete error:', error);
                     alert('Error deleting words');
                 }
             }
 
-            // ðŸ†• V11.41: Load statistics dashboard
+            // 🆕 V11.41: Load statistics dashboard
             async function loadStats() {
                 setLoadingStats(true);
                 setShowStats(true);
@@ -1356,7 +1382,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
             
-            // ðŸ†• V11.44: Open exercise drill-down to practice difficult words
+            // 🆕 V11.44: Open exercise drill-down to practice difficult words
             async function openExerciseDrillDown(exerciseType) {
                 try {
                     const { data: allWords } = await supabase
@@ -1411,7 +1437,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             break;
                     }
                     
-                    // ðŸ†• V11.52: Close Stats modal before opening drill-down
+                    // 🆕 V11.52: Close Stats modal before opening drill-down
                     setShowStats(false);
                     setDrillDownExercise(exerciseType);
                     setDrillDownWords(difficultWords);
@@ -1424,7 +1450,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
             
-            // ðŸ†• V11.44: Practice selected difficult words
+            // 🆕 V11.44: Practice selected difficult words
             async function practiceSelectedWords() {
                 if (selectedDrillDownWords.length === 0) {
                     alert('Please select at least one word to practice');
@@ -1482,7 +1508,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         });
                         
                         if (validWords.length === 0) {
-                            alert('âš ï¸ Not enough words with matching family for Selection exercise!\n\nTip: Select more words or try a different exercise.');
+                            alert('⚠️ Not enough words with matching family for Selection exercise!\n\nTip: Select more words or try a different exercise.');
                             return;
                         }
                         
@@ -1529,7 +1555,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
             
-            // ðŸ†• V11.41: Reset difficulty only
+            // 🆕 V11.41: Reset difficulty only
             async function resetDifficulty() {
                 setResetType('difficulty');
                 setShowResetConfirm(true);
@@ -1538,7 +1564,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             async function executeResetDifficulty() {
                 try {
                     await supabase.from('vocabulary_v4').update({ difficulty: null }).is('deleted_at', null);
-                    alert('âœ… Difficulty reset!');
+                    alert('✅ Difficulty reset!');
                     loadStats();
                     fetchWords(0, true);
                     setShowResetConfirm(false);
@@ -1547,7 +1573,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
             
-            // ðŸ†• V11.41: Reset exercise stats only
+            // 🆕 V11.41: Reset exercise stats only
             async function resetExerciseStats() {
                 setResetType('stats');
                 setShowResetConfirm(true);
@@ -1560,7 +1586,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
-                    alert('âœ… Exercise stats reset!');
+                    alert('✅ Exercise stats reset!');
                     loadStats();
                     fetchWords(0, true);
                     setShowResetConfirm(false);
@@ -1569,7 +1595,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
             
-            // ðŸ†• V11.41: Reset all progress (difficulty + stats)
+            // 🆕 V11.41: Reset all progress (difficulty + stats)
             async function resetAllProgress() {
                 setResetType('all');
                 setShowResetConfirm(true);
@@ -1582,7 +1608,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
-                    alert('âœ… All progress reset!');
+                    alert('✅ All progress reset!');
                     loadStats();
                     fetchWords(0, true);
                     setShowResetConfirm(false);
@@ -1596,10 +1622,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
                     
-                    // ðŸ†• V11.2: Exclude deleted items
+                    // 🆕 V11.2: Exclude deleted items
                     query = query.is('deleted_at', null);
                     
-                    // ðŸ†• V11.38: Respect searchMode like fetchWords
+                    // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
                             query = query.ilike('vocabulary', `%${search}%`);
@@ -1619,12 +1645,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
                     
-                    // ðŸ†• V11.54: Fixed to include literal string "NULL" as well
+                    // 🆕 V11.54: Fixed to include literal string "NULL" as well
                     if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq.');
                     else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
                     else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
@@ -1635,10 +1661,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     if (error) throw error;
                     
                     if (data && data.length > 0) {
-                        // ðŸ†• V11.6: Sort by mode
+                        // 🆕 V11.6: Sort by mode
                         let sortedData = [...data];
                         if (exerciseMode === 'memory') {
-                            // Memory mode: Hard â†’ Medium â†’ Easy â†’ No difficulty
+                            // Memory mode: Hard → Medium → Easy → No difficulty
                             const difficultyOrder = { 'Passive': 0, 'Emerging': 1, 'Active': 2 };
                             sortedData.sort((a, b) => {
                                 const aOrder = difficultyOrder[a.difficulty] ?? 3;
@@ -1663,7 +1689,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.2: Set difficulty and move to next card
+            // 🆕 V11.2: Set difficulty and move to next card
             async function setDifficulty(difficulty) {
                 const currentWord = flashcardWords[flashcardIndex];
                 
@@ -1696,7 +1722,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.4: Load Dictation Exercise
+            // 🆕 V11.4: Load Dictation Exercise
             async function loadDictation() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
@@ -1705,7 +1731,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     query = query.not('context', 'is', null);
                     query = query.neq('context', '');
                     
-                    // ðŸ†• V11.38: Respect searchMode like fetchWords
+                    // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
                             query = query.ilike('vocabulary', `%${search}%`);
@@ -1725,7 +1751,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
@@ -1735,10 +1761,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     if (error) throw error;
                     
                     if (data && data.length > 0) {
-                        // ðŸ†• V11.6: Sort by mode
+                        // 🆕 V11.6: Sort by mode
                         let sortedData = [...data];
                         if (exerciseMode === 'memory') {
-                            // Memory mode: Hard â†’ Medium â†’ Easy â†’ No difficulty
+                            // Memory mode: Hard → Medium → Easy → No difficulty
                             const difficultyOrder = { 'Passive': 0, 'Emerging': 1, 'Active': 2 };
                             sortedData.sort((a, b) => {
                                 const aOrder = difficultyOrder[a.difficulty] ?? 3;
@@ -1766,7 +1792,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.11: Load Selection exercise
+            // 🆕 V11.11: Load Selection exercise
             async function loadSelection() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
@@ -1775,7 +1801,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     query = query.not('context', 'is', null);
                     query = query.neq('context', '');
                     
-                    // ðŸ†• V11.38: Respect searchMode like fetchWords
+                    // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
                             query = query.ilike('vocabulary', `%${search}%`);
@@ -1795,7 +1821,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
@@ -1805,7 +1831,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     if (error) throw error;
                     
                     if (data && data.length > 0) {
-                        // ðŸ†• V11.19: Filter words to only include those with enough same family options
+                        // 🆕 V11.19: Filter words to only include those with enough same family options
                         const validWords = data.filter(word => {
                             const sameLevelFamily = data.filter(w => 
                                 w.vocabulary !== word.vocabulary &&
@@ -1815,7 +1841,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         });
                         
                         if (validWords.length === 0) {
-                            alert('âš ï¸ Not enough words with matching family!\n\nTip: Add more words with the same Family to enable this exercise.');
+                            alert('⚠️ Not enough words with matching family!\n\nTip: Add more words with the same Family to enable this exercise.');
                             return;
                         }
                         
@@ -1867,13 +1893,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.11: Generate 6 options (1 correct + 5 wrong) for Selection
-            // ðŸ†• V11.16: Generate options with same level and family for increased difficulty
-            // ðŸ†• V11.19: Generate Selection options - STRICT: same level AND family ONLY
+            // 🆕 V11.11: Generate 6 options (1 correct + 5 wrong) for Selection
+            // 🆕 V11.16: Generate options with same level and family for increased difficulty
+            // 🆕 V11.19: Generate Selection options - STRICT: same level AND family ONLY
             function generateSelectionOptions(correctWord, allWords) {
                 const options = [correctWord];
                 
-                // ðŸ†• V11.19: ALWAYS filter by same family (no fallbacks)
+                // 🆕 V11.19: ALWAYS filter by same family (no fallbacks)
                 // This ensures all options are truly similar and prevents elimination by deduction
                 const filteredWords = allWords.filter(w => 
                     w.vocabulary !== correctWord.vocabulary &&
@@ -1882,7 +1908,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 
                 // If not enough words available, show warning but still use what we have
                 if (filteredWords.length < 5) {
-                    console.warn(`âš ï¸ Only ${filteredWords.length} words found with only family="${correctWord.family}". Need at least 5 for best results.`);
+                    console.warn(`⚠️ Only ${filteredWords.length} words found with only family="${correctWord.family}". Need at least 5 for best results.`);
                 }
                 
                 // Get up to 5 random wrong answers from filtered words
@@ -1893,7 +1919,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 
                 // If we don't have enough options (less than 2 total), skip this word
                 if (options.length < 2) {
-                    console.error(`âŒ Not enough options for "${correctWord.vocabulary}" family=${correctWord.family}). Skipping.`);
+                    console.error(`❌ Not enough options for "${correctWord.vocabulary}" family=${correctWord.family}). Skipping.`);
                     return null;
                 }
                 
@@ -1901,11 +1927,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return options.sort(() => Math.random() - 0.5);
             }
 
-            // ðŸ†• V11.22: Generate meaning for Guesswork hint with AI
+            // 🆕 V11.22: Generate meaning for Guesswork hint with AI
             async function generateGuessworkHintMeaning(word) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey || apiKey === '') {
-                    setGuessworkHintMeaning('âš ï¸ API key not configured. Please set your Groq API Key in Settings.');
+                    setGuessworkHintMeaning('⚠️ API key not configured. Please set your Groq API Key in Settings.');
                     return;
                 }
 
@@ -1937,13 +1963,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     setGuessworkHintMeaning(meaning.trim());
                 } catch (error) {
                     console.error('Generate meaning error:', error);
-                    setGuessworkHintMeaning('âŒ Error generating meaning. Please try again.');
+                    setGuessworkHintMeaning('❌ Error generating meaning. Please try again.');
                 } finally {
                     setGuessworkHintLoading(false);
                 }
             }
 
-            // ðŸ†• V11.16: Load Guesswork Exercise
+            // 🆕 V11.16: Load Guesswork Exercise
             async function loadGuesswork() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
@@ -1952,7 +1978,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     query = query.not('context', 'is', null);
                     query = query.neq('context', '');
                     
-                    // ðŸ†• V11.38: Respect searchMode like fetchWords
+                    // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
                             query = query.ilike('vocabulary', `%${search}%`);
@@ -1972,7 +1998,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
@@ -2012,7 +2038,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.31: Load Translation Exercise
+            // 🆕 V11.31: Load Translation Exercise
             async function loadTranslation() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
@@ -2021,7 +2047,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     query = query.not('context', 'is', null);
                     query = query.neq('context', '');
                     
-                    // ðŸ†• V11.38: Respect searchMode like fetchWords
+                    // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
                             query = query.ilike('vocabulary', `%${search}%`);
@@ -2041,7 +2067,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                    // ðŸ†• V11.42: Filter by favourite level
+                    // 🆕 V11.42: Filter by favourite level
                     if (favouriteLevel === 1) query = query.eq('favourite', 1);
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
@@ -2085,11 +2111,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // ðŸ†• V11.31: Generate Spanish translation using AI
+            // 🆕 V11.31: Generate Spanish translation using AI
             async function generateSpanishTranslation(englishContext) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) {
-                    alert('âš ï¸ Please set your Groq API Key in Settings first!');
+                    alert('⚠️ Please set your Groq API Key in Settings first!');
                     setShowTranslation(false);
                     setShowSettings(true);
                     return;
@@ -2124,17 +2150,17 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                     setTranslationSpanish(translation);
                 } catch (error) {
                     console.error('Translation error:', error);
-                    setTranslationSpanish('âŒ Error generating translation');
+                    setTranslationSpanish('❌ Error generating translation');
                 } finally {
                     setTranslationLoading(false);
                 }
             }
 
-            // ðŸ†• V11.16: Validate answer with AI for Guesswork exercise
+            // 🆕 V11.16: Validate answer with AI for Guesswork exercise
             async function validateGuessworkWithAI(userAnswer, correctAnswer, context) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) {
-                    alert('âš ï¸ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
+                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
 
@@ -2214,7 +2240,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     return result;
                 } catch (error) {
                     console.error('AI Validation Error:', error);
-                    alert('âŒ AI validation failed. Please check your API key.');
+                    alert('❌ AI validation failed. Please check your API key.');
                     return null;
                 } finally {
                     setGuessworkAIValidating(false);
@@ -2333,15 +2359,15 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // ðŸ†• V11.38: Validate translation with Cambridge grading (C1/C2/B2/B1)
+            // 🆕 V11.38: Validate translation with Cambridge grading (C1/C2/B2/B1)
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) {
-                    alert('âš ï¸ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
+                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
 
-                // ðŸ†• V11.38: Check for EXACT match - AI evaluates C1 vs C2
+                // 🆕 V11.38: Check for EXACT match - AI evaluates C1 vs C2
                 const userClean = userTranslation.trim().toLowerCase();
                 const originalClean = originalEnglish.trim().toLowerCase();
                 
@@ -2382,7 +2408,7 @@ Respond ONLY with "C2" or "C1" - nothing else.`;
                             percentage: 100,
                             grammar_errors: [],
                             vocabulary_issues: [],
-                            feedback: "ðŸŽ‰ Perfect! Your translation matches the original exactly. Excellent work!"
+                            feedback: "🎉 Perfect! Your translation matches the original exactly. Excellent work!"
                         };
                     } catch (error) {
                         console.error('Level check error:', error);
@@ -2394,7 +2420,7 @@ Respond ONLY with "C2" or "C1" - nothing else.`;
                             percentage: 100,
                             grammar_errors: [],
                             vocabulary_issues: [],
-                            feedback: "ðŸŽ‰ Perfect! Your translation matches the original exactly. Excellent work!"
+                            feedback: "🎉 Perfect! Your translation matches the original exactly. Excellent work!"
                         };
                     }
                 }
@@ -2408,37 +2434,37 @@ Respond ONLY with "C2" or "C1" - nothing else.`;
 **STUDENT'S ENGLISH TRANSLATION**: "${userTranslation}"
 
 **STRICT GRADING CRITERIA** (V11.38 - Cambridge Levels):
-- **0 errors** â†’ Grade **C1** or **C2** (score: Easy), percentage: 90-100%
+- **0 errors** → Grade **C1** or **C2** (score: Easy), percentage: 90-100%
   * C2: Very sophisticated grammar, complex structures
   * C1: Advanced but less complex
-- **1 error** (grammar OR vocabulary) â†’ Grade **B2** (score: Medium), percentage: 70-85%
-- **2+ errors** â†’ Grade **B1** (score: Hard), percentage: 40-65%
+- **1 error** (grammar OR vocabulary) → Grade **B2** (score: Medium), percentage: 70-85%
+- **2+ errors** → Grade **B1** (score: Hard), percentage: 40-65%
 
 **IMPORTANT**: Easy/Medium/Hard represents student's memorization difficulty, NOT the Cambridge level itself.
 
 **SPECIAL RULES**:
-âš ï¸ IGNORE he/she/his/her differences (Spanish doesn't specify gender)
-âš ï¸ Be STRICT but FAIR - count only real errors
-âš ï¸ Punctuation differences are NOT errors
+⚠️ IGNORE he/she/his/her differences (Spanish doesn't specify gender)
+⚠️ Be STRICT but FAIR - count only real errors
+⚠️ Punctuation differences are NOT errors
 
 **EVALUATION STEPS**:
 1. Count GRAMMAR errors in the **ENGLISH translation**: tense, subject-verb agreement, word order, articles, prepositions
 2. Count VOCABULARY errors in the **ENGLISH translation**: wrong word choice, spelling mistakes in English, missing/extra words (except he/she)
 3. Total errors = grammar_errors.length + vocabulary_issues.length
 4. Assign grade based on TOTAL ERROR COUNT:
-   - 0 errors â†’ Evaluate grammar sophistication: **C2** (very complex) or **C1** (advanced), score: **Easy**
-   - 1 error â†’ **B2**, score: **Medium**
-   - 2+ errors â†’ **B1**, score: **Hard**
+   - 0 errors → Evaluate grammar sophistication: **C2** (very complex) or **C1** (advanced), score: **Easy**
+   - 1 error → **B2**, score: **Medium**
+   - 2+ errors → **B1**, score: **Hard**
 
 **FEEDBACK REQUIREMENTS**:
-âœ… Correct errors in the **ENGLISH translation** only (NOT the Spanish)
-âœ… Format: "Error in English: [wrong part] â†’ Should be: [English correction]. Reason: [why]"
-âœ… If 0 errors: "Perfect translation! No errors found. âœ…"
-âœ… Be CONCISE and SPECIFIC about **ENGLISH** corrections
-âŒ NO generic praise like "good attempt", "with revision could improve", etc.
-âŒ NO vague or encouraging comments
-âŒ NO suggestions if translation is already correct
-âŒ DO NOT correct the Spanish text - only the English translation
+✅ Correct errors in the **ENGLISH translation** only (NOT the Spanish)
+✅ Format: "Error in English: [wrong part] → Should be: [English correction]. Reason: [why]"
+✅ If 0 errors: "Perfect translation! No errors found. ✅"
+✅ Be CONCISE and SPECIFIC about **ENGLISH** corrections
+❌ NO generic praise like "good attempt", "with revision could improve", etc.
+❌ NO vague or encouraging comments
+❌ NO suggestions if translation is already correct
+❌ DO NOT correct the Spanish text - only the English translation
 
 Respond ONLY in this JSON format (no markdown, no backticks):
 {
@@ -2447,7 +2473,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
   "percentage": 95,
   "grammar_errors": ["specific grammar error in English 1", "error 2"],
   "vocabulary_issues": ["specific vocabulary issue in English 1"],
-  "feedback": "Concise list of English corrections. If no errors: 'Perfect translation! No errors found. âœ…'"
+  "feedback": "Concise list of English corrections. If no errors: 'Perfect translation! No errors found. ✅'"
 }`;
 
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -2489,24 +2515,24 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     return result;
                 } catch (error) {
                     console.error('Translation Validation Error:', error);
-                    alert('âŒ Translation validation failed. Please check your API key.');
+                    alert('❌ Translation validation failed. Please check your API key.');
                     return null;
                 } finally {
                     setTranslationAIValidating(false);
                 }
             }
 
-            // ðŸ†• V11.38: Voice-to-text function for Translation exercise
-            // ðŸ†• V11.38: Voice-to-text with file:// protocol detection
+            // 🆕 V11.38: Voice-to-text function for Translation exercise
+            // 🆕 V11.38: Voice-to-text with file:// protocol detection
             function startTranslationVoiceRecognition() {
                 if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                    alert('âŒ Voice recognition not supported in this browser.\n\nPlease use Chrome, Edge, or Safari.');
+                    alert('❌ Voice recognition not supported in this browser.\n\nPlease use Chrome, Edge, or Safari.');
                     return;
                 }
 
-                // ðŸ†• V11.38: Detect file:// protocol (microphone won't work in Chrome)
+                // 🆕 V11.38: Detect file:// protocol (microphone won't work in Chrome)
                 if (window.location.protocol === 'file:') {
-                    alert('âš ï¸ MICROPHONE NOT AVAILABLE\n\nðŸ“ You are running this file locally (file://)\n\nChrome blocks microphone access for local files for security reasons.\n\nâœ… SOLUTIONS:\nâ€¢ Type your translation manually (recommended)\nâ€¢ Upload file to a web server (http:// or https://)\nâ€¢ Use Firefox (may work with local files)');
+                    alert('⚠️ MICROPHONE NOT AVAILABLE\n\n📁 You are running this file locally (file://)\n\nChrome blocks microphone access for local files for security reasons.\n\n✅ SOLUTIONS:\n• Type your translation manually (recommended)\n• Upload file to a web server (http:// or https://)\n• Use Firefox (may work with local files)');
                     return;
                 }
 
@@ -2531,15 +2557,15 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     console.error('Voice recognition error:', event.error);
                     setTranslationVoiceListening(false);
                     
-                    // ðŸ†• V11.38: Improved mobile error messages
+                    // 🆕 V11.38: Improved mobile error messages
                     if (event.error === 'no-speech') {
-                        alert('âš ï¸ No speech detected. Please try again.');
+                        alert('⚠️ No speech detected. Please try again.');
                     } else if (event.error === 'not-allowed' || event.error === 'audio-capture') {
-                        alert('âŒ Microphone access denied.\n\nðŸ“± MOBILE: Open browser settings â†’ Find this site â†’ Enable microphone\n\nðŸ–¥ï¸ DESKTOP: Click the microphone icon in address bar â†’ Allow');
+                        alert('❌ Microphone access denied.\n\n📱 MOBILE: Open browser settings → Find this site → Enable microphone\n\n🖥️ DESKTOP: Click the microphone icon in address bar → Allow');
                     } else if (event.error === 'network') {
-                        alert('âŒ Network error. Please check your internet connection.');
+                        alert('❌ Network error. Please check your internet connection.');
                     } else {
-                        alert(`âŒ Voice recognition error: ${event.error}\n\nTry again or type manually.`);
+                        alert(`❌ Voice recognition error: ${event.error}\n\nTry again or type manually.`);
                     }
                 };
 
@@ -2552,11 +2578,11 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 } catch (error) {
                     console.error('Failed to start recognition:', error);
                     setTranslationVoiceListening(false);
-                    alert('âŒ Could not start voice recognition.\n\nPlease ensure microphone permissions are granted.');
+                    alert('❌ Could not start voice recognition.\n\nPlease ensure microphone permissions are granted.');
                 }
             }
 
-            // ðŸ†• V11.6: Open word in dictionary
+            // 🆕 V11.6: Open word in dictionary
             function openInDictionary(word) {
                 const urls = {
                     wordreference: `https://www.wordreference.com/enes/${word}`,
@@ -2574,7 +2600,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             const getFormattedDate = () => new Date().toISOString().split('T')[0];
 
             const exportCSV = async () => {
-                // ðŸ†• V11.2: Export only non-deleted items
+                // 🆕 V11.2: Export only non-deleted items
                 const { data } = await supabase.from('vocabulary_v4').select('*').is('deleted_at', null).order('created_at', { ascending: false });
                 if (!data || data.length === 0) return;
                 const headers = Object.keys(data[0]);
@@ -2597,13 +2623,13 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         // Parse file
                         if (file.name.endsWith('.json')) {
                             parsedData = JSON.parse(evt.target.result);
-                            console.log('ðŸ“„ JSON parsed, records:', parsedData.length);
+                            console.log('📄 JSON parsed, records:', parsedData.length);
                         } else {
                             const lines = evt.target.result.split("\n").filter(l => l.trim());
                             const sep = lines[0].includes(';') ? ';' : ',';
                             const headers = lines[0].replace(/^\ufeff/, "").split(sep).map(h => h.replace(/"/g, "").trim().toLowerCase());
                             
-                            console.log('ðŸ“„ CSV Headers detected:', headers);
+                            console.log('📄 CSV Headers detected:', headers);
                             
                             parsedData = lines.slice(1).map(line => {
                                 const values = line.split(sep).map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"').trim());
@@ -2616,11 +2642,11 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         
                         // Log first raw record
                         if (parsedData.length > 0) {
-                            console.log('ðŸ“ First RAW record from file:', parsedData[0]);
-                            console.log('ðŸ“ All keys in first record:', Object.keys(parsedData[0]));
+                            console.log('📝 First RAW record from file:', parsedData[0]);
+                            console.log('📝 All keys in first record:', Object.keys(parsedData[0]));
                         }
                         
-                        // ðŸ†• V11.50: Enhanced conversion with validation
+                        // 🆕 V11.50: Enhanced conversion with validation
                         const finalUpload = parsedData.filter(d => d.vocabulary).map((d, index) => {
                             
                             const convertToInt = (val, fieldName) => {
@@ -2628,7 +2654,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                                 if (val === 'null' || val === 'false' || val === 'true' || val === 'undefined') return 0;
                                 const num = parseInt(val);
                                 if (isNaN(num)) {
-                                    console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid integer, using 0)`);
+                                    console.warn(`⚠️ Record ${index}: ${fieldName} = "${val}" (invalid integer, using 0)`);
                                     return 0;
                                 }
                                 return num;
@@ -2637,7 +2663,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                             const convertToBoolean = (val, fieldName) => {
                                 if (val === true || val === 'true' || val === '1' || val === 1) return true;
                                 if (val === false || val === 'false' || val === '0' || val === 0 || !val) return false;
-                                console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid boolean, using false)`);
+                                console.warn(`⚠️ Record ${index}: ${fieldName} = "${val}" (invalid boolean, using false)`);
                                 return false;
                             };
                             
@@ -2646,12 +2672,12 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                                 try {
                                     const date = new Date(val);
                                     if (isNaN(date.getTime())) {
-                                        console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid date, using null)`);
+                                        console.warn(`⚠️ Record ${index}: ${fieldName} = "${val}" (invalid date, using null)`);
                                         return null;
                                     }
                                     return date.toISOString();
                                 } catch {
-                                    console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (date parse error, using null)`);
+                                    console.warn(`⚠️ Record ${index}: ${fieldName} = "${val}" (date parse error, using null)`);
                                     return null;
                                 }
                             };
@@ -2661,7 +2687,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                                 return val.toString();
                             };
                             
-                            // ðŸ†• V11.50: Build ONLY known valid fields, nothing else
+                            // 🆕 V11.50: Build ONLY known valid fields, nothing else
                             const cleanRecord = {
                                 vocabulary: convertToString(d.vocabulary, 'vocabulary'),
                                 family: convertToString(d.family, 'family'),
@@ -2695,11 +2721,11 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                             return cleanRecord;
                         });
                         
-                        // ðŸ†• V11.50: Extensive validation logging
-                        console.log(`âœ… Converted ${finalUpload.length} records`);
+                        // 🆕 V11.50: Extensive validation logging
+                        console.log(`✅ Converted ${finalUpload.length} records`);
                         if (finalUpload.length > 0) {
-                            console.log('ðŸ“¦ First CONVERTED record:', JSON.stringify(finalUpload[0], null, 2));
-                            console.log('ðŸ“¦ First record field types:');
+                            console.log('📦 First CONVERTED record:', JSON.stringify(finalUpload[0], null, 2));
+                            console.log('📦 First record field types:');
                             Object.keys(finalUpload[0]).forEach(key => {
                                 const val = finalUpload[0][key];
                                 console.log(`  ${key}: ${typeof val} = ${val === null ? 'null' : JSON.stringify(val)}`);
@@ -2709,11 +2735,11 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         const { error } = await supabase.from('vocabulary_v4').upsert(finalUpload);
                         if (error) throw error;
                         
-                        alert("âœ… Sync Complete!");
+                        alert("✅ Sync Complete!");
                         setWords([]);
                         fetchWords(0, true);
                     } catch (err) { 
-                        console.error('âŒ Import error details:', err);
+                        console.error('❌ Import error details:', err);
                         console.error('Error code:', err.code);
                         console.error('Error message:', err.message);
                         console.error('Error details:', err.details);
@@ -2730,12 +2756,12 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 const apiKey = geminiKey.trim();
                 
                 if (!apiKey || apiKey === '') {
-                    alert('âš ï¸ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
+                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
                     setShowSettings(true);
                     return;
                 }
 
-                // ðŸ†• V11.38: Get current word data to check family BEFORE AI request
+                // 🆕 V11.38: Get current word data to check family BEFORE AI request
                 let currentData = null;
                 if (wordId) {
                     const wordData = words.find(w => w.id === wordId);
@@ -2744,18 +2770,18 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     currentData = words.find(w => w.vocabulary === word) || null;
                 }
                 
-                // ðŸ†• V11.38: Get family - from DB if exists, from modal dropdown if creating new word
+                // 🆕 V11.38: Get family - from DB if exists, from modal dropdown if creating new word
                 let currentFamily = currentData?.family || '';
                 if (!currentFamily && targetFields?.family) {
-                    // ðŸ†• V11.38: Read from modal dropdown - targetFields.family is a DOM select element
+                    // 🆕 V11.38: Read from modal dropdown - targetFields.family is a DOM select element
                     currentFamily = targetFields.family.value || '';
-                    console.log('ðŸ“ Reading Family from modal dropdown:', currentFamily);
+                    console.log('📝 Reading Family from modal dropdown:', currentFamily);
                 }
 
                 setMagicLoading(true);
 
                 try {
-                    // ðŸ†• V11.38: Enhance prompt with current family if available
+                    // 🆕 V11.38: Enhance prompt with current family if available
                     let prompt = magicFillPrompt.replace(/{word}/g, word);
                     
                     if (currentFamily) {
@@ -2810,16 +2836,16 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     
                     let textResponse = data.choices[0].message.content;
                     
-                    console.log('ðŸ¤– Raw AI Response:', textResponse);
+                    console.log('🤖 Raw AI Response:', textResponse);
                     
                     textResponse = textResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                     
                     let result;
                     try {
                         result = JSON.parse(textResponse);
-                        console.log('âœ… Direct parse successful');
+                        console.log('✅ Direct parse successful');
                     } catch (e1) {
-                        console.warn('âš ï¸ Direct parse failed, extracting first JSON object...');
+                        console.warn('⚠️ Direct parse failed, extracting first JSON object...');
                         try {
                             const firstBraceIndex = textResponse.indexOf('{');
                             if (firstBraceIndex === -1) {
@@ -2842,18 +2868,18 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             }
                             
                             const firstJsonStr = textResponse.substring(firstBraceIndex, endIndex);
-                            console.log('ðŸ“¦ Extracted first JSON:', firstJsonStr);
+                            console.log('📦 Extracted first JSON:', firstJsonStr);
                             result = JSON.parse(firstJsonStr);
-                            console.log('âœ… Extraction successful');
+                            console.log('✅ Extraction successful');
                         } catch (e2) {
-                            console.error('âŒ All parsing failed:', e2);
+                            console.error('❌ All parsing failed:', e2);
                             throw new Error(`AI returned invalid JSON. Please check your API key and try again.\n\nResponse: ${textResponse.substring(0, 100)}...`);
                         }
                     }
                     
-                    console.log('âœ… Final result:', result);
+                    console.log('✅ Final result:', result);
 
-                    // ðŸ†• V11.30: Validate that context uses EXACT word - improved for multi-word phrases
+                    // 🆕 V11.30: Validate that context uses EXACT word - improved for multi-word phrases
                     if (result.context) {
                         const contextLower = result.context.toLowerCase();
                         const wordLower = word.toLowerCase();
@@ -2885,26 +2911,26 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             const found = conjugations.some(conj => contextLower.includes(conj));
                             
                             if (!found) {
-                                throw new Error(`âŒ AI didn't use "${word}" - missing word: "${keyWord}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
+                                throw new Error(`❌ AI didn't use "${word}" - missing word: "${keyWord}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
                             }
                         }
                         
                         // If phrase has no key words (all stop/optional words), check whole phrase
                         if (keyWords.length === 0 && !contextLower.includes(wordLower)) {
-                            throw new Error(`âŒ AI used a synonym instead of "${word}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
+                            throw new Error(`❌ AI used a synonym instead of "${word}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
                         }
                     }
 
                     // currentData already obtained at the beginning of function (V11.38)
 
                     if (targetFields) {
-                        // ðŸ†• V11.8: Only fill empty fields in modal
+                        // 🆕 V11.8: Only fill empty fields in modal
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
                         
                     } else if (wordId || currentData) {
-                        // ðŸ†• V11.8: Respect existing data - only update empty fields
+                        // 🆕 V11.8: Respect existing data - only update empty fields
                         const updateData = {
                             synonyms: currentData?.synonyms || result.synonyms,
                             context: currentData?.context || result.context,
@@ -2913,7 +2939,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         
                         const targetId = wordId || currentData.id;
                         
-                        // ðŸ†• V11.22: Save previous version for change history
+                        // 🆕 V11.22: Save previous version for change history
                         const updateDataWithHistory = {
                             ...updateData,
                             previous_version: JSON.stringify({
@@ -2928,7 +2954,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         
                         await supabase.from('vocabulary_v4').update(updateDataWithHistory).eq('id', targetId);
                         
-                        // ðŸ†• V11.20: Update all active contexts without refreshing
+                        // 🆕 V11.20: Update all active contexts without refreshing
                         const updatedWord = { ...(currentData || words.find(w => w.id === targetId)), ...updateData };
                         
                         if (showFlashcards) {
@@ -2965,7 +2991,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                 } catch (error) {
                     console.error('Magic Fill Error:', error);
                     
-                    let errorMessage = 'âŒ Magic Fill failed:\n\n';
+                    let errorMessage = '❌ Magic Fill failed:\n\n';
                     
                     if (error.message.includes('401') || error.message.includes('invalid')) {
                         errorMessage += 'Invalid API Key. Please check your key in Settings.\n\nGet a FREE key at: https://console.groq.com';
@@ -2986,12 +3012,12 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                 
                 const apiKey = geminiKey.trim();
                 if (!apiKey || apiKey === '') {
-                    alert('âš ï¸ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
+                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
                     setShowSettings(true);
                     return;
                 }
 
-                // ðŸ†• V11.38: Get current word data to check family BEFORE AI request
+                // 🆕 V11.38: Get current word data to check family BEFORE AI request
                 const currentWord = words.find(w => w.id === wordId) || 
                                    flashcardWords.find(w => w.id === wordId) ||
                                    dictationWords.find(w => w.id === wordId) ||
@@ -2999,7 +3025,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                    guessworkWords.find(w => w.id === wordId);
                 
                 if (!currentWord) {
-                    alert('âŒ Word not found');
+                    alert('❌ Word not found');
                     return;
                 }
                 
@@ -3008,7 +3034,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                 setMagicLoading(true);
 
                 try {
-                    // ðŸ†• V11.38: Enhanced prompt with strict family enforcement
+                    // 🆕 V11.38: Enhanced prompt with strict family enforcement
                     const familyExamples = {
                         'Noun': 'If word is a noun like "house", give noun synonyms like "home, dwelling, residence"',
                         'Verb': 'If word is a verb like "run", give verb synonyms like "sprint, dash, race"',
@@ -3035,9 +3061,9 @@ For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggesti
    - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
 2. CONTEXT: An ALTERNATIVE natural sentence (12-15 words) in British English
-   â›”ï¸ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
-   â›”ï¸ DO NOT use synonyms instead of "${word}"
-   âœ… REQUIRED: ${contextExamples[currentFamily] || `Use "${word}" correctly`}
+   ⛔️ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
+   ⛔️ DO NOT use synonyms instead of "${word}"
+   ✅ REQUIRED: ${contextExamples[currentFamily] || `Use "${word}" correctly`}
 
 
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
@@ -3095,7 +3121,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         result = JSON.parse(textResponse.substring(firstBraceIndex, endIndex));
                     }
 
-                    // ðŸ†• V11.30: Validate that context uses EXACT word - improved for multi-word phrases
+                    // 🆕 V11.30: Validate that context uses EXACT word - improved for multi-word phrases
                     if (result.context) {
                         const contextLower = result.context.toLowerCase();
                         const wordLower = word.toLowerCase();
@@ -3127,17 +3153,17 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             const found = conjugations.some(conj => contextLower.includes(conj));
                             
                             if (!found) {
-                                throw new Error(`âŒ AI didn't use "${word}" - missing word: "${keyWord}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
+                                throw new Error(`❌ AI didn't use "${word}" - missing word: "${keyWord}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
                             }
                         }
                         
                         // If phrase has no key words (all stop/optional words), check whole phrase
                         if (keyWords.length === 0 && !contextLower.includes(wordLower)) {
-                            throw new Error(`âŒ AI used a synonym instead of "${word}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
+                            throw new Error(`❌ AI used a synonym instead of "${word}"\n\nGenerated: "${result.context}"\n\nPlease try again. Context MUST use "${word}" exactly.`);
                         }
                     }
 
-                    // ðŸ†• V11.20: Find current word in all possible contexts
+                    // 🆕 V11.20: Find current word in all possible contexts
                     const currentWord = words.find(w => w.id === wordId) || 
                                        flashcardWords.find(w => w.id === wordId) ||
                                        dictationWords.find(w => w.id === wordId) ||
@@ -3179,7 +3205,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                 } catch (error) {
                     console.error('Improve Error:', error);
-                    alert(`âŒ Improve failed: ${error.message}`);
+                    alert(`❌ Improve failed: ${error.message}`);
                 } finally {
                     setMagicLoading(false);
                 }
@@ -3192,7 +3218,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         .from('vocabulary_v4')
                         .select('*')
                         .neq('id', currentWord.id)
-                        .is('deleted_at', null) // ðŸ†• V11.2: Exclude deleted
+                        .is('deleted_at', null) // 🆕 V11.2: Exclude deleted
                         .order('vocabulary');
                     
                     if (!allWords || allWords.length === 0) {
@@ -3265,7 +3291,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     }
 
                     if (similar.length === 0) {
-                        alert('âœ… No similar words found!');
+                        alert('✅ No similar words found!');
                         return;
                     }
 
@@ -3277,7 +3303,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                 } catch (error) {
                     console.error('Find Similar Error:', error);
-                    alert('âŒ Error finding similar words');
+                    alert('❌ Error finding similar words');
                 } finally {
                     setFindingSimilar(null);
                 }
@@ -3305,10 +3331,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     
                     await supabase.from('vocabulary_v4').update(merged).eq('id', current.id);
                     
-                    // ðŸ†• V11.2: Soft delete instead of hard delete
+                    // 🆕 V11.2: Soft delete instead of hard delete
                     await supabase.from('vocabulary_v4').update({ deleted_at: new Date().toISOString() }).eq('id', similarWord.id);
                     
-                    alert('âœ… Words merged successfully!');
+                    alert('✅ Words merged successfully!');
                     setShowMergeModal(false);
                     setMergeData(null);
                     setSelectedSimilar(null);
@@ -3325,11 +3351,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     
                 } catch (error) {
                     console.error('Merge Error:', error);
-                    alert('âŒ Error merging words');
+                    alert('❌ Error merging words');
                 }
             };
 
-            // ðŸ†• V11.9: Save to undo history before updating
+            // 🆕 V11.9: Save to undo history before updating
             function saveToUndoHistory(wordId, originalData) {
                 setUndoHistory(prev => ({
                     ...prev,
@@ -3340,7 +3366,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 }));
             }
 
-            // ðŸ†• V11.9: Undo last change for a word
+            // 🆕 V11.9: Undo last change for a word
             async function handleUndo(wordId) {
                 const historyEntry = undoHistory[wordId];
                 if (!historyEntry) {
@@ -3360,10 +3386,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     });
                     
                     fetchWords(0, true);
-                    alert('âœ… Changes undone successfully!');
+                    alert('✅ Changes undone successfully!');
                 } catch (error) {
                     console.error('Undo error:', error);
-                    alert('âŒ Error undoing changes');
+                    alert('❌ Error undoing changes');
                 }
             }
 
@@ -3375,10 +3401,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 wordData.favourite = parseInt(formData.get('favourite')) || 0;
                 
                 if (editingWord) {
-                    // ðŸ†• V11.9: Save current state to undo history before updating
+                    // 🆕 V11.9: Save current state to undo history before updating
                     saveToUndoHistory(editingWord.id, editingWord);
                     
-                    // ðŸ†• V11.21: Save previous version for change history
+                    // 🆕 V11.21: Save previous version for change history
                     const updateDataWithHistory = {
                         ...wordData,
                         previous_version: JSON.stringify({
@@ -3391,7 +3417,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         modified_at: new Date().toISOString()
                     };
                     
-                    console.log('ðŸ’¾ Saving with history:', {
+                    console.log('💾 Saving with history:', {
                         id: editingWord.id,
                         hasHistory: !!updateDataWithHistory.previous_version,
                         modified_at: updateDataWithHistory.modified_at
@@ -3399,7 +3425,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     
                     await supabase.from('vocabulary_v4').update(updateDataWithHistory).eq('id', editingWord.id);
                     
-                    // ðŸ†• V11.38: Properly preserve all fields when updating
+                    // 🆕 V11.38: Properly preserve all fields when updating
                     const updatedWord = { 
                         ...editingWord,  // Keep all original fields (id, created_at, difficulty, etc.)
                         ...wordData,     // Override with new data from form
@@ -3412,9 +3438,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         modified_at: updateDataWithHistory.modified_at
                     };
                     
-                    console.log('ðŸ”„ Updated word:', updatedWord);
+                    console.log('🔄 Updated word:', updatedWord);
                     
-                    // ðŸ†• V11.38: Update exercises if active (including Translation)
+                    // 🆕 V11.38: Update exercises if active (including Translation)
                     if (showFlashcards) {
                         const newFlashcards = [...flashcardWords];
                         newFlashcards[flashcardIndex] = updatedWord;
@@ -3439,13 +3465,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         const newTranslation = [...translationWords];
                         newTranslation[translationIndex] = updatedWord;
                         setTranslationWords(newTranslation);
-                        // ðŸ†• V11.38: Regenerate Spanish translation with updated context
+                        // 🆕 V11.38: Regenerate Spanish translation with updated context
                         if (updatedWord.context) {
                             await generateSpanishTranslation(updatedWord.context);
                         }
                     }
                     
-                    // ðŸ†• V11.20: Update main table state without refreshing filters
+                    // 🆕 V11.20: Update main table state without refreshing filters
                     if (!showFlashcards && !showDictation && !showSelection && !showGuesswork && !showTranslation) {
                         // Only update if editing from main table
                         setWords(prevWords => 
@@ -3458,12 +3484,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     fetchWords(0, true);
                 }
                 
-                checkChangeHistoryCount(); // ðŸ†• V11.24
+                checkChangeHistoryCount(); // 🆕 V11.24
                 setShowAddModal(false); 
                 setEditingWord(null);
             }
 
-            // ðŸ†• V11.13: Reusable Exercise Header Component
+            // 🆕 V11.13: Reusable Exercise Header Component
             const ExerciseHeader = ({ 
                 title, 
                 currentIndex, 
@@ -3475,7 +3501,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 onInfo, 
                 onEdit,
                 onAudioToggle,
-                onHint, // ðŸ†• V11.20
+                onHint, // 🆕 V11.20
                 exerciseMode,
                 audioEnabled
             }) => (
@@ -3493,7 +3519,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             className="text-slate-400 hover:text-white text-3xl flex-shrink-0"
                             title="Close"
                         >
-                            Ã—
+                            ×
                         </button>
                     </div>
                     
@@ -3509,7 +3535,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 }`}
                                 title={exerciseMode === 'memory' ? 'Memory Mode' : 'Random Mode'}
                             >
-                                {exerciseMode === 'memory' ? 'ðŸ§ ' : 'ðŸŽ²'}
+                                {exerciseMode === 'memory' ? '🧠' : '🎲'}
                             </button>
                         )}
                         {onAudioToggle !== undefined && (
@@ -3522,7 +3548,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 }`}
                                 title={audioEnabled ? 'Audio On' : 'Audio Off'}
                             >
-                                {audioEnabled ? 'ðŸ”Š' : 'ðŸ”‡'}
+                                {audioEnabled ? '🔊' : '🔇'}
                             </button>
                         )}
                         {onHint && (
@@ -3531,7 +3557,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 className="px-3 py-2 rounded-xl font-bold text-xs bg-yellow-600 text-white hover:bg-yellow-500 flex-shrink-0"
                                 title="Hint"
                             >
-                                ðŸ’¡
+                                💡
                             </button>
                         )}
                         {onDictionary && currentWord && (
@@ -3540,7 +3566,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 className="px-3 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white hover:bg-blue-500 flex-shrink-0"
                                 title="Dictionary"
                             >
-                                ðŸ“–
+                                📖
                             </button>
                         )}
                         {onInfo && (
@@ -3549,7 +3575,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white flex-shrink-0"
                                 title="Info"
                             >
-                                â„¹ï¸
+                                ℹ️
                             </button>
                         )}
                         {onEdit && currentWord && (
@@ -3558,7 +3584,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 className="px-3 py-2 rounded-xl font-bold text-xs bg-indigo-600 text-white hover:bg-indigo-500 flex-shrink-0"
                                 title="Edit"
                             >
-                                âœï¸
+                                ✏️
                             </button>
                         )}
                     </div>
@@ -3572,9 +3598,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.66</span>
+                                        English Booster <span className="version-text">v11.67</span>
                                     </h1>
-                                    {/* ðŸ†• V11.60: Reorganized header - title and buttons in mobile */}
+                                    {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
                                         <span className="text-base lg:text-lg font-black text-indigo-400 tracking-wider">{totalCount}</span>
                                         
@@ -3608,7 +3634,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
                                         
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
-                                            {/* ðŸ†• V11.62: Exercises button - icon only on mobile, text on desktop */}
+                                            {/* 🆕 V11.62: Exercises button - icon only on mobile, text on desktop */}
                                             <button 
                                                 onClick={() => setShowExercisesModal(true)} 
                                                 className="p-2 lg:px-3 lg:py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors flex items-center gap-1.5"
@@ -3618,7 +3644,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <span className="hidden lg:inline text-sm font-bold">Exercises</span>
                                             </button>
                                             
-                                            {/* ðŸ†• V11.62: Stats button - icon only on mobile, text on desktop */}
+                                            {/* 🆕 V11.62: Stats button - icon only on mobile, text on desktop */}
                                             <button 
                                                 onClick={() => loadStats()} 
                                                 className="p-2 lg:px-3 lg:py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
@@ -3640,10 +3666,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 {/* Reset button */}
                                 <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white flex-shrink-0"><i className="fas fa-broom text-sm"></i></button>
                                 
-                                {/* ðŸ†• V11.58: Search input FIRST */}
+                                {/* 🆕 V11.58: Search input FIRST */}
                                 <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="px-2 lg:px-4 py-2 lg:py-2.5 rounded-xl text-sm w-24 sm:w-40 lg:w-56 shadow-inner" />
                                 
-                                {/* ðŸ†• V11.58: Search mode toggle AFTER input */}
+                                {/* 🆕 V11.58: Search mode toggle AFTER input */}
                                 <button 
                                     onClick={() => setSearchMode((searchMode + 1) % 3)} 
                                     className={`p-2 lg:p-3 rounded-xl border transition-colors flex-shrink-0 ${
@@ -3664,7 +3690,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     } text-sm`}></i>
                                 </button>
                                 
-                                {/* ðŸ†• V11.58: Favourite filter AFTER search mode */}
+                                {/* 🆕 V11.58: Favourite filter AFTER search mode */}
                                 <button 
                                     onClick={() => setFavouriteLevel((favouriteLevel + 1) % 4)} 
                                     className={`p-2 lg:p-3 rounded-xl border flex-shrink-0 ${
@@ -3719,20 +3745,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {words.map(w => (
                                         <tr key={w.id} className="hover:bg-indigo-500/[0.03] transition-colors">
                                             <td className="p-5 pl-8 text-center"><button onClick={() => toggleFavourite(w.id, w.favourite || 0)} className="tooltip" data-tip="Toggle favourite"><i className={`fa-star ${w.favourite === 0 ? 'far star-off' : w.favourite === 1 ? 'fas fa-star-half-alt star-half' : 'fas star-on'} text-xl`}></i></button></td>
-                                            <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border border-indigo-500/20 text-indigo-300 uppercase">{w.difficulty || 'â€”'}</span></td>
+                                            <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border border-indigo-500/20 text-indigo-300 uppercase">{w.difficulty || '—'}</span></td>
                                             <td 
                                                 className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
                                                 onClick={() => speakText(w.vocabulary, 1.0)}
                                                 title="Click to hear pronunciation"
                                             >{w.vocabulary}</td>
-                                            <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || 'â€”'}</span></td>
-                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{w.synonyms || 'â€”'}</td>
+                                            <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || '—'}</span></td>
+                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{w.synonyms || '—'}</td>
                                             <td 
                                                 className="p-5 text-sm text-slate-400 italic leading-relaxed cursor-pointer hover:text-slate-200 transition-colors"
                                                 onClick={() => w.context && speakText(w.context, 1.0)}
                                                 title="Click to hear pronunciation"
                                             >
-                                                {w.context ? highlightWordInContext(w.context, w.vocabulary) : 'â€”'}
+                                                {w.context ? highlightWordInContext(w.context, w.vocabulary) : '—'}
                                             </td>
                                             <td className="p-5 text-right pr-10">
                                                 <div className="flex justify-end gap-1">
@@ -3746,12 +3772,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 data-tip={hasAllData ? "Improve with AI" : "Auto-fill with AI"}
                                                             >
                                                                 <span className={`text-xl ${magicLoading ? 'animate-spin-slow inline-block' : ''}`}>
-                                                                    âœ¨
+                                                                    ✨
                                                                 </span>
                                                             </button>
                                                         );
                                                     })()}
-                                                    {/* ðŸ†• V11.61: Reduced padding in desktop buttons */}
+                                                    {/* 🆕 V11.61: Reduced padding in desktop buttons */}
                                                     <button 
                                                         onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
                                                         className="text-blue-500 hover:text-blue-400 tooltip p-1" 
@@ -3765,7 +3791,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         className="text-orange-500 hover:text-orange-400 tooltip p-1" 
                                                         data-tip="Find & Merge Similar"
                                                     >
-                                                        <span className="text-xl">{findingSimilar === w.id ? 'â³' : 'ðŸ”€'}</span>
+                                                        <span className="text-xl">{findingSimilar === w.id ? '⏳' : '🔀'}</span>
                                                     </button>
                                                     {/* Edit button */}
                                                     <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
@@ -3781,10 +3807,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
-                                                            // ðŸ†• V11.2: Soft delete
+                                                            // 🆕 V11.2: Soft delete
                                                             await supabase.from('vocabulary_v4').update({ deleted_at: new Date().toISOString() }).eq('id', w.id); 
                                                             fetchWords(0, true);
-                                                            checkRecycleBinCount(); // ðŸ†• V11.4
+                                                            checkRecycleBinCount(); // 🆕 V11.4
                                                         }
                                                     }} className="text-slate-700 hover:text-red-500 tooltip p-1" data-tip="Delete word"><i className="fas fa-trash text-xl"></i></button>
                                                 </div>
@@ -3807,11 +3833,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     <i className={`fa-star ${w.favourite === 0 ? 'far star-off' : w.favourite === 1 ? 'fas fa-star-half-alt star-half' : 'fas star-on'}`}></i>
                                                 </button>
                                                 <span className="text-[10px] font-black px-3 py-1 rounded border border-indigo-500/20 text-indigo-300 uppercase">
-                                                    {w.difficulty || 'â€”'}
+                                                    {w.difficulty || '—'}
                                                 </span>
                                             </div>
                                             <span className="text-[10px] font-black px-3 py-1 rounded border bg-slate-800 text-slate-400 uppercase">
-                                                {w.family || 'â€”'}
+                                                {w.family || '—'}
                                             </span>
                                         </div>
                                         
@@ -3843,7 +3869,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
                                         
-                                        {/* ðŸ†• V11.61: Reduced padding and gap for more compact mobile buttons */}
+                                        {/* 🆕 V11.61: Reduced padding and gap for more compact mobile buttons */}
                                         <div className="flex justify-between items-center gap-1 pt-2 border-t border-white/5">
                                             {(() => {
                                                 const hasAllData = w.family && w.synonyms && w.context;
@@ -3853,51 +3879,51 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         disabled={magicLoading}
                                                         className={`${hasAllData ? 'improve-btn' : 'magic-btn'} p-2 rounded-xl flex-1 text-xl`}
                                                     >
-                                                        âœ¨
+                                                        ✨
                                                     </button>
                                                 );
                                             })()}
-                                            {/* ðŸ†• V11.58: Reduced padding for mobile buttons to fit all */}
+                                            {/* 🆕 V11.58: Reduced padding for mobile buttons to fit all */}
                                             <button 
                                                 onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
                                                 className="p-2 text-blue-500 bg-blue-500/10 rounded-xl flex-1 text-xl"
                                             >
-                                                ðŸ“–
+                                                📖
                                             </button>
                                             <button 
                                                 onClick={() => handleFindSimilar(w)}
                                                 disabled={findingSimilar === w.id}
                                                 className="p-2 text-orange-500 bg-orange-500/10 rounded-xl flex-1 text-xl" 
                                             >
-                                                {findingSimilar === w.id ? 'â³' : 'ðŸ”€'}
+                                                {findingSimilar === w.id ? '⏳' : '🔀'}
                                             </button>
-                                            {/* ðŸ†• V11.11: Edit button (3rd position) */}
+                                            {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
                                                 onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
-                                                âœï¸
+                                                ✏️
                                             </button>
-                                            {/* ðŸ†• V11.11: Undo button (4th position) */}
+                                            {/* 🆕 V11.11: Undo button (4th position) */}
                                             <button 
                                                 onClick={() => handleUndo(w.id)}
                                                 disabled={!undoHistory[w.id]}
                                                 className={`p-2 rounded-xl flex-1 text-xl ${undoHistory[w.id] ? 'text-yellow-500 bg-yellow-500/10' : 'text-slate-700 bg-slate-800 cursor-not-allowed'}`}
                                             >
-                                                â†©ï¸
+                                                ↩️
                                             </button>
-                                            {/* ðŸ†• V11.11: Delete button (5th position) */}
+                                            {/* 🆕 V11.11: Delete button (5th position) */}
                                             <button 
                                                 onClick={async () => {
                                                     if(confirm('Move to recycle bin?')) {
                                                         await supabase.from('vocabulary_v4').update({ deleted_at: new Date().toISOString() }).eq('id', w.id); 
                                                         fetchWords(0, true);
-                                                        checkRecycleBinCount(); // ðŸ†• V11.4
+                                                        checkRecycleBinCount(); // 🆕 V11.4
                                                     }
                                                 }} 
                                                 className="p-2 text-red-500 bg-red-500/10 rounded-xl flex-1 text-xl"
                                             >
-                                                ðŸ—‘ï¸
+                                                🗑️
                                             </button>
                                         </div>
                                     </div>
@@ -3911,7 +3937,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-2xl border-indigo-500/30 max-h-[90vh] overflow-y-auto custom-scroll">
                                 <h2 className="text-2xl font-black mb-8 main-gradient uppercase text-center italic">Booster Control</h2>
                                 <div className="space-y-6">
-                                    {/* ðŸ†• V11.15: Supabase Configuration */}
+                                    {/* 🆕 V11.15: Supabase Configuration */}
                                     <div>
                                         <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Supabase URL</label>
                                         <input 
@@ -3928,7 +3954,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">Your Supabase project URL</p>
                                         {supabaseUrl && (
                                             <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
-                                                âœ“ URL configured ({supabaseUrl.length} chars)
+                                                ✓ URL configured ({supabaseUrl.length} chars)
                                             </div>
                                         )}
                                     </div>
@@ -3948,7 +3974,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">Your Supabase anon/public key (safe to share)</p>
                                         {supabaseKey && (
                                             <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
-                                                âœ“ Key configured ({supabaseKey.length} chars)
+                                                ✓ Key configured ({supabaseKey.length} chars)
                                             </div>
                                         )}
                                     </div>
@@ -3973,7 +3999,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">Get your free key at: <a href="https://console.groq.com" target="_blank" className="text-indigo-400 underline">Groq Console</a></p>
                                         {geminiKey && (
                                             <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
-                                                âœ“ Key configured ({geminiKey.length} chars)
+                                                ✓ Key configured ({geminiKey.length} chars)
                                             </div>
                                         )}
                                     </div>
@@ -3992,7 +4018,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">Customize how AI generates vocabulary data. Use {'{word}'} to insert the word being processed.</p>
                                     </div>
                                     
-                                    {/* ðŸ†• V11.55: Web Search Prompt for Perplexity in dictionary modal */}
+                                    {/* 🆕 V11.55: Web Search Prompt for Perplexity in dictionary modal */}
                                     <div>
                                         <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Web Search Prompt (use {'{word}'} placeholder)</label>
                                         <textarea 
@@ -4005,10 +4031,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className="w-full p-4 rounded-xl text-xs font-mono"
                                             placeholder="For the English word/expression {word}, provide meaning, synonyms, context..."
                                         />
-                                        <p className="text-xs text-slate-500 mt-2">This prompt is used when opening Perplexity AI from the dictionary modal ðŸ“–. Use {'{word}'} as placeholder.</p>
+                                        <p className="text-xs text-slate-500 mt-2">This prompt is used when opening Perplexity AI from the dictionary modal 📖. Use {'{word}'} as placeholder.</p>
                                     </div>
                                     
-                                    {/* ðŸ†• V11.7: Voice selection */}
+                                    {/* 🆕 V11.7: Voice selection */}
                                     <div>
                                         <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Text-to-Speech Voice</label>
                                         <select 
@@ -4019,7 +4045,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }} 
                                             className="w-full p-4 rounded-xl text-sm font-bold"
                                         >
-                                            <option value="auto">ðŸ¤– Auto (Best Available)</option>
+                                            <option value="auto">🤖 Auto (Best Available)</option>
                                             {availableVoices.map(voice => (
                                                 <option key={voice.name} value={voice.name}>
                                                     {voice.name} ({voice.lang})
@@ -4029,7 +4055,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">Select the voice used for audio playback in exercises and context sentences.</p>
                                     </div>
                                     
-                                    {/* ðŸ†• V11.16: Selection Exercise Countdown */}
+                                    {/* 🆕 V11.16: Selection Exercise Countdown */}
                                     <div>
                                         <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Selection Exercise - Countdown (seconds)</label>
                                         <input 
@@ -4068,12 +4094,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.59: Exercises Modal */}
+                    {/* 🆕 V11.59: Exercises Modal */}
                     {showExercisesModal && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-3xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-8">
-                                    <h2 className="text-2xl font-black main-gradient uppercase text-center italic">ðŸ‹ï¸ Choose Exercise</h2>
+                                    <h2 className="text-2xl font-black main-gradient uppercase text-center italic">🏋️ Choose Exercise</h2>
                                     <button onClick={() => setShowExercisesModal(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                 </div>
                                 
@@ -4087,7 +4113,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="group relative overflow-hidden bg-purple-600 hover:bg-purple-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">ðŸŽ´</span>
+                                            <span className="text-4xl">🎴</span>
                                             <h3 className="text-xl font-black text-white uppercase">Flashcards</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Flip cards to test your vocabulary memory. Rate your knowledge level.</p>
@@ -4102,7 +4128,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="group relative overflow-hidden bg-blue-600 hover:bg-blue-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">ðŸŽ¤</span>
+                                            <span className="text-4xl">🎤</span>
                                             <h3 className="text-xl font-black text-white uppercase">Dictation</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Listen and type what you hear. Improve listening and spelling skills.</p>
@@ -4117,7 +4143,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="group relative overflow-hidden bg-green-600 hover:bg-green-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">âœ“</span>
+                                            <span className="text-4xl">✓</span>
                                             <h3 className="text-xl font-black text-white uppercase">Selection</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Choose the correct word from multiple options to complete sentences.</p>
@@ -4132,7 +4158,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="group relative overflow-hidden bg-orange-600 hover:bg-orange-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">ðŸ¤”</span>
+                                            <span className="text-4xl">🤔</span>
                                             <h3 className="text-xl font-black text-white uppercase">Guesswork</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Write sentences using vocabulary words. AI evaluates your guesswork.</p>
@@ -4147,7 +4173,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="group relative overflow-hidden bg-pink-600 hover:bg-pink-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl md:col-span-2"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
-                                            <span className="text-4xl">ðŸŒ</span>
+                                            <span className="text-4xl">🌐</span>
                                             <h3 className="text-xl font-black text-white uppercase">Translation</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Translate Spanish sentences to English. Practice language conversion skills.</p>
@@ -4163,7 +4189,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="flex justify-between items-center mb-8">
                                     <h2 className="text-2xl font-black italic main-gradient uppercase tracking-widest">{editingWord ? 'Edit Word' : 'New Word'}</h2>
                                     <div className="flex items-center gap-2">
-                                        {/* ðŸ†• V11.56: Dictionary button updated to use modal */}
+                                        {/* 🆕 V11.56: Dictionary button updated to use modal */}
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -4178,10 +4204,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className="tooltip bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-2 rounded-xl font-bold text-xs hover:bg-blue-600/30"
                                             data-tip="Open in dictionary"
                                         >
-                                            ðŸ“–
+                                            📖
                                         </button>
                                         
-                                        {/* ðŸ†• V11.9: Restore button */}
+                                        {/* 🆕 V11.9: Restore button */}
                                         {editingWord && originalEditData && (
                                             <button
                                                 type="button"
@@ -4191,7 +4217,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         document.querySelector('[name="synonyms"]').value = originalEditData.synonyms || '';
                                                         document.querySelector('[name="context"]').value = originalEditData.context || '';
                                                         document.querySelector('[name="family"]').value = originalEditData.family || '';
-                                                        alert('âœ… Original data restored!');
+                                                        alert('✅ Original data restored!');
                                                     }
                                                 }}
                                                 className="tooltip bg-yellow-600/20 text-yellow-400 border border-yellow-500/30 px-3 py-2 rounded-xl font-bold text-xs hover:bg-yellow-600/30"
@@ -4201,12 +4227,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                         )}
                                         
-                                        {/* ðŸ†• V11.32: Delete button in header (small) */}
+                                        {/* 🆕 V11.32: Delete button in header (small) */}
                                         {editingWord && (
                                             <button
                                                 type="button"
                                                 onClick={async () => {
-                                                    if(confirm('ðŸ—‘ï¸ Move to recycle bin?')) {
+                                                    if(confirm('🗑️ Move to recycle bin?')) {
                                                         await supabase.from('vocabulary_v4').update({ deleted_at: new Date().toISOString() }).eq('id', editingWord.id);
                                                         setShowAddModal(false);
                                                         setEditingWord(null);
@@ -4242,7 +4268,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     const hasFamily = editingWord?.family && editingWord.family.trim();
                                                     
                                                     if (editingWord && hasSynonyms && hasContext && hasFamily) {
-                                                        // ðŸ†• V11.2: Close edit modal and open improve modal directly
+                                                        // 🆕 V11.2: Close edit modal and open improve modal directly
                                                         setShowAddModal(false);
                                                         await handleImproveWord(vocabValue, editingWord.id);
                                                     } else {
@@ -4258,7 +4284,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 data-tip={(editingWord?.synonyms && editingWord?.context && editingWord?.family) ? "Improve with AI" : "Auto-fill with AI"}
                                             >
                                                 <span className={`text-xl ${magicLoading ? 'animate-spin-slow inline-block' : ''}`}>
-                                                    âœ¨
+                                                    ✨
                                                 </span>
                                             </button>
                                         </div>
@@ -4319,19 +4345,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ” IMPROVE MODAL */}
+                    {/* 🔍 IMPROVE MODAL */}
                     {showImproveModal && improveData && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[150] p-2 sm:p-6 overflow-y-auto" onClick={() => setShowImproveModal(false)}>
                             <div className="bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-8 max-w-6xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-white/10 my-2" onClick={e => e.stopPropagation()}>
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 sm:mb-6">
                                     <div className="flex items-center gap-2 sm:gap-3">
-                                        <h2 className="text-xl sm:text-3xl font-black text-white">ðŸ”„ AI Improve</h2>
+                                        <h2 className="text-xl sm:text-3xl font-black text-white">🔄 AI Improve</h2>
                                         <button 
-                                            onClick={() => alert('â„¹ï¸ AI IMPROVE:\n\nðŸ”´ RED: Current data\nðŸŸ¢ GREEN: AI suggestions\n\nðŸ“± MOBILE: Tap items to move\nðŸ–¥ï¸ DESKTOP: Drag between panels\n\nâ€¢ Move SYNONYMS between panels\nâ€¢ Move CONTEXT between panels\nâ€¢ Select LEVEL and FAMILY\n\nFinal result = GREEN panel items')}
+                                            onClick={() => alert('ℹ️ AI IMPROVE:\n\n🔴 RED: Current data\n🟢 GREEN: AI suggestions\n\n📱 MOBILE: Tap items to move\n🖥️ DESKTOP: Drag between panels\n\n• Move SYNONYMS between panels\n• Move CONTEXT between panels\n• Select LEVEL and FAMILY\n\nFinal result = GREEN panel items')}
                                             className="text-blue-400 hover:text-blue-300 text-lg sm:text-xl flex-shrink-0"
                                             title="How to use"
                                         >
-                                            â„¹ï¸
+                                            ℹ️
                                         </button>
                                     </div>
                                     <button onClick={() => setShowImproveModal(false)} className="text-slate-400 hover:text-white text-2xl sm:text-3xl self-end sm:self-auto">&times;</button>
@@ -4341,11 +4367,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <p className="text-indigo-300 text-xs sm:text-sm"><strong>Word:</strong> {improveData.vocabulary}</p>
                                 </div>
                                 
-                                {/* ðŸ†• V11.21: Responsive grid - vertical on mobile, horizontal on desktop */}
+                                {/* 🆕 V11.21: Responsive grid - vertical on mobile, horizontal on desktop */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
                                     {/* LEFT PANEL - RED - CURRENT DATA */}
                                     <div className="bg-red-900/20 border-2 border-red-500 rounded-2xl p-6">
-                                        <h3 className="text-red-300 font-bold mb-4 text-center text-lg">ðŸ”´ CURRENT DATA</h3>
+                                        <h3 className="text-red-300 font-bold mb-4 text-center text-lg">🔴 CURRENT DATA</h3>
                                         
 
                                         <div className="mb-6">
@@ -4358,12 +4384,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     onChange={() => setImproveData({...improveData, selections: {...(improveData.selections || {}), family: 'current'}})}
                                                     className="mr-3 w-5 h-5"
                                                 />
-                                                <span className="text-red-200">{improveData.current.family || 'â€”'}</span>
+                                                <span className="text-red-200">{improveData.current.family || '—'}</span>
                                             </label>
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (ðŸ“± Tap | ðŸ–¥ï¸ Drag to AI panel â†’)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (📱 Tap | 🖥️ Drag to AI panel →)</div>
                                             <div className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4394,7 +4420,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         }}
                                                         className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
-                                                            // ðŸ“± MOBILE: Tap to move between panels (drag&drop not supported on touch devices) to green panel (mobile-friendly)
+                                                            // 📱 MOBILE: Tap to move between panels (drag&drop not supported on touch devices) to green panel (mobile-friendly)
                                                             const currentSyns = (improveData.selections?.currentSynonyms || []).filter(s => s !== syn);
                                                             const improvedSyns = improveData.selections?.improvedSynonyms || [];
                                                             setImproveData({
@@ -4414,7 +4440,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (ðŸ“± Tap | ðŸ–¥ï¸ Drag to AI panel â†’)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (📱 Tap | 🖥️ Drag to AI panel →)</div>
                                             <div 
                                                 className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4465,7 +4491,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                                     {/* RIGHT PANEL - GREEN - AI SUGGESTIONS */}
                                     <div className="bg-green-900/20 border-2 border-green-500 rounded-2xl p-6">
-                                        <h3 className="text-green-300 font-bold mb-4 text-center text-lg">ðŸŸ¢ AI SUGGESTIONS</h3>
+                                        <h3 className="text-green-300 font-bold mb-4 text-center text-lg">🟢 AI SUGGESTIONS</h3>
                                         
 
                                         <div className="mb-6">
@@ -4478,12 +4504,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     onChange={() => setImproveData({...improveData, selections: {...(improveData.selections || {}), family: 'improved'}})}
                                                     className="mr-3 w-5 h-5"
                                                 />
-                                                <span className="text-green-200">{improveData.improved.family || 'â€”'}</span>
+                                                <span className="text-green-200">{improveData.improved.family || '—'}</span>
                                             </label>
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Synonyms (ðŸ“± Tap | ðŸ–¥ï¸ Drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Synonyms (📱 Tap | 🖥️ Drag to current panel)</div>
                                             <div className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4514,7 +4540,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         }}
                                                         className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
-                                                            // ðŸ†• V11.21: Tap to move to red panel (mobile-friendly)
+                                                            // 🆕 V11.21: Tap to move to red panel (mobile-friendly)
                                                             const improvedSyns = (improveData.selections?.improvedSynonyms || []).filter(s => s !== syn);
                                                             const currentSyns = improveData.selections?.currentSynonyms || [];
                                                             setImproveData({
@@ -4534,7 +4560,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Context (ðŸ“± Tap | ðŸ–¥ï¸ Drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">← Context (📱 Tap | 🖥️ Drag to current panel)</div>
                                             <div 
                                                 className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4591,7 +4617,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 context: finalContext
                                             };
                                             
-                                            // ðŸ†• V11.22: Save previous version for change history
+                                            // 🆕 V11.22: Save previous version for change history
                                             const updateDataWithHistory = {
                                                 ...updateData,
                                                 previous_version: JSON.stringify({
@@ -4606,7 +4632,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             
                                             await supabase.from('vocabulary_v4').update(updateDataWithHistory).eq('id', improveData.wordId);
                                             
-                                            // ðŸ†• V11.20: Update all active contexts without refreshing
+                                            // 🆕 V11.20: Update all active contexts without refreshing
                                             const updatedWord = { 
                                                 ...(words.find(w => w.id === improveData.wordId) || 
                                                     flashcardWords.find(w => w.id === improveData.wordId) ||
@@ -4646,30 +4672,30 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             
                                             setShowImproveModal(false);
                                             setImproveData(null);
-                                            alert('âœ… Fields updated with your selection!');
+                                            alert('✅ Fields updated with your selection!');
                                         }}
                                         className="flex-1 bg-green-600 hover:bg-green-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                     >
-                                        âœ… Apply Green Panel
+                                        ✅ Apply Green Panel
                                     </button>
                                     <button 
                                         onClick={() => setShowImproveModal(false)}
                                         className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                     >
-                                        âŒ Cancel
+                                        ❌ Cancel
                                     </button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* ðŸ”€ MERGE SIMILAR MODAL (keeping same as V11.1) */}
+                    {/* 🔀 MERGE SIMILAR MODAL (keeping same as V11.1) */}
                     {showMergeModal && mergeData && (
                         !selectedSimilar ? (
                             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-4xl w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
-                                        <h2 className="text-3xl font-black text-white">ðŸ”€ Find & Merge Similar</h2>
+                                        <h2 className="text-3xl font-black text-white">🔀 Find & Merge Similar</h2>
                                         <button onClick={() => {setShowMergeModal(false); setMergeData(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
                                     <p className="text-slate-400 mb-4">Found {mergeData?.similar?.length || 0} similar words. Select one to merge:</p>
@@ -4694,8 +4720,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 className="w-full text-left bg-slate-800/50 hover:bg-slate-700/50 border border-orange-500/30 rounded-2xl p-4 transition"
                                             >
                                                 <p className="text-white font-bold mb-1">{word.vocabulary}</p>
-                                                <p className="text-slate-400 text-xs">Family: {word.family || 'â€”'}</p>
-                                                <p className="text-slate-500 text-xs mt-1">Synonyms: {word.synonyms || 'â€”'}</p>
+                                                <p className="text-slate-400 text-xs">Family: {word.family || '—'}</p>
+                                                <p className="text-slate-500 text-xs mt-1">Synonyms: {word.synonyms || '—'}</p>
                                             </button>
                                         ))}
                                     </div>
@@ -4706,15 +4732,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
-                                            <h2 className="text-3xl font-black text-white">ðŸ”€ Drag & Drop Merge</h2>
-                                            <p className="text-slate-400 text-sm mt-1">ðŸ“± MOBILE: Tap items to move | ðŸ–¥ï¸ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
+                                            <h2 className="text-3xl font-black text-white">🔀 Drag & Drop Merge</h2>
+                                            <p className="text-slate-400 text-sm mt-1">📱 MOBILE: Tap items to move | 🖥️ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
                                         </div>
                                         <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-6 mb-6">
                                         <div className="bg-red-900/20 border-2 border-red-500 rounded-2xl p-6">
-                                            <h3 className="text-red-300 font-bold mb-4 text-center text-lg">ðŸ”´ TO DELETE</h3>
+                                            <h3 className="text-red-300 font-bold mb-4 text-center text-lg">🔴 TO DELETE</h3>
                                             
                                             <div className="mb-6">
                                                 <div className="text-xs font-bold uppercase text-red-400 mb-2">Vocabulary (will be deleted)</div>
@@ -4734,12 +4760,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         onChange={() => setFieldSelections({...fieldSelections, family: 'similar'})}
                                                         className="mr-3 w-5 h-5"
                                                     />
-                                                    <span className="text-red-200">{selectedSimilar.family || 'â€”'}</span>
+                                                    <span className="text-red-200">{selectedSimilar.family || '—'}</span>
                                                 </label>
                                             </div>
 
                                             <div className="mb-6">
-                                                <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (drag to keep â†’)</div>
+                                                <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (drag to keep →)</div>
                                                 <div className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[100px]"
                                                     onDragOver={(e) => e.preventDefault()}
                                                     onDrop={(e) => {
@@ -4772,7 +4798,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
 
                                             <div>
-                                                <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (drag to keep â†’)</div>
+                                                <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (drag to keep →)</div>
                                                 <div 
                                                     className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[80px]"
                                                     onDragOver={(e) => e.preventDefault()}
@@ -4792,7 +4818,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             }}
                                                             className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 py-2 rounded-lg cursor-move text-sm"
                                                         >
-                                                            {selectedSimilar.context || 'â€”'}
+                                                            {selectedSimilar.context || '—'}
                                                         </div>
                                                     )}
                                                 </div>
@@ -4800,7 +4826,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div className="bg-green-900/20 border-2 border-green-500 rounded-2xl p-6">
-                                            <h3 className="text-green-300 font-bold mb-4 text-center text-lg">ðŸŸ¢ TO KEEP</h3>
+                                            <h3 className="text-green-300 font-bold mb-4 text-center text-lg">🟢 TO KEEP</h3>
                                             
                                             <div className="mb-6">
                                                 <div className="text-xs font-bold uppercase text-green-400 mb-2">Vocabulary (will be kept)</div>
@@ -4820,12 +4846,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         onChange={() => setFieldSelections({...fieldSelections, family: 'current'})}
                                                         className="mr-3 w-5 h-5"
                                                     />
-                                                    <span className="text-green-200">{mergeData.current.family || 'â€”'}</span>
+                                                    <span className="text-green-200">{mergeData.current.family || '—'}</span>
                                                 </label>
                                             </div>
 
                                             <div className="mb-6">
-                                                <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Synonyms (drag to delete)</div>
+                                                <div className="text-xs font-bold uppercase text-green-400 mb-2">← Synonyms (drag to delete)</div>
                                                 <div className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[100px]"
                                                     onDragOver={(e) => e.preventDefault()}
                                                     onDrop={(e) => {
@@ -4858,7 +4884,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
 
                                             <div>
-                                                <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Context (drag to delete)</div>
+                                                <div className="text-xs font-bold uppercase text-green-400 mb-2">← Context (drag to delete)</div>
                                                 <div 
                                                     className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[80px]"
                                                     onDragOver={(e) => e.preventDefault()}
@@ -4878,7 +4904,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             }}
                                                             className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 py-2 rounded-lg cursor-move text-sm"
                                                         >
-                                                            {mergeData.current.context || 'â€”'}
+                                                            {mergeData.current.context || '—'}
                                                         </div>
                                                     )}
                                                 </div>
@@ -4900,13 +4926,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="flex-1 bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
-                                            ðŸ”€ Merge & Delete Red Panel
+                                            🔀 Merge & Delete Red Panel
                                         </button>
                                         <button 
                                             onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}}
                                             className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
-                                            âŒ Cancel
+                                            ❌ Cancel
                                         </button>
                                     </div>
                                 </div>
@@ -4914,12 +4940,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         )
                     )}
 
-                    {/* ðŸ†• V11.2: RECYCLE BIN MODAL */}
+                    {/* 🆕 V11.2: RECYCLE BIN MODAL */}
                     {showRecycleBin && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-4xl border-red-500/30 max-h-[80vh] flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-2xl font-black main-gradient uppercase text-center italic">ðŸ—‘ï¸ Recycle Bin (48h)</h2>
+                                    <h2 className="text-2xl font-black main-gradient uppercase text-center italic">🗑️ Recycle Bin (48h)</h2>
                                     <button onClick={() => setShowRecycleBin(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                 </div>
                                 
@@ -4951,10 +4977,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div className="flex-1">
                                                     <p className="text-white font-bold">{word.vocabulary}</p>
                                                     <p className="text-slate-400 text-xs mt-1">
-                                                        Family: {word.family || 'â€”'}
+                                                        Family: {word.family || '—'}
                                                     </p>
                                                     <p className="text-slate-500 text-xs mt-1">
-                                                        Synonyms: {word.synonyms || 'â€”'}
+                                                        Synonyms: {word.synonyms || '—'}
                                                     </p>
                                                     <p className="text-red-400 text-xs mt-2">
                                                         Deleted: {new Date(word.deleted_at).toLocaleString()}
@@ -4972,14 +4998,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             disabled={selectedForRestore.length === 0}
                                             className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
-                                            â™»ï¸ Restore Selected ({selectedForRestore.length})
+                                            ♻️ Restore Selected ({selectedForRestore.length})
                                         </button>
                                         <button 
                                             onClick={permanentlyDelete}
                                             disabled={selectedForRestore.length === 0}
                                             className="flex-1 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
-                                            ðŸ”¥ Delete Forever ({selectedForRestore.length})
+                                            🔥 Delete Forever ({selectedForRestore.length})
                                         </button>
                                     </div>
                                 )}
@@ -4987,19 +5013,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.21: CHANGE HISTORY MODAL */}
+                    {/* 🆕 V11.21: CHANGE HISTORY MODAL */}
                     {showChangeHistory && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-4xl border-blue-500/30 max-h-[80vh] flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div className="flex items-center gap-3">
-                                        <h2 className="text-2xl font-black main-gradient uppercase italic">ðŸ“œ Change History (2h)</h2>
+                                        <h2 className="text-2xl font-black main-gradient uppercase italic">📜 Change History (2h)</h2>
                                         <button 
                                             onClick={() => loadChangeHistory()}
                                             className="text-blue-400 hover:text-blue-300 text-sm bg-blue-900/30 px-3 py-1 rounded-lg"
                                             title="Refresh history"
                                         >
-                                            ðŸ”„ Refresh
+                                            🔄 Refresh
                                         </button>
                                     </div>
                                     <button onClick={() => { setShowChangeHistory(false); setSelectedForHistory([]); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
@@ -5015,7 +5041,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <i className="fas fa-history text-6xl mb-4 opacity-20"></i>
                                             <p className="text-lg mb-2">No recent changes</p>
                                             <p className="text-xs text-slate-600 mt-4">
-                                                ðŸ’¡ Note: Make sure your database has columns:<br/>
+                                                💡 Note: Make sure your database has columns:<br/>
                                                 <code className="text-blue-400">previous_version</code> (text) and <code className="text-blue-400">modified_at</code> (timestamptz)
                                             </p>
                                             <p className="text-xs text-slate-600 mt-2">
@@ -5045,15 +5071,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <div className="grid grid-cols-2 gap-4 text-xs">
                                                             <div className="bg-red-900/20 border border-red-500/30 rounded p-2">
                                                                 <p className="text-red-400 font-bold mb-1">BEFORE:</p>
-                                                                <p className="text-slate-300">Family: {previousData.family || 'â€”'}</p>
-                                                                <p className="text-slate-300 truncate">Synonyms: {previousData.synonyms || 'â€”'}</p>
-                                                                <p className="text-slate-300 truncate">Context: {previousData.context || 'â€”'}</p>
+                                                                <p className="text-slate-300">Family: {previousData.family || '—'}</p>
+                                                                <p className="text-slate-300 truncate">Synonyms: {previousData.synonyms || '—'}</p>
+                                                                <p className="text-slate-300 truncate">Context: {previousData.context || '—'}</p>
                                                             </div>
                                                             <div className="bg-green-900/20 border border-green-500/30 rounded p-2">
                                                                 <p className="text-green-400 font-bold mb-1">AFTER:</p>
-                                                                <p className="text-slate-300">Family: {word.family || 'â€”'}</p>
-                                                                <p className="text-slate-300 truncate">Synonyms: {word.synonyms || 'â€”'}</p>
-                                                                <p className="text-slate-300 truncate">Context: {word.context || 'â€”'}</p>
+                                                                <p className="text-slate-300">Family: {word.family || '—'}</p>
+                                                                <p className="text-slate-300 truncate">Synonyms: {word.synonyms || '—'}</p>
+                                                                <p className="text-slate-300 truncate">Context: {word.context || '—'}</p>
                                                             </div>
                                                         </div>
                                                         
@@ -5074,7 +5100,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             disabled={selectedForHistory.length === 0}
                                             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
-                                            âª Restore to BEFORE ({selectedForHistory.length})
+                                            ⏪ Restore to BEFORE ({selectedForHistory.length})
                                         </button>
                                     </div>
                                 )}
@@ -5082,12 +5108,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.13: FLASHCARDS with consistent UI */}
+                    {/* 🆕 V11.13: FLASHCARDS with consistent UI */}
                     {showFlashcards && flashcardWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 <ExerciseHeader
-                                    title="ðŸŽ´ Flashcards"
+                                    title="🎴 Flashcards"
                                     currentIndex={flashcardIndex}
                                     totalCount={flashcardWords.length}
                                     currentWord={flashcardWords[flashcardIndex].vocabulary}
@@ -5118,10 +5144,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...flashcardWords[flashcardIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('ðŸŽ´ FLASHCARDS EXERCISE\n\nðŸ“Š DIFFICULTY TRACKING:\nðŸŸ¢ Active: You know it well\nðŸŸ¡ Emerging: Need more practice\nðŸ”´ Passive: Difficult to remember\n\nðŸŽ¯ HOW TO USE:\nâ€¢ Click card to flip and see answer\nâ€¢ Rate your knowledge (Easy/Medium/Hard)\nâ€¢ ðŸ§  Memory mode: Shows hardest cards first\nâ€¢ ðŸŽ² Random mode: Shuffles all cards\n\nðŸ”Š AUDIO:\nâ€¢ Auto-plays context when card flips (if enabled)\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ”Š/ðŸ”‡ = Toggle audio on/off\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ â† â†’ = Navigate between cards\nâ€¢ Easy/Medium/Passive = Rate difficulty')}
+                                    onInfo={() => alert('🎴 FLASHCARDS EXERCISE\n\n📊 DIFFICULTY TRACKING:\n🟢 Active: You know it well\n🟡 Emerging: Need more practice\n🔴 Passive: Difficult to remember\n\n🎯 HOW TO USE:\n• Click card to flip and see answer\n• Rate your knowledge (Easy/Medium/Hard)\n• 🧠 Memory mode: Shows hardest cards first\n• 🎲 Random mode: Shuffles all cards\n\n🔊 AUDIO:\n• Auto-plays context when card flips (if enabled)\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 🔊/🔇 = Toggle audio on/off\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• ← → = Navigate between cards\n• Easy/Medium/Passive = Rate difficulty')}
                                 />
 
-                                {/* ðŸ†• V11.2: Difficulty indicator */}
+                                {/* 🆕 V11.2: Difficulty indicator */}
                                 {flashcardWords[flashcardIndex].difficulty && (
                                     <div className="text-center mb-4">
                                         <span className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${
@@ -5150,7 +5176,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className="absolute w-full h-full bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl p-12 flex flex-col items-center justify-center shadow-2xl"
                                             style={{ backfaceVisibility: 'hidden' }}
                                         >
-                                            {/* ðŸ†• V11.42: Favourite star in top-right corner */}
+                                            {/* 🆕 V11.42: Favourite star in top-right corner */}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -5169,10 +5195,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <div className="text-center">
                                                 <div className="inline-block mb-4">
                                                     <span className="bg-white/20 text-white px-4 py-2 rounded-full text-sm font-bold mr-2">
-                                                        {flashcardWords[flashcardIndex].difficulty || 'â€”'}
+                                                        {flashcardWords[flashcardIndex].difficulty || '—'}
                                                     </span>
                                                     <span className="bg-white/20 text-white px-4 py-2 rounded-full text-sm font-bold">
-                                                        {flashcardWords[flashcardIndex].family || 'â€”'}
+                                                        {flashcardWords[flashcardIndex].family || '—'}
                                                     </span>
                                                 </div>
                                                 <h3 className="text-6xl font-black text-white mb-4">
@@ -5207,7 +5233,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 </div>
 
-                                {/* ðŸ†• V11.2: Difficulty buttons */}
+                                {/* 🆕 V11.2: Difficulty buttons */}
                                 <div className="flex gap-4 mb-6">
                                     <button
                                         onClick={(e) => {
@@ -5217,7 +5243,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="flex-1 bg-green-600 hover:bg-green-500 text-white py-4 rounded-2xl font-black uppercase text-sm tooltip"
                                         data-tip="Active: Retrieves the word instantly. Speak without thinking."
                                     >
-                                        âœ… Active
+                                        ✅ Active
                                     </button>
                                     <button
                                         onClick={(e) => {
@@ -5227,7 +5253,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white py-4 rounded-2xl font-black uppercase text-sm tooltip"
                                         data-tip="Emerging: Searches for the word in your mental archive. Write a formal email calmly."
                                     >
-                                        âš ï¸ Emerging
+                                        ⚠️ Emerging
                                     </button>
                                     <button
                                         onClick={(e) => {
@@ -5237,7 +5263,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="flex-1 bg-red-600 hover:bg-red-500 text-white py-4 rounded-2xl font-black uppercase text-sm tooltip"
                                         data-tip="Passive: Decodes others' messages. Read a New York Times article."
                                     >
-                                        âŒ Passive
+                                        ❌ Passive
                                     </button>
                                 </div>
 
@@ -5257,7 +5283,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 : 'bg-white text-slate-900 hover:bg-slate-200'
                                         }`}
                                     >
-                                        â† Previous
+                                        ← Previous
                                     </button>
 
                                     <button
@@ -5275,7 +5301,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 : 'bg-white text-slate-900 hover:bg-slate-200'
                                         }`}
                                     >
-                                        Next â†’
+                                        Next →
                                     </button>
                                 </div>
 
@@ -5289,12 +5315,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
                     
-                    {/* ðŸ†• V11.13: DICTATION with consistent UI */}
+                    {/* 🆕 V11.13: DICTATION with consistent UI */}
                     {showDictation && dictationWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 <ExerciseHeader
-                                    title="ðŸŽ¤ Dictation"
+                                    title="🎤 Dictation"
                                     currentIndex={dictationIndex}
                                     totalCount={dictationWords.length}
                                     currentWord={dictationWords[dictationIndex].vocabulary}
@@ -5319,7 +5345,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('ðŸŽ¤ DICTATION EXERCISE\n\nðŸ“Š SCORING:\nðŸŸ¢ Active: 0-1 errors\nðŸŸ¡ Emerging: 2 errors\nðŸ”´ Passive: 3+ errors\n\nâŒ¨ï¸ SHORTCUTS:\nâ€¢ Press ENTER to check your answer\nâ€¢ Press ENTER again to move to next word and auto-play\n\nðŸ”Š AUDIO:\nâ€¢ First play: Normal speed (1.0x)\nâ€¢ Second play: Slow speed (0.7x)\nâ€¢ Maximum 4 plays per word\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ ðŸ”Š = Play audio\nâ€¢ Check Answer = Verify your answer\nâ€¢ Skip = Skip to next word\nâ€¢ Edit Word = Modify current word\nâ€¢ Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🎤 DICTATION EXERCISE\n\n📊 SCORING:\n🟢 Active: 0-1 errors\n🟡 Emerging: 2 errors\n🔴 Passive: 3+ errors\n\n⌨️ SHORTCUTS:\n• Press ENTER to check your answer\n• Press ENTER again to move to next word and auto-play\n\n🔊 AUDIO:\n• First play: Normal speed (1.0x)\n• Second play: Slow speed (0.7x)\n• Maximum 4 plays per word\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• 🔊 = Play audio\n• Check Answer = Verify your answer\n• Skip = Skip to next word\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(dictationWords[dictationIndex]);
                                         setOriginalEditData({...dictationWords[dictationIndex]});
@@ -5346,7 +5372,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         : 'bg-blue-600 hover:bg-blue-500'
                                                 }`}
                                             >
-                                                ðŸ”Š
+                                                🔊
                                             </button>
                                             <div className="text-center">
                                                 <div className="text-white font-black text-2xl">
@@ -5358,7 +5384,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         </div>
                                         <p className="text-slate-400 text-sm">
-                                            Click speaker to hear â€¢ Speed: {dictationPlaySpeed === 'normal' ? 'Normal' : 'Slow'}
+                                            Click speaker to hear • Speed: {dictationPlaySpeed === 'normal' ? 'Normal' : 'Slow'}
                                         </p>
                                     </div>
 
@@ -5401,7 +5427,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 setDictationPlayCount(0);
                                                                 setDictationPlaySpeed('normal');
                                                             } else {
-                                                                alert('ðŸŽ‰ Exercise completed!');
+                                                                alert('🎉 Exercise completed!');
                                                                 setShowDictation(false);
                                                                 setDictationWords([]);
                                                                 setDictationIndex(0);
@@ -5422,7 +5448,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <div className="flex gap-4">
                                                 <button
                                                     onClick={() => {
-                                                        // ðŸ†• V11.5: Calculate errors and difficulty
+                                                        // 🆕 V11.5: Calculate errors and difficulty
                                                         const { errorCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
                                                         const difficulty = calculateDifficulty(errorCount);
                                                         setDictationErrorCount(errorCount);
@@ -5431,9 +5457,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     }}
                                                     className="flex-1 bg-green-600 hover:bg-green-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                                 >
-                                                    âœ… Check Answer
+                                                    ✅ Check Answer
                                                 </button>
-                                                {/* ðŸ†• V11.6: Skip button */}
+                                                {/* 🆕 V11.6: Skip button */}
                                                 <button
                                                     onClick={() => {
                                                         // Skip to next word without saving anything
@@ -5446,7 +5472,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
                                                         } else {
-                                                            alert('ðŸŽ‰ Exercise completed!');
+                                                            alert('🎉 Exercise completed!');
                                                             setShowDictation(false);
                                                             setDictationWords([]);
                                                             setDictationIndex(0);
@@ -5460,13 +5486,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     }}
                                                     className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                                 >
-                                                    â­ï¸ Skip
+                                                    ⏭️ Skip
                                                 </button>
                                             </div>
                                         </>
                                     ) : (
                                         <>
-                                            {/* ðŸ†• V11.5: Auto-difficulty display */}
+                                            {/* 🆕 V11.5: Auto-difficulty display */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl">
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Errors</p>
@@ -5480,16 +5506,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         dictationDifficulty === 'Emerging' ? 'text-yellow-400' :
                                                         'text-red-400'
                                                     }`}>
-                                                        {dictationDifficulty === 'Active' ? 'ðŸŸ¢' :
-                                                         dictationDifficulty === 'Emerging' ? 'ðŸŸ¡' : 'ðŸ”´'} {dictationDifficulty}
+                                                        {dictationDifficulty === 'Active' ? '🟢' :
+                                                         dictationDifficulty === 'Emerging' ? '🟡' : '🔴'} {dictationDifficulty}
                                                     </p>
                                                 </div>
                                             </div>
 
                                             <div className="space-y-6">
-                                                {/* ðŸ†• V11.5: Your answer with error highlighting */}
+                                                {/* 🆕 V11.5: Your answer with error highlighting */}
                                                 <div>
-                                                    <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Answer (ðŸŸ¢ correct, ðŸ”´ errors):</h4>
+                                                    <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Answer (🟢 correct, 🔴 errors):</h4>
                                                     <div className="bg-slate-800 p-4 rounded-xl text-lg">
                                                         {dictationInput ? 
                                                             highlightDifferences(dictationInput, dictationWords[dictationIndex].context).highlighted 
@@ -5505,11 +5531,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
                                             
-                                            {/* ðŸ†• V11.16: Removed Edit button - already in header */}
+                                            {/* 🆕 V11.16: Removed Edit button - already in header */}
                                             <div className="mt-6">
                                                 <button
                                                     onClick={async () => {
-                                                        // ðŸ†• V11.5: Save difficulty to database
+                                                        // 🆕 V11.5: Save difficulty to database
                                                         try {
                                                             const currentDictationWord = dictationWords[dictationIndex];
                                                         await supabase.from('vocabulary_v4').update({ 
@@ -5531,7 +5557,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
                                                         } else {
-                                                            alert('ðŸŽ‰ Exercise completed!');
+                                                            alert('🎉 Exercise completed!');
                                                             setShowDictation(false);
                                                             setDictationWords([]);
                                                             setDictationIndex(0);
@@ -5545,7 +5571,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     }}
                                                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                                 >
-                                                    {dictationIndex < dictationWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
+                                                    {dictationIndex < dictationWords.length - 1 ? 'Next Word →' : '✅ Finish'}
                                                 </button>
                                             </div>
                                         </>
@@ -5562,12 +5588,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.13: SELECTION with consistent UI */}
+                    {/* 🆕 V11.13: SELECTION with consistent UI */}
                     {showSelection && selectionWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 <ExerciseHeader
-                                    title="âœ“ Selection"
+                                    title="✓ Selection"
                                     currentIndex={selectionIndex}
                                     totalCount={selectionWords.length}
                                     currentWord={selectionWords[selectionIndex].vocabulary}
@@ -5592,7 +5618,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('âœ“ SELECTION EXERCISE\n\nðŸ“Š SCORING:\nâœ… First try correct = Easy\nâš ï¸ Second try correct = Medium\nâŒ Third or more tries = Hard\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read the sentence with the blank\nâ€¢ Choose the correct word from 6 options\nâ€¢ You have unlimited attempts\nâ€¢ Difficulty is based on number of tries\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ Word options = Click to select answer\nâ€¢ Edit Word = Modify current word\nâ€¢ Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('✓ SELECTION EXERCISE\n\n📊 SCORING:\n✅ First try correct = Easy\n⚠️ Second try correct = Medium\n❌ Third or more tries = Hard\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Choose the correct word from 6 options\n• You have unlimited attempts\n• Difficulty is based on number of tries\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Word options = Click to select answer\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(selectionWords[selectionIndex]);
                                         setOriginalEditData({...selectionWords[selectionIndex]});
@@ -5600,7 +5626,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     }}
                                 />
 
-                                {/* Context with hidden word - ðŸ†• V11.19: Responsive padding */}
+                                {/* Context with hidden word - 🆕 V11.19: Responsive padding */}
                                 <div className="bg-gradient-to-br from-green-600 to-teal-600 rounded-2xl sm:rounded-3xl p-4 sm:p-8 mb-4 sm:mb-6 shadow-2xl">
                                     <div className="text-center">
                                         <h3 className="text-white/70 text-xs sm:text-sm font-bold uppercase mb-2 sm:mb-4">Complete the sentence:</h3>
@@ -5610,7 +5636,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 </div>
 
-                                {/* ðŸ†• V11.16: Countdown display - V11.19: Responsive */}
+                                {/* 🆕 V11.16: Countdown display - V11.19: Responsive */}
                                 {!selectionOptionsVisible && selectionTimeLeft > 0 && (
                                     <div className="text-center mb-4 sm:mb-6">
                                         <div className="inline-block bg-indigo-600/30 border-2 border-indigo-500 rounded-full px-6 py-3 sm:px-8 sm:py-4">
@@ -5620,7 +5646,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 )}
 
-                                {/* Options grid (6 options) - ðŸ†• V11.19: Responsive padding and text */}
+                                {/* Options grid (6 options) - 🆕 V11.19: Responsive padding and text */}
                                 <div className="grid grid-cols-2 gap-2 sm:gap-4 mb-4 sm:mb-6">
                                     {selectionOptions.map((option, index) => (
                                         <button
@@ -5677,7 +5703,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     ))}
                                 </div>
 
-                                {/* ðŸ†• V11.18: Skip button - V11.19: Responsive */}
+                                {/* 🆕 V11.18: Skip button - V11.19: Responsive */}
                                 {!showSelectionAnswer && (
                                     <div className="mt-4 sm:mt-6">
                                         <button
@@ -5728,10 +5754,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 )}
 
-                                {/* Answer feedback and navigation - ðŸ†• V11.19: Responsive */}
+                                {/* Answer feedback and navigation - 🆕 V11.19: Responsive */}
                                 {showSelectionAnswer && (
                                     <div className="space-y-3 sm:space-y-4">
-                                        {/* Difficulty display - ðŸ†• V11.19: Responsive */}
+                                        {/* Difficulty display - 🆕 V11.19: Responsive */}
                                         <div className="flex justify-center items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-slate-800/50 rounded-xl sm:rounded-2xl">
                                             <div className="text-center">
                                                 <p className="text-[10px] sm:text-xs uppercase font-black text-slate-500 mb-1">Attempts</p>
@@ -5765,7 +5791,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
 
-                                        {/* ðŸ†• V11.16: Removed Edit button - V11.19: Responsive */}
+                                        {/* 🆕 V11.16: Removed Edit button - V11.19: Responsive */}
                                         <div className="mt-4 sm:mt-6">
                                             <button
                                                 onClick={async () => {
@@ -5839,13 +5865,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.16: GUESSWORK EXERCISE MODAL */}
+                    {/* 🆕 V11.16: GUESSWORK EXERCISE MODAL */}
                     {showGuesswork && guessworkWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 {/* Header */}
                                 <ExerciseHeader
-                                    title="ðŸ¤” Guesswork"
+                                    title="🤔 Guesswork"
                                     currentIndex={guessworkIndex}
                                     totalCount={guessworkWords.length}
                                     currentWord={guessworkWords[guessworkIndex].vocabulary}
@@ -5876,10 +5902,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('ðŸ¤” GUESSWORK EXERCISE\n\nðŸ“Š SCORING:\nâœ… Exact match = Easy\nðŸ¤– AI evaluates quality when not exact match:\n  â€¢ Active = Excellent answer (correct grammar, perfect fit)\n  â€¢ Emerging = Acceptable answer (minor issues, generally correct)\n  â€¢ Passive = Poor answer (significant errors)\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read the sentence with the blank\nâ€¢ Write the correct word\nâ€¢ Click ðŸ’¡ Hint button (top-right of sentence) for help\nâ€¢ Exact match â†’ Easy (accepted immediately)\nâ€¢ Non-exact â†’ AI validates and scores Easy/Medium/Hard\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ’¡ = Show hint (in sentence panel)\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ Check Answer = Verify your answer (uses AI if not exact match)\nâ€¢ Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Easy\n🤖 AI evaluates quality when not exact match:\n  • Active = Excellent answer (correct grammar, perfect fit)\n  • Emerging = Acceptable answer (minor issues, generally correct)\n  • Passive = Poor answer (significant errors)\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
-                                {/* Context with blank - ðŸ†• V11.21: Hint button in top-right corner */}
+                                {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
                                 <div className="bg-gradient-to-br from-orange-600 to-red-600 rounded-3xl p-8 mb-6 shadow-2xl relative">
                                     {/* Hint button in top-right corner */}
                                     <button
@@ -5890,7 +5916,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         className="absolute top-4 right-4 bg-yellow-500 hover:bg-yellow-400 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg transition-all hover:scale-110"
                                         title="Show hint"
                                     >
-                                        ðŸ’¡ Hint
+                                        💡 Hint
                                     </button>
                                     
                                     <div className="text-center">
@@ -5964,7 +5990,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setGuessworkDifficulty('');
                                                             setGuessworkAIResult(null);
                                                         } else {
-                                                            alert('ðŸŽ‰ Exercise completed!');
+                                                            alert('🎉 Exercise completed!');
                                                             setShowGuesswork(false);
                                                             setGuessworkWords([]);
                                                             setGuessworkIndex(0);
@@ -6020,7 +6046,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 disabled={guessworkAIValidating || !guessworkInput.trim()}
                                                 className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {guessworkAIValidating ? 'ðŸ¤– AI Validating...' : 'âœ… Check Answer'}
+                                                {guessworkAIValidating ? '🤖 AI Validating...' : '✅ Check Answer'}
                                             </button>
                                             
                                             <button
@@ -6034,7 +6060,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
                                                     } else {
-                                                        alert('ðŸŽ‰ Exercise completed!');
+                                                        alert('🎉 Exercise completed!');
                                                         setShowGuesswork(false);
                                                         setGuessworkWords([]);
                                                         setGuessworkIndex(0);
@@ -6047,7 +6073,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                â­ï¸ Skip
+                                                ⏭️ Skip
                                             </button>
                                         </div>
                                     </>
@@ -6137,7 +6163,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
                                                     } else {
-                                                        alert('ðŸŽ‰ Exercise completed!');
+                                                        alert('🎉 Exercise completed!');
                                                         setShowGuesswork(false);
                                                         setGuessworkWords([]);
                                                         setGuessworkIndex(0);
@@ -6150,7 +6176,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {guessworkIndex < guessworkWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
+                                                {guessworkIndex < guessworkWords.length - 1 ? 'Next Word →' : '✅ Finish'}
                                             </button>
                                         </div>
                                     </>
@@ -6167,7 +6193,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.20: Guesswork Hint Modal */}
+                    {/* 🆕 V11.20: Guesswork Hint Modal */}
                     {showGuessworkHint && guessworkWords.length > 0 && (
                         <div 
                             className="fixed inset-0 bg-black/80 z-[150] flex items-center justify-center p-4"
@@ -6179,18 +6205,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             >
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="text-2xl font-black text-yellow-400 flex items-center gap-2">
-                                        ðŸ’¡ Hint
+                                        💡 Hint
                                     </h3>
                                     <button 
                                         onClick={() => setShowGuessworkHint(false)}
                                         className="text-slate-400 hover:text-white text-3xl"
                                     >
-                                        Ã—
+                                        ×
                                     </button>
                                 </div>
                                 
                                 <div className="space-y-6">
-                                    {/* ðŸ†• V11.21: Show only first letter */}
+                                    {/* 🆕 V11.21: Show only first letter */}
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">First Letter</p>
                                         <p className="text-6xl font-black text-white">
@@ -6199,7 +6225,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </p>
                                     </div>
                                     
-                                    {/* ðŸ†• V11.22: Show AI-generated meaning */}
+                                    {/* 🆕 V11.22: Show AI-generated meaning */}
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Meaning</p>
                                         {guessworkHintLoading ? (
@@ -6214,7 +6240,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         )}
                                     </div>
                                     
-                                    {/* ðŸ†• V11.31: Show Family */}
+                                    {/* 🆕 V11.31: Show Family */}
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Family</p>
                                         <p className="text-2xl font-bold text-yellow-300">
@@ -6233,13 +6259,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.31: TRANSLATION EXERCISE MODAL */}
+                    {/* 🆕 V11.31: TRANSLATION EXERCISE MODAL */}
                     {showTranslation && translationWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 {/* Header */}
                                 <ExerciseHeader
-                                    title="ðŸŒ Translation"
+                                    title="🌐 Translation"
                                     currentIndex={translationIndex}
                                     totalCount={translationWords.length}
                                     currentWord={translationWords[translationIndex].vocabulary}
@@ -6271,7 +6297,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...translationWords[translationIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('ðŸŒ TRANSLATION EXERCISE\n\nðŸ“Š CAMBRIDGE GRADING (V11.38):\nðŸŸ¢ C1/C2 (Easy): 0 errors - Perfect! 90-100%\n  â€¢ C2 = Very sophisticated grammar\n  â€¢ C1 = Advanced grammar\nðŸŸ¡ B2 (Medium): 1 error - Good, minor mistake, 70-85%\nðŸ”´ B1 (Hard): 2+ errors - Needs practice, 40-65%\n\nâš¡ IMPORTANT:\n  Easy/Medium/Passive = Your memorization difficulty\n  Cambridge level = English proficiency grade\n\nâœ… Exact match = AI evaluates C1 or C2\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read Spanish translation\nâ€¢ Translate to English\nâ€¢ Type OR use ðŸŽ¤ voice\nâ€¢ Press ENTER to check\nâ€¢ Get Cambridge evaluation\nâ€¢ Detailed feedback on ENGLISH errors only\n\nðŸŽ¤ VOICE TO TEXT:\nâ€¢ Click microphone ðŸŽ¤\nâ€¢ Speak English translation\nâ€¢ Text appears automatically\nâ€¢ ðŸ“± Mobile: Enable mic in browser settings\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Memory/Random\nâ€¢ ðŸŽ¤ = Voice input\nâ€¢ ðŸ“– = Dictionary\nâ€¢ âœï¸ = Edit word\nâ€¢ Ã— = Close\nâ€¢ Check Translation = Evaluate\nâ€¢ Next/Finish = Continue')}
+                                    onInfo={() => alert('🌐 TRANSLATION EXERCISE\n\n📊 CAMBRIDGE GRADING (V11.38):\n🟢 C1/C2 (Easy): 0 errors - Perfect! 90-100%\n  • C2 = Very sophisticated grammar\n  • C1 = Advanced grammar\n🟡 B2 (Medium): 1 error - Good, minor mistake, 70-85%\n🔴 B1 (Hard): 2+ errors - Needs practice, 40-65%\n\n⚡ IMPORTANT:\n  Easy/Medium/Passive = Your memorization difficulty\n  Cambridge level = English proficiency grade\n\n✅ Exact match = AI evaluates C1 or C2\n\n🎯 HOW TO PLAY:\n• Read Spanish translation\n• Translate to English\n• Type OR use 🎤 voice\n• Press ENTER to check\n• Get Cambridge evaluation\n• Detailed feedback on ENGLISH errors only\n\n🎤 VOICE TO TEXT:\n• Click microphone 🎤\n• Speak English translation\n• Text appears automatically\n• 📱 Mobile: Enable mic in browser settings\n\n🎮 BUTTONS:\n• 🧠/🎲 = Memory/Random\n• 🎤 = Voice input\n• 📖 = Dictionary\n• ✏️ = Edit word\n• × = Close\n• Check Translation = Evaluate\n• Next/Finish = Continue')}
                                 />
 
                                 {/* Spanish translation panel */}
@@ -6324,7 +6350,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 autoFocus
                                             />
                                             
-                                            {/* ðŸ†• V11.38: Voice-to-text button */}
+                                            {/* 🆕 V11.38: Voice-to-text button */}
                                             <button
                                                 onClick={() => startTranslationVoiceRecognition()}
                                                 disabled={translationVoiceListening}
@@ -6359,7 +6385,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 disabled={translationAIValidating || !translationInput.trim()}
                                                 className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {translationAIValidating ? 'ðŸ¤– Cambridge Examiner Evaluating...' : 'âœ… Check Translation'}
+                                                {translationAIValidating ? '🤖 Cambridge Examiner Evaluating...' : '✅ Check Translation'}
                                             </button>
                                             
                                             <button
@@ -6376,7 +6402,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         // Generate translation for next word
                                                         await generateSpanishTranslation(translationWords[nextIndex].context);
                                                     } else {
-                                                        alert('ðŸŽ‰ Exercise completed!');
+                                                        alert('🎉 Exercise completed!');
                                                         setShowTranslation(false);
                                                         setTranslationWords([]);
                                                         setTranslationIndex(0);
@@ -6390,7 +6416,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                â­ï¸ Skip
+                                                ⏭️ Skip
                                             </button>
                                         </div>
                                     </>
@@ -6407,8 +6433,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         'bg-red-900/20 border-red-500'
                                                     }`}>
                                                         <span className="text-4xl">
-                                                            {translationAIResult.grade === 'A' ? 'ðŸ†' :
-                                                             translationAIResult.grade === 'B' ? 'â­' : 'ðŸ“'}
+                                                            {translationAIResult.grade === 'A' ? '🏆' :
+                                                             translationAIResult.grade === 'B' ? '⭐' : '📝'}
                                                         </span>
                                                         <div>
                                                             <p className={`text-3xl font-black ${
@@ -6425,12 +6451,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     </div>
                                                 </div>
 
-                                                {/* ðŸ†• V11.38: Improved feedback - single clear panel, no repetition */}
+                                                {/* 🆕 V11.38: Improved feedback - single clear panel, no repetition */}
                                                 {((translationAIResult.grammar_errors && translationAIResult.grammar_errors.length > 0) || 
                                                   (translationAIResult.vocabulary_issues && translationAIResult.vocabulary_issues.length > 0)) ? (
                                                     <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
                                                         <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                                            <span className="text-2xl">ðŸ”</span>
+                                                            <span className="text-2xl">🔍</span>
                                                             Errors Found
                                                         </h4>
                                                         
@@ -6439,7 +6465,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             {translationAIResult.grammar_errors && translationAIResult.grammar_errors.map((error, i) => (
                                                                 <div key={`grammar-${i}`} className="bg-red-900/20 border-l-4 border-red-500 rounded-r-lg p-4">
                                                                     <div className="flex items-start gap-3">
-                                                                        <span className="text-2xl shrink-0">âš ï¸</span>
+                                                                        <span className="text-2xl shrink-0">⚠️</span>
                                                                         <div className="flex-1">
                                                                             <p className="text-red-300 font-bold text-xs uppercase mb-2">Grammar Error</p>
                                                                             <p className="text-red-100 text-sm leading-relaxed">{error}</p>
@@ -6452,7 +6478,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             {translationAIResult.vocabulary_issues && translationAIResult.vocabulary_issues.map((issue, i) => (
                                                                 <div key={`vocab-${i}`} className="bg-yellow-900/20 border-l-4 border-yellow-500 rounded-r-lg p-4">
                                                                     <div className="flex items-start gap-3">
-                                                                        <span className="text-2xl shrink-0">ðŸ“</span>
+                                                                        <span className="text-2xl shrink-0">📝</span>
                                                                         <div className="flex-1">
                                                                             <p className="text-yellow-300 font-bold text-xs uppercase mb-2">Vocabulary Issue</p>
                                                                             <p className="text-yellow-100 text-sm leading-relaxed">{issue}</p>
@@ -6466,7 +6492,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     // Perfect translation
                                                     <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-6">
                                                         <div className="flex items-center gap-3">
-                                                            <span className="text-4xl">ðŸŽ‰</span>
+                                                            <span className="text-4xl">🎉</span>
                                                             <div>
                                                                 <p className="text-green-300 font-bold text-lg">Perfect Translation!</p>
                                                                 <p className="text-green-200 text-sm">No errors found. Excellent work!</p>
@@ -6475,7 +6501,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     </div>
                                                 )}
 
-                                                {/* ðŸ†• V11.38: Comparison - Your Translation vs Original English only */}
+                                                {/* 🆕 V11.38: Comparison - Your Translation vs Original English only */}
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <div>
                                                         <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Translation:</h4>
@@ -6524,7 +6550,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         // Generate translation for next word
                                                         await generateSpanishTranslation(translationWords[nextIndex].context);
                                                     } else {
-                                                        alert('ðŸŽ‰ Exercise completed!');
+                                                        alert('🎉 Exercise completed!');
                                                         setShowTranslation(false);
                                                         setTranslationWords([]);
                                                         setTranslationIndex(0);
@@ -6538,7 +6564,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="w-full bg-pink-600 hover:bg-pink-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {translationIndex < translationWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
+                                                {translationIndex < translationWords.length - 1 ? 'Next Word →' : '✅ Finish'}
                                             </button>
                                         </div>
                                     </>
@@ -6555,19 +6581,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.41: STATS DASHBOARD MODAL */}
+                    {/* 🆕 V11.41: STATS DASHBOARD MODAL */}
                     {showStats && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-6xl border-indigo-500/30 max-h-[90vh] overflow-y-auto custom-scroll">
                                 <div className="flex justify-between items-center mb-8">
                                     <div className="flex items-center gap-3">
-                                        <h2 className="text-3xl font-black main-gradient uppercase italic">ðŸ“Š Statistics Dashboard</h2>
+                                        <h2 className="text-3xl font-black main-gradient uppercase italic">📊 Statistics Dashboard</h2>
                                         <button 
-                                            onClick={() => alert('â„¹ï¸ HOW EFFORT LEVELS WORK\n\nðŸŽ¯ SYSTEM: Single "Difficulty" level per word\n\nðŸ“ UPDATES:\nâ€¢ Each exercise you complete updates the word\'s effort level\nâ€¢ The LAST exercise result overwrites previous level\nâ€¢ Example: Flashcard (Active) â†’ Dictation fails (Passive) â†’ Level becomes Passive\n\nðŸ’¡ THIS MEANS:\nâ€¢ "Difficulty" filter shows current overall difficulty\nâ€¢ Not exercise-specific (coming in future version)\nâ€¢ Stats show average performance per exercise\n\nðŸ“Š DIFFICULT WORDS CRITERIA:\nðŸŽ´ Flashcards: Passive/Emerging + practiced\nðŸŽ¤ Dictation: Avg >2 errors per attempt\nâœ“ Selection: Avg >2 attempts per question  \nâœï¸ Guesswork: Passive/Emerging + practiced\nðŸŒ Translation: B1/B2 Cambridge grade\n\nðŸ’¾ BACKUPS:\nâœ… All exercise data saved in JSON/CSV exports\nâœ… Includes: counts, errors, grades, dates\n\nðŸ“Œ Click exercise lines to practice difficult words!')}
+                                            onClick={() => alert('ℹ️ HOW EFFORT LEVELS WORK\n\n🎯 SYSTEM: Single "Difficulty" level per word\n\n📝 UPDATES:\n• Each exercise you complete updates the word\'s effort level\n• The LAST exercise result overwrites previous level\n• Example: Flashcard (Active) → Dictation fails (Passive) → Level becomes Passive\n\n💡 THIS MEANS:\n• "Difficulty" filter shows current overall difficulty\n• Not exercise-specific (coming in future version)\n• Stats show average performance per exercise\n\n📊 DIFFICULT WORDS CRITERIA:\n🎴 Flashcards: Passive/Emerging + practiced\n🎤 Dictation: Avg >2 errors per attempt\n✓ Selection: Avg >2 attempts per question  \n✏️ Guesswork: Passive/Emerging + practiced\n🌐 Translation: B1/B2 Cambridge grade\n\n💾 BACKUPS:\n✅ All exercise data saved in JSON/CSV exports\n✅ Includes: counts, errors, grades, dates\n\n📌 Click exercise lines to practice difficult words!')}
                                             className="text-blue-400 hover:text-blue-300 text-xl"
                                             title="How Effort levels work"
                                         >
-                                            â„¹ï¸
+                                            ℹ️
                                         </button>
                                     </div>
                                     <button onClick={() => setShowStats(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
@@ -6601,22 +6627,22 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <h3 className="text-xl font-black text-white mb-4">Difficulty Distribution</h3>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                 <div className="text-center tooltip" data-tip="Active: Retrieves the word instantly. Speak without thinking.">
-                                                    <p className="text-5xl mb-2">ðŸŸ¢</p>
+                                                    <p className="text-5xl mb-2">🟢</p>
                                                     <p className="text-white text-2xl font-bold">{statsData.difficulty.easy}</p>
                                                     <p className="text-green-400 text-sm">Active</p>
                                                 </div>
                                                 <div className="text-center tooltip" data-tip="Emerging: Searches for the word in your mental archive. Write a formal email calmly.">
-                                                    <p className="text-5xl mb-2">ðŸŸ¡</p>
+                                                    <p className="text-5xl mb-2">🟡</p>
                                                     <p className="text-white text-2xl font-bold">{statsData.difficulty.medium}</p>
                                                     <p className="text-yellow-400 text-sm">Emerging</p>
                                                 </div>
                                                 <div className="text-center tooltip" data-tip="Passive: Decodes others' messages. Read a New York Times article.">
-                                                    <p className="text-5xl mb-2">ðŸ”´</p>
+                                                    <p className="text-5xl mb-2">🔴</p>
                                                     <p className="text-white text-2xl font-bold">{statsData.difficulty.hard}</p>
                                                     <p className="text-red-400 text-sm">Passive</p>
                                                 </div>
                                                 <div className="text-center">
-                                                    <p className="text-5xl mb-2">âšª</p>
+                                                    <p className="text-5xl mb-2">⚪</p>
                                                     <p className="text-white text-2xl font-bold">{statsData.difficulty.notPracticed}</p>
                                                     <p className="text-slate-400 text-sm">Not Practiced</p>
                                                 </div>
@@ -6631,28 +6657,28 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     onClick={() => openExerciseDrillDown('flashcard')}
                                                     className="w-full flex justify-between items-center bg-purple-900/20 hover:bg-purple-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-purple-500"
                                                 >
-                                                    <span className="text-white font-bold">ðŸŽ´ Flashcards</span>
+                                                    <span className="text-white font-bold">🎴 Flashcards</span>
                                                     <span className="text-purple-300 text-lg font-bold">{statsData.exercises.flashcard} practiced</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => openExerciseDrillDown('dictation')}
                                                     className="w-full flex justify-between items-center bg-blue-900/20 hover:bg-blue-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-blue-500"
                                                 >
-                                                    <span className="text-white font-bold">ðŸŽ¤ Dictation</span>
-                                                    <span className="text-blue-300 text-lg font-bold">{statsData.exercises.dictation.count} practiced â€¢ Avg {statsData.exercises.dictation.avgErrors} errors/attempt</span>
+                                                    <span className="text-white font-bold">🎤 Dictation</span>
+                                                    <span className="text-blue-300 text-lg font-bold">{statsData.exercises.dictation.count} practiced • Avg {statsData.exercises.dictation.avgErrors} errors/attempt</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => openExerciseDrillDown('selection')}
                                                     className="w-full flex justify-between items-center bg-green-900/20 hover:bg-green-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-green-500"
                                                 >
-                                                    <span className="text-white font-bold">âœ“ Selection</span>
-                                                    <span className="text-green-300 text-lg font-bold">{statsData.exercises.selection.count} practiced â€¢ Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
+                                                    <span className="text-white font-bold">✓ Selection</span>
+                                                    <span className="text-green-300 text-lg font-bold">{statsData.exercises.selection.count} practiced • Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => openExerciseDrillDown('guesswork')}
                                                     className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-orange-500"
                                                 >
-                                                    <span className="text-white font-bold">âœï¸ Guesswork</span>
+                                                    <span className="text-white font-bold">✏️ Guesswork</span>
                                                     <span className="text-orange-300 text-lg font-bold">{statsData.exercises.guesswork} practiced</span>
                                                 </button>
                                                 <button 
@@ -6660,7 +6686,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     className="w-full bg-pink-900/20 hover:bg-pink-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-pink-500"
                                                 >
                                                     <div className="flex justify-between items-center mb-2">
-                                                        <span className="text-white font-bold">ðŸŒ Translation</span>
+                                                        <span className="text-white font-bold">🌍 Translation</span>
                                                         <span className="text-pink-300 text-lg font-bold">{statsData.exercises.translation.count} practiced</span>
                                                     </div>
                                                     <div className="grid grid-cols-4 gap-2 mt-3">
@@ -6688,7 +6714,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {/* Hardest Words */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="glass-card rounded-2xl p-6">
-                                                <h3 className="text-xl font-black text-white mb-4">ðŸŽ¤ Hardest Words (Dictation)</h3>
+                                                <h3 className="text-xl font-black text-white mb-4">🎤 Hardest Words (Dictation)</h3>
                                                 <div className="space-y-2">
                                                     {statsData.hardest.byErrors.slice(0, 10).map((item, i) => (
                                                         <div key={i} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg">
@@ -6699,7 +6725,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
                                             <div className="glass-card rounded-2xl p-6">
-                                                <h3 className="text-xl font-black text-white mb-4">âœ“ Hardest Words (Selection)</h3>
+                                                <h3 className="text-xl font-black text-white mb-4">✓ Hardest Words (Selection)</h3>
                                                 <div className="space-y-2">
                                                     {statsData.hardest.byAttempts.slice(0, 10).map((item, i) => (
                                                         <div key={i} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg">
@@ -6713,21 +6739,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                                         {/* Reset Options - 3 buttons in grid */}
                                         <div className="glass-card rounded-2xl p-6">
-                                            <h3 className="text-xl font-black text-white mb-4">âš ï¸ Reset Options</h3>
+                                            <h3 className="text-xl font-black text-white mb-4">⚠️ Reset Options</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <button 
                                                     onClick={resetDifficulty} 
                                                     className="bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 text-yellow-300 py-4 rounded-xl font-bold"
                                                     title="Reset difficulty ratings to null. Words will be re-classified as you practice them again. Your vocabulary and exercise statistics will remain intact."
                                                 >
-                                                    ðŸŸ¡ Reset Difficulty Only
+                                                    🟡 Reset Difficulty Only
                                                 </button>
                                                 <button 
                                                     onClick={resetExerciseStats} 
                                                     className="bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 py-4 rounded-xl font-bold"
                                                     title="Reset all exercise counters and statistics (flashcard, dictation, selection, guesswork, translation counts and grades). Your vocabulary and difficulty ratings will remain intact."
                                                 >
-                                                    ðŸŸ  Reset Exercise Stats
+                                                    🟠 Reset Exercise Stats
                                                 </button>
                                             </div>
                                         </div>
@@ -6739,18 +6765,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.44: EXERCISE DRILL-DOWN MODAL - Practice Difficult Words */}
+                    {/* 🆕 V11.44: EXERCISE DRILL-DOWN MODAL - Practice Difficult Words */}
                     {showExerciseDrillDown && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-5xl border-indigo-500/30 max-h-[85vh] flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
                                         <h2 className="text-2xl font-black main-gradient uppercase italic">
-                                            {drillDownExercise === 'flashcard' && 'ðŸŽ´ Flashcard Difficult Words'}
-                                            {drillDownExercise === 'dictation' && 'ðŸŽ¤ Dictation Difficult Words'}
-                                            {drillDownExercise === 'selection' && 'âœ“ Selection Difficult Words'}
-                                            {drillDownExercise === 'guesswork' && 'âœï¸ Guesswork Difficult Words'}
-                                            {drillDownExercise === 'translation' && 'ðŸŒ Translation Difficult Words'}
+                                            {drillDownExercise === 'flashcard' && '🎴 Flashcard Difficult Words'}
+                                            {drillDownExercise === 'dictation' && '🎤 Dictation Difficult Words'}
+                                            {drillDownExercise === 'selection' && '✓ Selection Difficult Words'}
+                                            {drillDownExercise === 'guesswork' && '✏️ Guesswork Difficult Words'}
+                                            {drillDownExercise === 'translation' && '🌍 Translation Difficult Words'}
                                         </h2>
                                         <p className="text-slate-400 text-sm mt-2">
                                             {drillDownExercise === 'flashcard' && 'Words marked as Passive/Emerging in flashcard practice'}
@@ -6765,13 +6791,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 
                                 {drillDownWords.length === 0 ? (
                                     <div className="text-center py-20">
-                                        <p className="text-slate-500 text-xl mb-4">ðŸŽ‰ No difficult words found!</p>
+                                        <p className="text-slate-500 text-xl mb-4">🎉 No difficult words found!</p>
                                         <p className="text-slate-600 text-sm">All words in this exercise are performing well.</p>
                                     </div>
                                 ) : (
                                     <>
                                         <p className="text-slate-300 mb-4">
-                                            Found {drillDownWords.length} word(s) â€¢ Selected: {selectedDrillDownWords.length}
+                                            Found {drillDownWords.length} word(s) • Selected: {selectedDrillDownWords.length}
                                         </p>
                                         
                                         <div className="flex-1 overflow-y-auto custom-scroll mb-6 space-y-2">
@@ -6819,7 +6845,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 <span className="text-slate-500 text-xs">{metric}</span>
                                                             </div>
                                                             <p className="text-slate-400 text-sm">
-                                                                Family: {word.family || 'â€”'}
+                                                                Family: {word.family || '—'}
                                                             </p>
                                                             {word.context && (
                                                                 <p className="text-slate-500 text-sm mt-2 italic line-clamp-2">
@@ -6843,14 +6869,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-sm"
                                             >
-                                                {selectedDrillDownWords.length === drillDownWords.length ? 'âŒ Deselect All' : 'âœ… Select All'}
+                                                {selectedDrillDownWords.length === drillDownWords.length ? '❌ Deselect All' : '✅ Select All'}
                                             </button>
                                             <button
                                                 onClick={practiceSelectedWords}
                                                 disabled={selectedDrillDownWords.length === 0}
                                                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-black uppercase text-sm"
                                             >
-                                                ðŸŽ¯ Practice Selected ({selectedDrillDownWords.length})
+                                                🎯 Practice Selected ({selectedDrillDownWords.length})
                                             </button>
                                         </div>
                                     </>
@@ -6860,15 +6886,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     )}
 
 
-                    {/* ðŸ†• V11.47: Reset Confirmation Modal */}
+                    {/* 🆕 V11.47: Reset Confirmation Modal */}
                     {showResetConfirm && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-8 rounded-3xl w-full max-w-2xl border-red-500/30">
                                 <div className="text-center">
                                     <div className="text-6xl mb-4">
-                                        {resetType === 'difficulty' && 'ðŸŸ¡'}
-                                        {resetType === 'stats' && 'ðŸŸ '}
-                                        {resetType === 'all' && 'ðŸ”´'}
+                                        {resetType === 'difficulty' && '🟡'}
+                                        {resetType === 'stats' && '🟠'}
+                                        {resetType === 'all' && '🔴'}
                                     </div>
                                     <h2 className="text-3xl font-black text-white mb-4">
                                         {resetType === 'difficulty' && 'Reset Difficulty Ratings?'}
@@ -6881,42 +6907,42 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         
                                         {resetType === 'difficulty' && (
                                             <>
-                                                <p className="text-red-400 mb-2">âŒ Clear all difficulty ratings (Active/Emerging/Passive)</p>
-                                                <p className="text-slate-400 mb-2">â†’ Words will need to be re-classified through practice</p>
-                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
-                                                <p className="text-green-400">âœ… Keep all exercise statistics (counts, grades, errors)</p>
+                                                <p className="text-red-400 mb-2">❌ Clear all difficulty ratings (Active/Emerging/Passive)</p>
+                                                <p className="text-slate-400 mb-2">→ Words will need to be re-classified through practice</p>
+                                                <p className="text-green-400 mt-4">✅ Keep your vocabulary list intact</p>
+                                                <p className="text-green-400">✅ Keep all exercise statistics (counts, grades, errors)</p>
                                             </>
                                         )}
                                         
                                         {resetType === 'stats' && (
                                             <>
-                                                <p className="text-red-400 mb-2">âŒ Clear ALL exercise counters and statistics:</p>
-                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Flashcard practice counts</p>
-                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Dictation errors and attempts</p>
-                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Selection attempts</p>
-                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Guesswork practice counts</p>
-                                                <p className="text-slate-400 ml-6 mb-2">â€¢ Translation grades</p>
-                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
-                                                <p className="text-green-400">âœ… Keep difficulty ratings</p>
+                                                <p className="text-red-400 mb-2">❌ Clear ALL exercise counters and statistics:</p>
+                                                <p className="text-slate-400 ml-6 mb-1">• Flashcard practice counts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">• Dictation errors and attempts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">• Selection attempts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">• Guesswork practice counts</p>
+                                                <p className="text-slate-400 ml-6 mb-2">• Translation grades</p>
+                                                <p className="text-green-400 mt-4">✅ Keep your vocabulary list intact</p>
+                                                <p className="text-green-400">✅ Keep difficulty ratings</p>
                                             </>
                                         )}
                                         
                                         {resetType === 'all' && (
                                             <>
-                                                <p className="text-red-400 mb-2">âŒ Clear EVERYTHING:</p>
-                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All difficulty ratings</p>
-                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All exercise statistics</p>
-                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All practice history</p>
-                                                <p className="text-red-300 ml-6 mb-2 font-semibold">â€¢ All performance data</p>
-                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
-                                                <p className="text-yellow-300 mt-3 font-semibold">âš ï¸ This gives you a completely fresh start!</p>
+                                                <p className="text-red-400 mb-2">❌ Clear EVERYTHING:</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">• All difficulty ratings</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">• All exercise statistics</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">• All practice history</p>
+                                                <p className="text-red-300 ml-6 mb-2 font-semibold">• All performance data</p>
+                                                <p className="text-green-400 mt-4">✅ Keep your vocabulary list intact</p>
+                                                <p className="text-yellow-300 mt-3 font-semibold">⚠️ This gives you a completely fresh start!</p>
                                             </>
                                         )}
                                     </div>
                                     
                                     <p className="text-slate-500 italic mb-6">
                                         {resetType === 'all' 
-                                            ? 'âš ï¸ This action cannot be undone. All your progress will be permanently lost.' 
+                                            ? '⚠️ This action cannot be undone. All your progress will be permanently lost.' 
                                             : 'This action cannot be undone. Make sure this is what you want.'}
                                     </p>
                                     
@@ -6925,7 +6951,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             onClick={() => setShowResetConfirm(false)}
                                             className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold"
                                         >
-                                            âŒ Cancel
+                                            ❌ Cancel
                                         </button>
                                         <button
                                             onClick={() => {
@@ -6939,9 +6965,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 'bg-red-600 hover:bg-red-500 text-white'
                                             }`}
                                         >
-                                            {resetType === 'difficulty' && 'ðŸŸ¡ Yes, Reset Difficulty'}
-                                            {resetType === 'stats' && 'ðŸŸ  Yes, Reset Stats'}
-                                            {resetType === 'all' && 'ðŸ”´ Yes, Reset Everything'}
+                                            {resetType === 'difficulty' && '🟡 Yes, Reset Difficulty'}
+                                            {resetType === 'stats' && '🟠 Yes, Reset Stats'}
+                                            {resetType === 'all' && '🔴 Yes, Reset Everything'}
                                         </button>
                                     </div>
                                 </div>
@@ -6949,12 +6975,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.57: Dictionary Modal - Increased z-index to appear above all other modals */}
+                    {/* 🆕 V11.57: Dictionary Modal - Increased z-index to appear above all other modals */}
                     {showDictionaryModal && (
                         <div className="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
                             <div className="glass-card p-8 rounded-3xl w-full max-w-2xl border-blue-500/30 my-8 max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6 sticky top-0 bg-slate-900/95 backdrop-blur-md pb-4 -mt-2 z-10">
-                                    <h2 className="text-2xl font-black text-white">ðŸ“– Open in Dictionary</h2>
+                                    <h2 className="text-2xl font-black text-white">📖 Open in Dictionary</h2>
                                     <button onClick={() => setShowDictionaryModal(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                 </div>
                                 
@@ -6974,7 +7000,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold text-left flex items-center gap-3 shadow-lg"
                                         >
-                                            <span className="text-2xl">ðŸ”</span>
+                                            <span className="text-2xl">🔍</span>
                                             <div>
                                                 <div className="text-base">Perplexity AI Search</div>
                                                 <div className="text-xs opacity-80">Deep web research with AI</div>
@@ -6989,7 +7015,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white rounded-xl font-bold text-left flex items-center gap-3 shadow-lg"
                                         >
-                                            <span className="text-2xl">ðŸŽ¬</span>
+                                            <span className="text-2xl">🎬</span>
                                             <div>
                                                 <div className="text-base">YouGlish</div>
                                                 <div className="text-xs opacity-80">Learn pronunciation from YouTube videos</div>
@@ -6997,7 +7023,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </button>
                                         
                                         <div className="border-t border-slate-700 my-4 pt-4">
-                                            <p className="text-xs uppercase text-slate-500 font-black mb-3">ðŸ“š Dictionaries</p>
+                                            <p className="text-xs uppercase text-slate-500 font-black mb-3">📚 Dictionaries</p>
                                         </div>
                                         
                                         {/* WordReference */}
@@ -7008,7 +7034,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
                                         >
-                                            <span className="text-2xl">ðŸ“˜</span>
+                                            <span className="text-2xl">📘</span>
                                             <span>WordReference</span>
                                         </button>
                                         
@@ -7020,7 +7046,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
                                         >
-                                            <span className="text-2xl">ðŸŽ“</span>
+                                            <span className="text-2xl">🎓</span>
                                             <span>Cambridge Dictionary</span>
                                         </button>
                                         
@@ -7032,7 +7058,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
                                         >
-                                            <span className="text-2xl">ðŸ“–</span>
+                                            <span className="text-2xl">📖</span>
                                             <span>Collins Dictionary</span>
                                         </button>
                                         
@@ -7044,7 +7070,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
                                         >
-                                            <span className="text-2xl">ðŸŽ¯</span>
+                                            <span className="text-2xl">🎯</span>
                                             <span>Oxford Learner's</span>
                                         </button>
                                         
@@ -7056,13 +7082,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full px-6 py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
                                         >
-                                            <span className="text-2xl">ðŸ“•</span>
+                                            <span className="text-2xl">📕</span>
                                             <span>Merriam-Webster</span>
                                         </button>
                                     </div>
                                 ) : (
                                     <div className="text-center py-8">
-                                        <p className="text-slate-500 text-sm">No word selected. Click the dictionary icon ðŸ“– on any word to open this menu.</p>
+                                        <p className="text-slate-500 text-sm">No word selected. Click the dictionary icon 📖 on any word to open this menu.</p>
                                     </div>
                                 )}
                                 
