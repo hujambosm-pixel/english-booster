@@ -1,4 +1,112 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>English Booster v11.65</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; overflow: hidden; margin: 0; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .main-gradient { background: linear-gradient(to right, #818cf8, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .version-text { color: #6366f1; font-size: 0.85rem; font-weight: 800; margin-left: 10px; display: inline-block; padding-right: 8px; white-space: nowrap; }
+        select, input, textarea { background: #1e293b !important; border: 1px solid #334155 !important; color: white !important; outline: none; }
+        .star-on { color: #eab308; } /* Full star - level 2 */
+        .star-half { color: #eab308; } /* Half star - level 1 */
+        .star-off { color: rgba(255, 255, 255, 0.15); } /* Empty star - level 0 */
+        .magic-btn { 
+            background: linear-gradient(135deg, #a78bfa 0%, #f472b6 50%, #fbbf24 100%);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+            box-shadow: 0 4px 12px rgba(167, 139, 250, 0.4);
+        }
+        .magic-btn:hover {
+            transform: scale(1.15);
+            box-shadow: 0 6px 20px rgba(244, 114, 182, 0.6);
+        }
+        .magic-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        /* ðŸ†• V11.7: Improve button - same sparkles as magic, no background */
+        .improve-btn {
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+            box-shadow: none;
+        }
+        .improve-btn:hover {
+            transform: scale(1.15);
+            box-shadow: none;
+        }
+        .improve-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        .tooltip { position: relative; }
+        .tooltip:hover::after {
+            content: attr(data-tip); position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: #fff; padding: 12px; border-radius: 8px; font-size: 11px; width: 220px;
+            z-index: 100; border: 1px solid #475569; box-shadow: 0 10px 20px rgba(0,0,0,0.5); font-weight: 400; text-transform: none;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin 2s linear infinite;
+        }
+        
+        /* Mobile-First Responsive Design */
+        .mobile-cards { display: none; }
+        .desktop-table { display: block; }
+        
+        @media (max-width: 1024px) {
+            body { overflow-y: auto; }
+            
+            /* Hide desktop table on mobile */
+            .desktop-table { display: none !important; }
+            
+            /* Show mobile cards */
+            .mobile-cards { display: block !important; }
+            
+            /* Mobile card styling */
+            .vocab-card {
+                background: rgba(30, 41, 59, 0.9);
+                border: 1px solid rgba(99, 102, 241, 0.2);
+                border-radius: 16px;
+                padding: 20px;
+                margin-bottom: 16px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            }
+            
+            /* Adjust tooltips for mobile */
+            .tooltip:hover::after { display: none; }
+            
+            /* Mobile header adjustments */
+            .version-text { display: block; margin: 5px 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
 
         const FAMILIES = ["Noun", "Adjective", "Adverb", "Verb", "Phrasal Verb", "Idiom", "Chunk"];
         const DIFFICULTIES = ["Passive", "Emerging", "Active"];
@@ -120,12 +228,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [selectionAttempts, setSelectionAttempts] = useState(0);
             const [selectionDifficulty, setSelectionDifficulty] = useState('');
             
-            // 🆕 V11.64: Wrong answers tracking & explanation
+            // ð V11.64: Wrong answers tracking & explanation
             const [selectionWrongAnswers, setSelectionWrongAnswers] = useState([]);
             const [selectionExplanation, setSelectionExplanation] = useState('');
             const [selectionExplLoading, setSelectionExplLoading] = useState(false);
             
-            // 🆕 V11.64: Guesswork synonym state
+            // ð V11.64: Guesswork synonym state
             const [showGuessworkSynonymModal, setShowGuessworkSynonymModal] = useState(false);
             
             // ðŸ†• V11.16: Selection countdown (blur options)
@@ -1839,11 +1947,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         setSelectionAttempts(0);
                         setSelectionDifficulty('');
                         
-                        // 🆕 V11.64: Reset new states
+                        // ð V11.64: Reset new states
                         setSelectionWrongAnswers([]);
                         setSelectionExplanation('');
                         
-                        // 🆕 V11.64: Try AI options first for first word
+                        // ð V11.64: Try AI options first for first word
                         const aiFirstOpts = await generateAISelectionOptions(sortedData[0]);
                         let firstOptions;
                         if (aiFirstOpts && aiFirstOpts.length >= 3) {
@@ -2222,7 +2330,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 }
             }
 
-            // 🆕 V11.64: Generate AI-based near-synonym distractors for Selection exercise
+            // ð V11.64: Generate AI-based near-synonym distractors for Selection exercise
             async function generateAISelectionOptions(correctWord) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) return null;
@@ -2266,7 +2374,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     const data = await response.json();
                     let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                     const result = JSON.parse(textResponse);
-                    console.log('🆕 V11.65 AI Distractors:', result.distractors);
+                    console.log('ð V11.65 AI Distractors:', result.distractors);
                     
                     // Convert distractors to word objects like the correct word
                     return (result.distractors || []).map(word => ({
@@ -2275,12 +2383,12 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         _isAIGenerated: true
                     }));
                 } catch (error) {
-                    console.error('🆕 AI Selection Options Error:', error);
+                    console.error('ð AI Selection Options Error:', error);
                     return null;
                 }
             }
 
-            // 🆕 V11.65: Explain why correct answer is best (only if user made wrong attempts)
+            // ð V11.65: Explain why correct answer is best (only if user made wrong attempts)
             async function explainSelectionAnswer(correctWord, wrongAnswers, context) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey || !wrongAnswers || wrongAnswers.length === 0) return;
@@ -5619,14 +5727,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <button
                                             key={index}
                                             onClick={() => {
-                                                // 🆕 V11.64: Block if already wrong, answered, or not visible
+                                                // ð V11.64: Block if already wrong, answered, or not visible
                                                 if (showSelectionAnswer || !selectionOptionsVisible || selectionWrongAnswers.includes(option.vocabulary)) return;
                                                 
                                                 setSelectedAnswer(option.vocabulary);
                                                 const isCorrect = option.vocabulary === selectionWords[selectionIndex].vocabulary;
                                                 
                                                 if (!isCorrect) {
-                                                    // 🆕 V11.64: Track wrong answers
+                                                    // ð V11.64: Track wrong answers
                                                     setSelectionAttempts(prev => prev + 1);
                                                     setSelectionWrongAnswers(prev => [...prev, option.vocabulary]);
                                                 } else {
@@ -5640,7 +5748,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setSelectionDifficulty(difficulty);
                                                     setShowSelectionAnswer(true);
                                                     
-                                                    // 🆕 V11.64: Only explain if there were wrong attempts
+                                                    // ð V11.64: Only explain if there were wrong attempts
                                                     if (selectionWrongAnswers.length > 0) {
                                                         explainSelectionAnswer(
                                                             selectionWords[selectionIndex].vocabulary,
@@ -5683,10 +5791,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setShowSelectionAnswer(false);
                                                     setSelectionAttempts(0);
                                                     setSelectionDifficulty('');
-                                                    // 🆕 V11.64: Reset wrong answers & explanation
+                                                    // ð V11.64: Reset wrong answers & explanation
                                                     setSelectionWrongAnswers([]);
                                                     setSelectionExplanation('');
-                                                    // 🆕 V11.64: Try AI options first, fallback to DB
+                                                    // ð V11.64: Try AI options first, fallback to DB
                                                     const nextWord = selectionWords[nextIndex];
                                                     const aiOpts = await generateAISelectionOptions(nextWord);
                                                     let nextOptions;
@@ -5696,13 +5804,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         nextOptions = generateSelectionOptions(nextWord, selectionWords);
                                                     }
                                                     if (!nextOptions) {
-                                                        alert('⚠️ Cannot generate options. Ending exercise.');
+                                                        alert('⚠ï¸ Cannot generate options. Ending exercise.');
                                                         setShowSelection(false);
                                                         return;
                                                     }
                                                     setSelectionOptions(nextOptions);
                                                 } else {
-                                                    alert('🎉 Exercise completed!');
+                                                    alert('ð Exercise completed!');
                                                     setShowSelection(false);
                                                     setSelectionWords([]);
                                                     setSelectionIndex(0);
@@ -5716,7 +5824,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             }}
                                             className="w-full bg-slate-700 hover:bg-slate-600 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
                                         >
-                                            ⏭️ Skip
+                                            ⏭ï¸ Skip
                                         </button>
                                     </div>
                                 )}
@@ -5741,17 +5849,17 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         </div>
 
-                                        {/* 🆕 V11.64: AI Explanation Panel - shown only if user made wrong attempts */}
+                                        {/* ð V11.64: AI Explanation Panel - shown only if user made wrong attempts */}
                                         {showSelectionAnswer && selectionWrongAnswers.length > 0 && (
                                             <div className="mt-4 p-4 bg-blue-900/20 border border-blue-500/40 rounded-xl">
                                                 {selectionExplLoading ? (
                                                     <div className="flex items-center gap-2 text-blue-300">
-                                                        <span className="text-xl">🤖</span>
+                                                        <span className="text-xl">ð¤</span>
                                                         <span className="text-sm">AI is explaining...</span>
                                                     </div>
                                                 ) : selectionExplanation ? (
                                                     <>
-                                                        <h4 className="text-blue-300 text-xs font-black uppercase mb-2">💡 Why {selectionWords[selectionIndex].vocabulary} is the best answer</h4>
+                                                        <h4 className="text-blue-300 text-xs font-black uppercase mb-2">ð¡ Why {selectionWords[selectionIndex].vocabulary} is the best answer</h4>
                                                         <p className="text-white/80 text-sm leading-relaxed">{selectionExplanation}</p>
                                                     </>
                                                 ) : null}
@@ -5782,10 +5890,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowSelectionAnswer(false);
                                                         setSelectionAttempts(0);
                                                         setSelectionDifficulty('');
-                                                        // 🆕 V11.64: Reset wrong answers & explanation
+                                                        // ð V11.64: Reset wrong answers & explanation
                                                         setSelectionWrongAnswers([]);
                                                         setSelectionExplanation('');
-                                                        // 🆕 V11.64: Try AI options first, fallback to DB
+                                                        // ð V11.64: Try AI options first, fallback to DB
                                                         const nextWord = selectionWords[nextIndex];
                                                         const aiOpts = await generateAISelectionOptions(nextWord);
                                                         let nextOptions;
@@ -5795,13 +5903,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             nextOptions = generateSelectionOptions(nextWord, selectionWords);
                                                         }
                                                         if (!nextOptions) {
-                                                            alert('⚠️ Cannot generate options. Ending exercise.');
+                                                            alert('⚠ï¸ Cannot generate options. Ending exercise.');
                                                             setShowSelection(false);
                                                             return;
                                                         }
                                                         setSelectionOptions(nextOptions);
                                                     } else {
-                                                        alert('🎉 Exercise completed!');
+                                                        alert('ð Exercise completed!');
                                                         setShowSelection(false);
                                                         setSelectionWords([]);
                                                         setSelectionIndex(0);
@@ -5815,7 +5923,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="w-full bg-green-600 hover:bg-green-500 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {selectionIndex < selectionWords.length - 1 ? 'Next Word →' : '✅ Finish'}
+                                                {selectionIndex < selectionWords.length - 1 ? 'Next Word →' : 'â Finish'}
                                             </button>
                                         </div>
                                     </div>
@@ -5928,7 +6036,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 guessworkWords[guessworkIndex].context
                                                             );
                                                             if (aiResult) {
-                                                                // 🆕 V11.65: Score is now returned directly as Active/Emerging/Passive
+                                                                // ð V11.65: Score is now returned directly as Active/Emerging/Passive
                                                                 const finalScore = aiResult.score || 'Passive';
                                                                 setGuessworkAIResult(aiResult);
                                                                 setGuessworkDifficulty(finalScore);
@@ -6001,7 +6109,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             guessworkWords[guessworkIndex].context
                                                         );
                                                         if (aiResult) {
-                                                            // 🆕 V11.65: Score returned directly as Active/Emerging/Passive
+                                                            // ð V11.65: Score returned directly as Active/Emerging/Passive
                                                             const finalScore2 = aiResult.score || 'Passive';
                                                             setGuessworkAIResult(aiResult);
                                                             setGuessworkDifficulty(finalScore2);
@@ -6048,7 +6156,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <>
                                         {/* Result display */}
                                         <div className="space-y-6">
-                                            {/* 🆕 V11.65: AI Result - Educational comparison, never 'Incorrect' */}
+                                            {/* ð V11.65: AI Result - Educational comparison, never 'Incorrect' */}
                                             {guessworkAIResult && (
                                                 <div className={`p-6 rounded-2xl border-2 ${
                                                     guessworkAIResult.score === 'Active'
@@ -6059,7 +6167,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }`}>
                                                     <div className="flex items-center gap-3 mb-3">
                                                         <span className="text-3xl">
-                                                            {guessworkAIResult.score === 'Active' ? '✅' : guessworkAIResult.score === 'Emerging' ? '↔️' : '📚'}
+                                                            {guessworkAIResult.score === 'Active' ? 'â' : guessworkAIResult.score === 'Emerging' ? 'âï¸' : 'ð'}
                                                         </span>
                                                         <h4 className="text-xl font-black text-white">
                                                             {guessworkAIResult.score === 'Active' ? 'Perfect match!' : guessworkAIResult.score === 'Emerging' ? 'Valid synonym!' : "Here's the difference"}
@@ -6067,7 +6175,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     </div>
                                                     <p className="text-white/90 text-sm leading-relaxed">{guessworkAIResult.explanation}</p>
                                                     {guessworkAIResult.is_synonym && guessworkAIResult.synonym_note && (
-                                                        <p className="text-yellow-200/80 text-xs mt-2 italic">💡 {guessworkAIResult.synonym_note}</p>
+                                                        <p className="text-yellow-200/80 text-xs mt-2 italic">ð¡ {guessworkAIResult.synonym_note}</p>
                                                     )}
                                                 </div>
                                             )}
@@ -7075,4 +7183,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
         }
 
 
-export default App
+
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
