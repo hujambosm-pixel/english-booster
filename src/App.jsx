@@ -1,4 +1,4 @@
-const { useState, useEffect, useRef, useMemo } = React;
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 
         const FAMILIES = ["Noun", "Adjective", "Adverb", "Verb", "Phrasal Verb", "Idiom", "Chunk"];
         const DIFFICULTIES = ["Passive", "Emerging", "Active"];
@@ -9,10 +9,10 @@ const { useState, useEffect, useRef, useMemo } = React;
             // ðŸ†• V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
             // Note: Anon key is public by design and safe to include in frontend code
             const [supabaseUrl, setSupabaseUrl] = useState(
-                localStorage.getItem('supabase_url') || 'https://hswnwproeongfxavkjey.supabase.co'
+                localStorage.getItem('supabase_url') || ''
             );
             const [supabaseKey, setSupabaseKey] = useState(
-                localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzd253cHJvZW9uZ2Z4YXZramV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxMDk2NDksImV4cCI6MjA4NDY4NTY0OX0.zUK7ulrqOe0wSo6z4YG7XU39MYlRm-plB1K0vmSSXSE'
+                localStorage.getItem('supabase_key') || ''
             );
             
             // Initialize Supabase client synchronously using useMemo (available immediately on first render)
@@ -40,6 +40,9 @@ const { useState, useEffect, useRef, useMemo } = React;
             const [favouriteLevel, setFavouriteLevel] = useState(0); // ðŸ†• V11.42: 0=all, 1=level1, 2=level2, 3=both
             const [showAddModal, setShowAddModal] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
+            const [showExercisesModal, setShowExercisesModal] = useState(false); // ðŸ†• V11.59: Exercises modal
+            const [showDictionaryModal, setShowDictionaryModal] = useState(false); // ðŸ†• V11.55: Dictionary modal
+            const [selectedWordForDict, setSelectedWordForDict] = useState(''); // ðŸ†• V11.55: Selected word for dictionary
             const [editingWord, setEditingWord] = useState(null);
             const [clickAction, setClickAction] = useState(localStorage.getItem('click_action') || 'wordreference');
             const [aiPrompt, setAiPrompt] = useState(localStorage.getItem('ai_prompt') || DEFAULT_PROMPT);
@@ -76,7 +79,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                 deleteSynonyms: []
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
-            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   Ã¢â€º"Ã¯Â¸ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   Ã¢â€º"Ã¯Â¸ DO NOT use synonyms - use "{word}" EXACTLY as written\n   Ã¢â€º"Ã¯Â¸ DO NOT substitute with similar words\n   Ã¢Å“â€¦ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   Ã¢Å“â€¦ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
+            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   Ã¢â€º"Ã¯Â¸ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   Ã¢â€º"Ã¯Â¸ DO NOT use synonyms - use "{word}" EXACTLY as written\n   Ã¢â€º"Ã¯Â¸ DO NOT substitute with similar words\n   Ã¢Å“â€¦ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   Ã¢Å“â€¦ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
             
             // ðŸ†• V11.2: New states
             // ðŸ†• V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
@@ -113,13 +116,17 @@ const { useState, useEffect, useRef, useMemo } = React;
             const [selectionIndex, setSelectionIndex] = useState(0);
             const [selectionOptions, setSelectionOptions] = useState([]);
             const [selectedAnswer, setSelectedAnswer] = useState(null);
-            const [selectionWrongAnswers, setSelectionWrongAnswers] = useState([]); // 🆕 V11.47: Track all wrong answers
-            const [selectionExplanation, setSelectionExplanation] = useState(''); // 🆕 V11.47: AI explanation
-            const [selectionExplLoading, setSelectionExplLoading] = useState(false); // 🆕 V11.47: Loading state
-            const [selectionAIOptions, setSelectionAIOptions] = useState(null); // 🆕 V11.47: AI-generated options
             const [showSelectionAnswer, setShowSelectionAnswer] = useState(false);
             const [selectionAttempts, setSelectionAttempts] = useState(0);
             const [selectionDifficulty, setSelectionDifficulty] = useState('');
+            
+            // 🆕 V11.64: Wrong answers tracking & explanation
+            const [selectionWrongAnswers, setSelectionWrongAnswers] = useState([]);
+            const [selectionExplanation, setSelectionExplanation] = useState('');
+            const [selectionExplLoading, setSelectionExplLoading] = useState(false);
+            
+            // 🆕 V11.64: Guesswork synonym state
+            const [showGuessworkSynonymModal, setShowGuessworkSynonymModal] = useState(false);
             
             // ðŸ†• V11.16: Selection countdown (blur options)
             const [selectionCountdown, setSelectionCountdown] = useState(
@@ -128,19 +135,19 @@ const { useState, useEffect, useRef, useMemo } = React;
             const [selectionTimeLeft, setSelectionTimeLeft] = useState(0);
             const [selectionOptionsVisible, setSelectionOptionsVisible] = useState(false);
             
-            // ðŸ†• V11.16: Writing exercise states
-            const [showWriting, setShowWriting] = useState(false);
-            const [writingWords, setWritingWords] = useState([]);
-            const [writingIndex, setWritingIndex] = useState(0);
-            const [writingInput, setWritingInput] = useState('');
-            const [showWritingAnswer, setShowWritingAnswer] = useState(false);
-            const [writingDifficulty, setWritingDifficulty] = useState('');
-            const [writingAttempts, setWritingAttempts] = useState(0);
-            const [writingAIValidating, setWritingAIValidating] = useState(false);
-            const [writingAIResult, setWritingAIResult] = useState(null);
-            const [showWritingHint, setShowWritingHint] = useState(false); // ðŸ†• V11.20
-            const [writingHintMeaning, setWritingHintMeaning] = useState(''); // ðŸ†• V11.22
-            const [writingHintLoading, setWritingHintLoading] = useState(false); // ðŸ†• V11.22
+            // ðŸ†• V11.16: Guesswork exercise states
+            const [showGuesswork, setShowGuesswork] = useState(false);
+            const [guessworkWords, setGuessworkWords] = useState([]);
+            const [guessworkIndex, setGuessworkIndex] = useState(0);
+            const [guessworkInput, setGuessworkInput] = useState('');
+            const [showGuessworkAnswer, setShowGuessworkAnswer] = useState(false);
+            const [guessworkDifficulty, setGuessworkDifficulty] = useState('');
+            const [guessworkAttempts, setGuessworkAttempts] = useState(0);
+            const [guessworkAIValidating, setGuessworkAIValidating] = useState(false);
+            const [guessworkAIResult, setGuessworkAIResult] = useState(null);
+            const [showGuessworkHint, setShowGuessworkHint] = useState(false); // ðŸ†• V11.20
+            const [guessworkHintMeaning, setGuessworkHintMeaning] = useState(''); // ðŸ†• V11.22
+            const [guessworkHintLoading, setGuessworkHintLoading] = useState(false); // ðŸ†• V11.22
             
             // ðŸ†• V11.31: Translation exercise states
             const [showTranslation, setShowTranslation] = useState(false);
@@ -160,6 +167,10 @@ const { useState, useEffect, useRef, useMemo } = React;
             const [showStats, setShowStats] = useState(false);
             const [statsData, setStatsData] = useState(null);
             const [loadingStats, setLoadingStats] = useState(false);
+            
+            // ðŸ†• V11.47: Reset confirmation modal
+            const [showResetConfirm, setShowResetConfirm] = useState(false);
+            const [resetType, setResetType] = useState(null); // 'difficulty', 'stats', 'all'
             
             // ðŸ†• V11.44: Exercise drill-down states
             const [showExerciseDrillDown, setShowExerciseDrillDown] = useState(false);
@@ -278,9 +289,9 @@ const { useState, useEffect, useRef, useMemo } = React;
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
             }, [showDictation, showDictationAnswer, dictationIndex, dictationWords, dictationDifficulty]);
 
-            // ðŸ†• V11.26: Handle second Enter key in Writing (after answer shown)
+            // ðŸ†• V11.26: Handle second Enter key in Guesswork (after answer shown)
             useEffect(() => {
-                if (!showWriting || !showWritingAnswer) return;
+                if (!showGuesswork || !showGuessworkAnswer) return;
                 
                 const handleEnterAfterCheck = async (e) => {
                     // Ignore if Enter comes from textarea/input to prevent double execution
@@ -288,46 +299,46 @@ const { useState, useEffect, useRef, useMemo } = React;
                         return;
                     }
                     
-                    if (e.key === 'Enter' && showWritingAnswer) {
+                    if (e.key === 'Enter' && showGuessworkAnswer) {
                         e.preventDefault();
                         
                         // Save difficulty
                         try {
-                            const currentWritingWord = writingWords[writingIndex];
+                            const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                         } catch (error) {
                             console.error('Error saving difficulty:', error);
                         }
                         
                         // Move to next word or finish
-                        if (writingIndex < writingWords.length - 1) {
-                            setWritingIndex(writingIndex + 1);
-                            setWritingInput('');
-                            setShowWritingAnswer(false);
-                            setWritingDifficulty('');
-                            setWritingAttempts(0);
-                            setWritingAIResult(null);
+                        if (guessworkIndex < guessworkWords.length - 1) {
+                            setGuessworkIndex(guessworkIndex + 1);
+                            setGuessworkInput('');
+                            setShowGuessworkAnswer(false);
+                            setGuessworkDifficulty('');
+                            setGuessworkAttempts(0);
+                            setGuessworkAIResult(null);
                         } else {
                             alert('ðŸŽ‰ Exercise completed!');
-                            setShowWriting(false);
-                            setWritingWords([]);
-                            setWritingIndex(0);
-                            setWritingInput('');
-                            setShowWritingAnswer(false);
-                            setWritingDifficulty('');
-                            setWritingAttempts(0);
-                            setWritingAIResult(null);
+                            setShowGuesswork(false);
+                            setGuessworkWords([]);
+                            setGuessworkIndex(0);
+                            setGuessworkInput('');
+                            setShowGuessworkAnswer(false);
+                            setGuessworkDifficulty('');
+                            setGuessworkAttempts(0);
+                            setGuessworkAIResult(null);
                         }
                     }
                 };
                 
                 window.addEventListener('keydown', handleEnterAfterCheck);
                 return () => window.removeEventListener('keydown', handleEnterAfterCheck);
-            }, [showWriting, showWritingAnswer, writingIndex, writingWords, writingDifficulty]);
+            }, [showGuesswork, showGuessworkAnswer, guessworkIndex, guessworkWords, guessworkDifficulty]);
 
             // ðŸ†• V11.32: Handle second Enter key in Translation (after answer shown)
             useEffect(() => {
@@ -482,8 +493,8 @@ const { useState, useEffect, useRef, useMemo } = React;
                             prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
                         );
                     }
-                    if (showWriting) {
-                        setWritingWords(prevWords => 
+                    if (showGuesswork) {
+                        setGuessworkWords(prevWords => 
                             prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
                         );
                     }
@@ -1011,6 +1022,11 @@ const { useState, useEffect, useRef, useMemo } = React;
 
             async function fetchWords(pageNum, isNewSearch = false) {
                 if (loading && !isNewSearch) return;
+                if (!supabase) {
+                    alert("âš ï¸ Supabase not configured!\n\nPlease configure your Supabase credentials in Settings (âš™ï¸) to use the app.");
+                    setLoading(false);
+                    return;
+                }
                 console.log('ðŸ”¥ fetchWords called:', { pageNum, isNewSearch, currentFilters: { search, familyFilter, emptyFilter, favouriteLevel } });
                 setLoading(true);
                 const PAGE_SIZE = 50;
@@ -1049,9 +1065,11 @@ const { useState, useEffect, useRef, useMemo } = React;
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
                     
-                    if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq."",synonyms.eq." "');
-                    else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq."",context.eq." "');
-                    else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq."",family.eq." "');
+                    // ðŸ†• V11.54: Fixed to include literal string "NULL" as well
+                    if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq.');
+                    else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
+                    else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
+                    else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
 
                     const { data, count, error } = await query
                         .order('created_at', { ascending: false })
@@ -1276,7 +1294,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                     const total = allWords.length;
                     const practiced = allWords.filter(w => 
                         w.flashcard_count > 0 || w.dictation_count > 0 || 
-                        w.selection_count > 0 || w.writing_count > 0 || w.translation_count > 0
+                        w.selection_count > 0 || w.guesswork_count > 0 || w.translation_count > 0
                     ).length;
                     const pending = total - practiced;
                     const favourites = allWords.filter(w => w.favourite).length;
@@ -1297,7 +1315,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                         ? (selectionPracticed.reduce((sum, w) => sum + (w.selection_attempts_total || 0), 0) / selectionPracticed.reduce((sum, w) => sum + w.selection_count, 0)).toFixed(2)
                         : 0;
                     
-                    const writingPracticed = allWords.filter(w => w.writing_count > 0).length;
+                    const guessworkPracticed = allWords.filter(w => w.guesswork_count > 0).length;
                     const translationPracticed = allWords.filter(w => w.translation_count > 0);
                     
                     const gradeC2 = translationPracticed.filter(w => w.translation_best_grade === 'C2').length;
@@ -1325,7 +1343,7 @@ const { useState, useEffect, useRef, useMemo } = React;
                             flashcard: flashcardPracticed,
                             dictation: { count: dictationPracticed.length, avgErrors: dictationAvgErrors },
                             selection: { count: selectionPracticed.length, avgAttempts: selectionAvgAttempts },
-                            writing: writingPracticed,
+                            guesswork: guessworkPracticed,
                             translation: { count: translationPracticed.length, gradeC2, gradeC1, gradeB2, gradeB1 }
                         },
                         hardest: { byErrors: hardestByErrors, byAttempts: hardestByAttempts }
@@ -1376,10 +1394,10 @@ const { useState, useEffect, useRef, useMemo } = React;
                             );
                             break;
                             
-                        case 'writing':
+                        case 'guesswork':
                             // Words with Passive/Emerging difficulty that have been practiced
                             difficultWords = allWords.filter(w => 
-                                w.writing_count > 0 && 
+                                w.guesswork_count > 0 && 
                                 (w.difficulty === 'Passive' || w.difficulty === 'Emerging')
                             );
                             break;
@@ -1393,6 +1411,8 @@ const { useState, useEffect, useRef, useMemo } = React;
                             break;
                     }
                     
+                    // ðŸ†• V11.52: Close Stats modal before opening drill-down
+                    setShowStats(false);
                     setDrillDownExercise(exerciseType);
                     setDrillDownWords(difficultWords);
                     setSelectedDrillDownWords([]);
@@ -1482,15 +1502,15 @@ const { useState, useEffect, useRef, useMemo } = React;
                         setShowSelection(true);
                         break;
                         
-                    case 'writing':
-                        setWritingWords(sortedWords);
-                        setWritingIndex(0);
-                        setWritingInput('');
-                        setShowWritingAnswer(false);
-                        setWritingDifficulty('');
-                        setWritingAttempts(0);
-                        setWritingAIResult(null);
-                        setShowWriting(true);
+                    case 'guesswork':
+                        setGuessworkWords(sortedWords);
+                        setGuessworkIndex(0);
+                        setGuessworkInput('');
+                        setShowGuessworkAnswer(false);
+                        setGuessworkDifficulty('');
+                        setGuessworkAttempts(0);
+                        setGuessworkAIResult(null);
+                        setShowGuesswork(true);
                         break;
                         
                     case 'translation':
@@ -1511,12 +1531,17 @@ const { useState, useEffect, useRef, useMemo } = React;
             
             // ðŸ†• V11.41: Reset difficulty only
             async function resetDifficulty() {
-                if (!confirm('Reset all difficulty ratings?\n\nThis will NOT delete vocabulary.')) return;
+                setResetType('difficulty');
+                setShowResetConfirm(true);
+            }
+            
+            async function executeResetDifficulty() {
                 try {
                     await supabase.from('vocabulary_v4').update({ difficulty: null }).is('deleted_at', null);
                     alert('âœ… Difficulty reset!');
                     loadStats();
                     fetchWords(0, true);
+                    setShowResetConfirm(false);
                 } catch (error) {
                     alert('Error resetting difficulty');
                 }
@@ -1524,16 +1549,21 @@ const { useState, useEffect, useRef, useMemo } = React;
             
             // ðŸ†• V11.41: Reset exercise stats only
             async function resetExerciseStats() {
-                if (!confirm('Reset all exercise stats?\n\nThis will NOT delete vocabulary.')) return;
+                setResetType('stats');
+                setShowResetConfirm(true);
+            }
+            
+            async function executeResetExerciseStats() {
                 try {
                     await supabase.from('vocabulary_v4').update({
                         flashcard_count: 0, dictation_count: 0, dictation_errors_total: 0,
-                        selection_count: 0, selection_attempts_total: 0, writing_count: 0,
+                        selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
                     alert('âœ… Exercise stats reset!');
                     loadStats();
                     fetchWords(0, true);
+                    setShowResetConfirm(false);
                 } catch (error) {
                     alert('Error resetting stats');
                 }
@@ -1541,16 +1571,21 @@ const { useState, useEffect, useRef, useMemo } = React;
             
             // ðŸ†• V11.41: Reset all progress (difficulty + stats)
             async function resetAllProgress() {
-                if (!confirm('Reset ALL progress?\n\nThis will NOT delete vocabulary.')) return;
+                setResetType('all');
+                setShowResetConfirm(true);
+            }
+            
+            async function executeResetAllProgress() {
                 try {
                     await supabase.from('vocabulary_v4').update({
                         difficulty: null, flashcard_count: 0, dictation_count: 0, dictation_errors_total: 0,
-                        selection_count: 0, selection_attempts_total: 0, writing_count: 0,
+                        selection_count: 0, selection_attempts_total: 0, guesswork_count: 0,
                         translation_count: 0, translation_best_grade: null, last_practiced_date: null
                     }).is('deleted_at', null);
                     alert('âœ… All progress reset!');
                     loadStats();
                     fetchWords(0, true);
+                    setShowResetConfirm(false);
                 } catch (error) {
                     alert('Error resetting progress');
                 }
@@ -1589,10 +1624,11 @@ const { useState, useEffect, useRef, useMemo } = React;
                     else if (favouriteLevel === 2) query = query.eq('favourite', 2);
                     else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
                     
-                    if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq."",synonyms.eq." "');
-                    else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq."",context.eq." "');
-                    else if (emptyFilter === 'Level') query = query.or('level.is.null,level.eq."",level.eq." "');
-                    else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq."",family.eq." "');
+                    // ðŸ†• V11.54: Fixed to include literal string "NULL" as well
+                    if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq.');
+                    else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
+                    else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
+                    else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
 
                     const { data, error } = await query.order('created_at', { ascending: false });
                     
@@ -1803,8 +1839,18 @@ const { useState, useEffect, useRef, useMemo } = React;
                         setSelectionAttempts(0);
                         setSelectionDifficulty('');
                         
-                        // Generate options for first word
-                        const firstOptions = generateSelectionOptions(sortedData[0], sortedData);
+                        // 🆕 V11.64: Reset new states
+                        setSelectionWrongAnswers([]);
+                        setSelectionExplanation('');
+                        
+                        // 🆕 V11.64: Try AI options first for first word
+                        const aiFirstOpts = await generateAISelectionOptions(sortedData[0]);
+                        let firstOptions;
+                        if (aiFirstOpts && aiFirstOpts.length >= 3) {
+                            firstOptions = [sortedData[0], ...aiFirstOpts.slice(0, 5)].sort(() => Math.random() - 0.5);
+                        } else {
+                            firstOptions = generateSelectionOptions(sortedData[0], sortedData);
+                        }
                         if (!firstOptions) {
                             alert('Error generating options for first word');
                             return;
@@ -1855,122 +1901,15 @@ const { useState, useEffect, useRef, useMemo } = React;
                 return options.sort(() => Math.random() - 0.5);
             }
 
-            // 🆕 V11.47: Generate AI-based selection options (near-synonyms as distractors)
-            async function generateAISelectionOptions(correctWord) {
-                const apiKey = geminiKey.trim();
-                if (!apiKey) return null;
-
-                try {
-                    const prompt = `For the ${correctWord.family || 'word'} "${correctWord.vocabulary}", generate exactly 5 DISTRACTOR words for a multiple-choice vocabulary exercise.
-
-RULES:
-- All 5 words MUST be ${correctWord.family || 'the same type'}s (same grammatical family)
-- Words should be SIMILAR in meaning to "${correctWord.vocabulary}" but NOT exact synonyms
-- They should be plausible but WRONG in the specific context: "${correctWord.context}"
-- Only "${correctWord.vocabulary}" should be the PERFECT fit for that context
-- Words should be real, common English words at a similar difficulty level
-- DO NOT include "${correctWord.vocabulary}" itself
-
-Respond ONLY with a JSON array of 5 strings (no markdown, no backticks):
-["word1", "word2", "word3", "word4", "word5"]`;
-
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.5,
-                            max_tokens: 150
-                        })
-                    });
-
-                    if (!response.ok) return null;
-
-                    const data = await response.json();
-                    let text = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    
-                    let words;
-                    try {
-                        words = JSON.parse(text);
-                    } catch (e) {
-                        const bracketStart = text.indexOf('[');
-                        const bracketEnd = text.lastIndexOf(']');
-                        if (bracketStart >= 0 && bracketEnd > bracketStart) {
-                            words = JSON.parse(text.substring(bracketStart, bracketEnd + 1));
-                        }
-                    }
-
-                    if (Array.isArray(words) && words.length >= 3) {
-                        // Create option objects matching the format expected by the UI
-                        const aiOptions = words.slice(0, 5).map(w => ({
-                            vocabulary: w.trim(),
-                            family: correctWord.family,
-                            _isAIGenerated: true
-                        }));
-                        return aiOptions;
-                    }
-                    return null;
-                } catch (error) {
-                    console.error('AI Selection Options Error:', error);
-                    return null;
-                }
-            }
-
-            // 🆕 V11.47: Explain why the correct answer is better than wrong selections
-            async function explainSelectionAnswer(correctWord, wrongAnswers, context) {
-                const apiKey = geminiKey.trim();
-                if (!apiKey) return '';
-
-                setSelectionExplLoading(true);
-                try {
-                    const wrongList = wrongAnswers.map(w => `"${w}"`).join(', ');
-                    const prompt = `In the sentence: "${context}"
-
-The correct word is: "${correctWord}"
-The user incorrectly chose: ${wrongList}
-
-Explain BRIEFLY (2-3 sentences max) why "${correctWord}" is the best fit and why the wrong choices don't work as well in this specific context. Be concise and educational. Do NOT use bullet points.`;
-
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.3,
-                            max_tokens: 200
-                        })
-                    });
-
-                    if (!response.ok) return '';
-                    const data = await response.json();
-                    const explanation = data.choices?.[0]?.message?.content?.trim() || '';
-                    setSelectionExplanation(explanation);
-                    return explanation;
-                } catch (error) {
-                    console.error('Selection Explanation Error:', error);
-                    return '';
-                } finally {
-                    setSelectionExplLoading(false);
-                }
-            }
-
-            // ðŸ†• V11.22: Generate meaning for Writing hint with AI
-            async function generateWritingHintMeaning(word) {
+            // ðŸ†• V11.22: Generate meaning for Guesswork hint with AI
+            async function generateGuessworkHintMeaning(word) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey || apiKey === '') {
-                    setWritingHintMeaning('âš ï¸ API key not configured. Please set your Groq API Key in Settings.');
+                    setGuessworkHintMeaning('âš ï¸ API key not configured. Please set your Groq API Key in Settings.');
                     return;
                 }
 
-                setWritingHintLoading(true);
+                setGuessworkHintLoading(true);
 
                 try {
                     const prompt = `What does "${word}" mean? Provide ONLY the definition/meaning in British English. Keep it simple and clear, maximum 2 sentences. IMPORTANT: Do NOT mention the word "${word}" itself in your response - just explain what it means. Do NOT include examples, synonyms, or usage notes.`;
@@ -1995,17 +1934,17 @@ Explain BRIEFLY (2-3 sentences max) why "${correctWord}" is the best fit and why
 
                     const data = await response.json();
                     const meaning = data.choices?.[0]?.message?.content || 'Unable to generate meaning.';
-                    setWritingHintMeaning(meaning.trim());
+                    setGuessworkHintMeaning(meaning.trim());
                 } catch (error) {
                     console.error('Generate meaning error:', error);
-                    setWritingHintMeaning('âŒ Error generating meaning. Please try again.');
+                    setGuessworkHintMeaning('âŒ Error generating meaning. Please try again.');
                 } finally {
-                    setWritingHintLoading(false);
+                    setGuessworkHintLoading(false);
                 }
             }
 
-            // ðŸ†• V11.16: Load Writing Exercise
-            async function loadWriting() {
+            // ðŸ†• V11.16: Load Guesswork Exercise
+            async function loadGuesswork() {
                 try {
                     let query = supabase.from('vocabulary_v4').select('*');
                     
@@ -2056,20 +1995,20 @@ Explain BRIEFLY (2-3 sentences max) why "${correctWord}" is the best fit and why
                             sortedData = sortedData.sort(() => Math.random() - 0.5);
                         }
                         
-                        setWritingWords(sortedData);
-                        setWritingIndex(0);
-                        setWritingInput('');
-                        setShowWritingAnswer(false);
-                        setWritingDifficulty('');
-                        setWritingAttempts(0);
-                        setWritingAIResult(null);
-                        setShowWriting(true);
+                        setGuessworkWords(sortedData);
+                        setGuessworkIndex(0);
+                        setGuessworkInput('');
+                        setShowGuessworkAnswer(false);
+                        setGuessworkDifficulty('');
+                        setGuessworkAttempts(0);
+                        setGuessworkAIResult(null);
+                        setShowGuesswork(true);
                     } else {
                         alert('No words with context found!');
                     }
                 } catch (err) {
-                    console.error('Error loading writing:', err);
-                    alert('Error loading writing');
+                    console.error('Error loading guesswork:', err);
+                    alert('Error loading guesswork');
                 }
             }
 
@@ -2191,44 +2130,41 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                 }
             }
 
-            // ðŸ†• V11.16: Validate answer with AI for Writing exercise
-            async function validateWritingWithAI(userAnswer, correctAnswer, context) {
+            // ðŸ†• V11.16: Validate answer with AI for Guesswork exercise
+            async function validateGuessworkWithAI(userAnswer, correctAnswer, context) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey) {
                     alert('âš ï¸ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
 
-                setWritingAIValidating(true);
+                setGuessworkAIValidating(true);
                 try {
-                    const prompt = `You are an English language expert. Analyze the user's answer carefully.
+                    const prompt = `You are an English vocabulary expert. Evaluate the user's answer for a fill-in-the-blank exercise.
 
-CONTEXT: "${context}"
+CONTEXT SENTENCE: "${context}"
 CORRECT ANSWER: "${correctAnswer}"
 USER'S ANSWER: "${userAnswer}"
 
 EVALUATION RULES:
-1. If the user's answer is an EXACT SYNONYM that fits the context perfectly (correct grammar, spelling, and natural fit), mark it as a VALID SYNONYM. The word must grammatically and semantically work as a direct replacement in the sentence.
-2. If the user's answer has spelling errors, wrong grammar, or does NOT fit the context, mark it as INCORRECT.
-3. Be STRICT about spelling and grammar - a misspelled synonym is NOT valid.
+1. EXACT MATCH: If the user's answer matches exactly (same spelling, same word form), set is_correct=true, score="Easy", is_synonym=false
+2. VALID SYNONYM: If the user's answer is a genuine synonym that:
+   - Has correct English spelling
+   - Belongs to the same grammatical family (same part of speech)
+   - Fits the context sentence perfectly (grammatically and semantically)
+   - Is clearly a synonym of the correct answer
+   Then: is_correct=true, score="Medium", is_synonym=true, synonym_note="[short explanation why it's valid but not the exact answer]"
+3. WRONG ANSWER: Any other response: is_correct=false, score="Hard", is_synonym=false
 
-SCORING:
-- "Active": The user's answer is the EXACT correct answer (same word)
-- "Emerging": The user's answer is a VALID SYNONYM - different word but fits the context perfectly with correct grammar/spelling
-- "Passive": The user's answer is INCORRECT - wrong meaning, bad grammar, spelling error, or doesn't fit the context
+Be STRICT - only accept true synonyms, not just related words or loose alternatives.
 
-IMPORTANT: 
-- A valid synonym MUST be a real English word with correct spelling
-- A valid synonym MUST fit grammatically in the exact same position in the sentence
-- A valid synonym MUST convey a very similar meaning in this specific context
-
-Respond ONLY in this JSON format (no markdown, no backticks):
+Respond ONLY in this exact JSON format (no markdown, no backticks):
 {
   "is_correct": true/false,
+  "explanation": "Brief evaluation explanation",
+  "score": "Easy/Medium/Hard",
   "is_synonym": true/false,
-  "explanation": "Brief explanation",
-  "score": "Active/Emerging/Passive",
-  "synonym_note": "If is_synonym=true, explain briefly why this synonym works but is not the exact word expected"
+  "synonym_note": "Why this is a valid synonym but not exact (only if is_synonym=true, else empty string)"
 }`;
 
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -2273,7 +2209,109 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     alert('âŒ AI validation failed. Please check your API key.');
                     return null;
                 } finally {
-                    setWritingAIValidating(false);
+                    setGuessworkAIValidating(false);
+                }
+            }
+
+            // 🆕 V11.64: Generate AI-based near-synonym distractors for Selection exercise
+            async function generateAISelectionOptions(correctWord) {
+                const apiKey = geminiKey.trim();
+                if (!apiKey) return null;
+                
+                try {
+                    const prompt = `You are an English vocabulary expert. Generate 5 near-synonym distractors for a vocabulary exercise.
+
+CORRECT ANSWER: "${correctWord.vocabulary}"
+WORD FAMILY: "${correctWord.family}"
+CONTEXT: "${correctWord.context}"
+
+Generate 5 words that are:
+- Similar in meaning or usage (near-synonyms or related words from the same semantic field)
+- Same grammatical family as the correct answer (same part of speech)
+- Plausible in a vocabulary quiz but NOT perfect replacements in the given context
+- Clearly different words (not the same word with different suffix)
+- Real English words with correct spelling
+
+Respond ONLY in this JSON format (no markdown, no backticks):
+{
+  "distractors": ["word1", "word2", "word3", "word4", "word5"]
+}\`;
+
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.7,
+                            max_tokens: 200
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error('API Error');
+                    
+                    const data = await response.json();
+                    let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                    const result = JSON.parse(textResponse);
+                    
+                    // Convert distractors to word objects like the correct word
+                    return (result.distractors || []).map(word => ({
+                        vocabulary: word,
+                        family: correctWord.family,
+                        _isAIGenerated: true
+                    }));
+                } catch (error) {
+                    console.error('AI Selection Options Error:', error);
+                    return null;
+                }
+            }
+
+            // 🆕 V11.64: Explain why correct answer is best (only if user made wrong attempts)
+            async function explainSelectionAnswer(correctWord, wrongAnswers, context) {
+                const apiKey = geminiKey.trim();
+                if (!apiKey || !wrongAnswers || wrongAnswers.length === 0) return;
+                
+                setSelectionExplLoading(true);
+                try {
+                    const prompt = `You are an English vocabulary teacher. Explain why the correct answer is best for this vocabulary exercise.
+
+CONTEXT SENTENCE: "${context}"
+CORRECT ANSWER: "${correctWord}"
+WRONG ANSWERS TRIED: ${wrongAnswers.join(', ')}
+
+In 2-3 clear sentences, explain:
+1. Why "${correctWord}" is the best fit in this context
+2. Why the wrong answer(s) don't work as well (be specific)
+
+Keep it educational and encouraging. Use simple language.\`;
+
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.5,
+                            max_tokens: 300
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error('API Error');
+                    
+                    const data = await response.json();
+                    const explanation = data.choices[0].message.content.trim();
+                    setSelectionExplanation(explanation);
+                } catch (error) {
+                    console.error('Selection Explanation Error:', error);
+                    setSelectionExplanation('');
+                } finally {
+                    setSelectionExplLoading(false);
                 }
             }
 
@@ -2537,12 +2575,18 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 reader.onload = async (evt) => {
                     try {
                         let parsedData;
+                        
+                        // Parse file
                         if (file.name.endsWith('.json')) {
                             parsedData = JSON.parse(evt.target.result);
+                            console.log('ðŸ“„ JSON parsed, records:', parsedData.length);
                         } else {
                             const lines = evt.target.result.split("\n").filter(l => l.trim());
                             const sep = lines[0].includes(';') ? ';' : ',';
                             const headers = lines[0].replace(/^\ufeff/, "").split(sep).map(h => h.replace(/"/g, "").trim().toLowerCase());
+                            
+                            console.log('ðŸ“„ CSV Headers detected:', headers);
+                            
                             parsedData = lines.slice(1).map(line => {
                                 const values = line.split(sep).map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"').trim());
                                 return headers.reduce((obj, h, i) => {
@@ -2551,21 +2595,113 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                                 }, {});
                             });
                         }
-                        const finalUpload = parsedData.filter(d => d.vocabulary).map(d => {
-                            // ðŸ†• V11.46: Remove obsolete "level" column from backup before upsert
-                            const { level, ...cleanData } = d;
-                            return {
-                                ...cleanData,
-                                id: d.id && d.id !== "null" ? d.id : undefined,
-                                favourite: d.favourite === "true" || d.favourite === true || d.favourite === "1"
+                        
+                        // Log first raw record
+                        if (parsedData.length > 0) {
+                            console.log('ðŸ“ First RAW record from file:', parsedData[0]);
+                            console.log('ðŸ“ All keys in first record:', Object.keys(parsedData[0]));
+                        }
+                        
+                        // ðŸ†• V11.50: Enhanced conversion with validation
+                        const finalUpload = parsedData.filter(d => d.vocabulary).map((d, index) => {
+                            
+                            const convertToInt = (val, fieldName) => {
+                                if (val === null || val === undefined || val === '') return 0;
+                                if (val === 'null' || val === 'false' || val === 'true' || val === 'undefined') return 0;
+                                const num = parseInt(val);
+                                if (isNaN(num)) {
+                                    console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid integer, using 0)`);
+                                    return 0;
+                                }
+                                return num;
                             };
+                            
+                            const convertToBoolean = (val, fieldName) => {
+                                if (val === true || val === 'true' || val === '1' || val === 1) return true;
+                                if (val === false || val === 'false' || val === '0' || val === 0 || !val) return false;
+                                console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid boolean, using false)`);
+                                return false;
+                            };
+                            
+                            const convertToDate = (val, fieldName) => {
+                                if (!val || val === '' || val === 'null' || val === 'undefined') return null;
+                                try {
+                                    const date = new Date(val);
+                                    if (isNaN(date.getTime())) {
+                                        console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (invalid date, using null)`);
+                                        return null;
+                                    }
+                                    return date.toISOString();
+                                } catch {
+                                    console.warn(`âš ï¸ Record ${index}: ${fieldName} = "${val}" (date parse error, using null)`);
+                                    return null;
+                                }
+                            };
+                            
+                            const convertToString = (val, fieldName) => {
+                                if (!val || val === '' || val === 'null' || val === 'undefined') return null;
+                                return val.toString();
+                            };
+                            
+                            // ðŸ†• V11.50: Build ONLY known valid fields, nothing else
+                            const cleanRecord = {
+                                vocabulary: convertToString(d.vocabulary, 'vocabulary'),
+                                family: convertToString(d.family, 'family'),
+                                synonyms: convertToString(d.synonyms, 'synonyms'),
+                                context: convertToString(d.context, 'context'),
+                                difficulty: convertToString(d.difficulty, 'difficulty'),
+                                favourite: convertToInt(d.favourite, 'favourite'),
+                                flashcard_count: convertToInt(d.flashcard_count, 'flashcard_count'),
+                                dictation_count: convertToInt(d.dictation_count, 'dictation_count'),
+                                dictation_errors_total: convertToInt(d.dictation_errors_total, 'dictation_errors_total'),
+                                selection_count: convertToInt(d.selection_count, 'selection_count'),
+                                selection_attempts_total: convertToInt(d.selection_attempts_total, 'selection_attempts_total'),
+                                guesswork_count: convertToInt(d.guesswork_count, 'guesswork_count'),
+                                translation_count: convertToInt(d.translation_count, 'translation_count'),
+                                translation_best_grade: convertToString(d.translation_best_grade, 'translation_best_grade'),
+                                last_practiced_date: convertToDate(d.last_practiced_date, 'last_practiced_date'),
+                                deleted_at: convertToDate(d.deleted_at, 'deleted_at')
+                            };
+                            
+                            // Add id if valid
+                            if (d.id && d.id !== "null" && d.id !== "" && d.id !== "undefined") {
+                                cleanRecord.id = d.id;
+                            }
+                            
+                            // Add created_at if valid
+                            const createdAt = convertToDate(d.created_at, 'created_at');
+                            if (createdAt) {
+                                cleanRecord.created_at = createdAt;
+                            }
+                            
+                            return cleanRecord;
                         });
+                        
+                        // ðŸ†• V11.50: Extensive validation logging
+                        console.log(`âœ… Converted ${finalUpload.length} records`);
+                        if (finalUpload.length > 0) {
+                            console.log('ðŸ“¦ First CONVERTED record:', JSON.stringify(finalUpload[0], null, 2));
+                            console.log('ðŸ“¦ First record field types:');
+                            Object.keys(finalUpload[0]).forEach(key => {
+                                const val = finalUpload[0][key];
+                                console.log(`  ${key}: ${typeof val} = ${val === null ? 'null' : JSON.stringify(val)}`);
+                            });
+                        }
+                        
                         const { error } = await supabase.from('vocabulary_v4').upsert(finalUpload);
                         if (error) throw error;
-                        alert("Sync Complete!");
+                        
+                        alert("âœ… Sync Complete!");
                         setWords([]);
                         fetchWords(0, true);
-                    } catch (err) { alert("Import Error: Structure mismatch."); console.error(err); }
+                    } catch (err) { 
+                        console.error('âŒ Import error details:', err);
+                        console.error('Error code:', err.code);
+                        console.error('Error message:', err.message);
+                        console.error('Error details:', err.details);
+                        console.error('Error hint:', err.hint);
+                        alert(`Import Error: ${err.message || 'Structure mismatch'}\n\nError Code: ${err.code || 'Unknown'}\n\nCheck console for full details.`); 
+                    }
                 };
                 reader.readAsText(file);
             };
@@ -2636,7 +2772,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                         content: prompt
                                     }
                                 ],
-                                temperature: 0.3,
+                                temperature: 0.7,
                                 max_tokens: 500
                             })
                         }
@@ -2748,7 +2884,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
-                        alert('âœ¨ Fields auto-filled successfully!');
+                        
                     } else if (wordId || currentData) {
                         // ðŸ†• V11.8: Respect existing data - only update empty fields
                         const updateData = {
@@ -2792,20 +2928,20 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             newSelection[selectionIndex] = updatedWord;
                             setSelectionWords(newSelection);
                         }
-                        if (showWriting) {
-                            const newWriting = [...writingWords];
-                            newWriting[writingIndex] = updatedWord;
-                            setWritingWords(newWriting);
+                        if (showGuesswork) {
+                            const newGuesswork = [...guessworkWords];
+                            newGuesswork[guessworkIndex] = updatedWord;
+                            setGuessworkWords(newGuesswork);
                         }
                         
                         // Update main table if not in exercise
-                        if (!showFlashcards && !showDictation && !showSelection && !showWriting) {
+                        if (!showFlashcards && !showDictation && !showSelection && !showGuesswork) {
                             setWords(prevWords => 
                                 prevWords.map(w => w.id === targetId ? updatedWord : w)
                             );
                         }
                         
-                        alert('âœ¨ Word auto-filled successfully!');
+                        
                     }
 
                 } catch (error) {
@@ -2842,7 +2978,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                    flashcardWords.find(w => w.id === wordId) ||
                                    dictationWords.find(w => w.id === wordId) ||
                                    selectionWords.find(w => w.id === wordId) ||
-                                   writingWords.find(w => w.id === wordId);
+                                   guessworkWords.find(w => w.id === wordId);
                 
                 if (!currentWord) {
                     alert('âŒ Word not found');
@@ -2876,11 +3012,9 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
 
 For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggestions:
 
-1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)
+1. SYNONYMS: 2-4 DIFFERENT/BETTER British English synonyms (comma-separated)
    - MANDATORY: All synonyms MUST be ${currentFamily}s (same as "${word}")
-   - Example: ${familyExamples[currentFamily] || 'Provide EXACT synonyms of the same type'}
-   - CRITICAL: Synonyms must be EXACT synonyms - words that can DIRECTLY replace "${word}" in most contexts with the same meaning
-   - DO NOT give vague or loosely related words
+   - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
 2. CONTEXT: An ALTERNATIVE natural sentence (12-15 words) in British English
    â›”ï¸ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
@@ -2891,7 +3025,7 @@ For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggesti
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
 
 FINAL MANDATORY RULES:
-- Synonyms = EXACT ${currentFamily} synonyms only (directly interchangeable with "${word}")
+- Synonyms = ${currentFamily}s only (NOT other grammatical types)
 - Context = use "${word}" as a ${currentFamily} (NOT as different grammatical function)
 - Family field in JSON = "${currentFamily}" (DO NOT modify)
 
@@ -2912,7 +3046,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         body: JSON.stringify({
                             model: 'llama-3.1-8b-instant',
                             messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.3,
+                            temperature: 0.7,
                             max_tokens: 500
                         })
                     });
@@ -2990,7 +3124,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                        flashcardWords.find(w => w.id === wordId) ||
                                        dictationWords.find(w => w.id === wordId) ||
                                        selectionWords.find(w => w.id === wordId) ||
-                                       writingWords.find(w => w.id === wordId);
+                                       guessworkWords.find(w => w.id === wordId);
                     
                     if (!currentWord) {
                         throw new Error('Word not found in current context');
@@ -3278,10 +3412,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         newSelection[selectionIndex] = updatedWord;
                         setSelectionWords(newSelection);
                     }
-                    if (showWriting) {
-                        const newWriting = [...writingWords];
-                        newWriting[writingIndex] = updatedWord;
-                        setWritingWords(newWriting);
+                    if (showGuesswork) {
+                        const newGuesswork = [...guessworkWords];
+                        newGuesswork[guessworkIndex] = updatedWord;
+                        setGuessworkWords(newGuesswork);
                     }
                     if (showTranslation) {
                         const newTranslation = [...translationWords];
@@ -3294,7 +3428,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     }
                     
                     // ðŸ†• V11.20: Update main table state without refreshing filters
-                    if (!showFlashcards && !showDictation && !showSelection && !showWriting && !showTranslation) {
+                    if (!showFlashcards && !showDictation && !showSelection && !showGuesswork && !showTranslation) {
                         // Only update if editing from main table
                         setWords(prevWords => 
                             prevWords.map(w => w.id === editingWord.id ? updatedWord : w)
@@ -3418,44 +3552,83 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     <header className="p-4 lg:p-6 bg-slate-900 border-b border-white/10 relative z-30">
                         <div className="max-w-[1850px] mx-auto flex flex-col gap-4">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                                <div className="flex items-center">
-                                    <h1 className="text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter shrink-0">
-                                        English Booster <span className="version-text">v11.46</span>
+                                <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
+                                        English Booster <span className="version-text">v11.62</span>
                                     </h1>
-                                    <div className="flex items-center gap-2 lg:gap-4 bg-slate-800/50 p-2 px-3 lg:px-4 ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg">
-                                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{words.length} / {totalCount}</span>
-                                        <button onClick={() => loadStats()} className="p-1 text-slate-400 hover:text-white border-r border-white/10 pr-2 lg:pr-3 mr-1" title="Statistics"><i className="fas fa-chart-bar text-base lg:text-lg"></i></button>
-                                        <button onClick={() => setShowSettings(true)} className="p-1 text-slate-400 hover:text-white border-l border-white/10 pl-2 lg:pl-3 ml-1"><i className="fas fa-cog text-base lg:text-lg"></i></button>
+                                    {/* ðŸ†• V11.60: Reorganized header - title and buttons in mobile */}
+                                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
+                                        <span className="text-base lg:text-lg font-black text-indigo-400 tracking-wider">{totalCount}</span>
+                                        
+                                        <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
+                                            {/* Add button */}
+                                            <button 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true);}} 
+                                                className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
+                                                title="Add New Word"
+                                            >
+                                                <i className="fas fa-plus text-xl lg:text-base"></i>
+                                            </button>
+                                            
+                                            {/* Recycle Bin */}
+                                            <button 
+                                                onClick={loadRecycleBin} 
+                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${recycleBinCount > 0 ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'border-slate-700/30 text-slate-500 hover:text-red-400 hover:border-red-500/30'}`}
+                                                title={`Recycle Bin${recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}`}
+                                            >
+                                                <i className="fas fa-trash-restore text-xl lg:text-base"></i>
+                                            </button>
+                                            
+                                            {/* Change History */}
+                                            <button 
+                                                onClick={loadChangeHistory} 
+                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${changeHistoryCount > 0 ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'border-slate-700/30 text-slate-500 hover:text-blue-400 hover:border-blue-500/30'}`}
+                                                title={`Change History${changeHistoryCount > 0 ? ` (${changeHistoryCount})` : ''}`}
+                                            >
+                                                <i className="fas fa-history text-xl lg:text-base"></i>
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
+                                            {/* ðŸ†• V11.62: Exercises button - icon only on mobile, text on desktop */}
+                                            <button 
+                                                onClick={() => setShowExercisesModal(true)} 
+                                                className="p-2 lg:px-3 lg:py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors flex items-center gap-1.5"
+                                                title="Practice Exercises"
+                                            >
+                                                <i className="fas fa-dumbbell text-xl lg:text-sm"></i>
+                                                <span className="hidden lg:inline text-sm font-bold">Exercises</span>
+                                            </button>
+                                            
+                                            {/* ðŸ†• V11.62: Stats button - icon only on mobile, text on desktop */}
+                                            <button 
+                                                onClick={() => loadStats()} 
+                                                className="p-2 lg:px-3 lg:py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
+                                                title="Statistics"
+                                            >
+                                                <i className="fas fa-chart-bar text-xl lg:text-sm"></i>
+                                                <span className="hidden lg:inline text-sm font-bold">Stats</span>
+                                            </button>
+                                            
+                                            {/* Settings */}
+                                            <button onClick={() => setShowSettings(true)} className="p-2 lg:p-2 text-slate-400 hover:text-white transition-colors" title="Settings">
+                                                <i className="fas fa-cog text-xl lg:text-base"></i>
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                {/* ðŸ†• V11.24: Recycle Bin and Change History buttons */}
-                                <div className="flex items-center gap-2 lg:gap-3">
-                                    <button 
-                                        onClick={loadRecycleBin} 
-                                        className={`p-2 lg:p-3 rounded-xl border transition-colors ${recycleBinCount > 0 ? 'bg-red-500/20 border-red-500 text-red-400' : 'border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-500'}`}
-                                        title={`Recycle Bin${recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}`}
-                                    >
-                                        <i className="fas fa-trash-restore text-base lg:text-lg"></i>
-                                    </button>
-                                    
-                                    <button 
-                                        onClick={loadChangeHistory} 
-                                        className={`p-2 lg:p-3 rounded-xl border transition-colors ${changeHistoryCount > 0 ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'border-slate-700 text-slate-500 hover:text-blue-400 hover:border-blue-500'}`}
-                                        title={`Change History${changeHistoryCount > 0 ? ` (${changeHistoryCount})` : ''}`}
-                                    >
-                                        <i className="fas fa-history text-base lg:text-lg"></i>
-                                    </button>
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 lg:gap-3 justify-center lg:justify-start">
-                                <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white"><i className="fas fa-broom text-sm"></i></button>
-                                <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-sm w-full sm:w-56 shadow-inner" />
+                                {/* Reset button */}
+                                <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white flex-shrink-0"><i className="fas fa-broom text-sm"></i></button>
                                 
-                                {/* ðŸ†• V11.24: Search mode toggle (0=vocabulary, 1=+synonyms, 2=AI) */}
+                                {/* ðŸ†• V11.58: Search input FIRST */}
+                                <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="px-2 lg:px-4 py-2 lg:py-2.5 rounded-xl text-sm w-24 sm:w-40 lg:w-56 shadow-inner" />
+                                
+                                {/* ðŸ†• V11.58: Search mode toggle AFTER input */}
                                 <button 
                                     onClick={() => setSearchMode((searchMode + 1) % 3)} 
-                                    className={`p-2 lg:p-3 rounded-xl border transition-colors ${
+                                    className={`p-2 lg:p-3 rounded-xl border transition-colors flex-shrink-0 ${
                                         searchMode === 0 ? 'border-slate-700 text-slate-500' :
                                         searchMode === 1 ? 'bg-blue-500/20 border-blue-500 text-blue-400' :
                                         'bg-purple-500/20 border-purple-500 text-purple-400'
@@ -3473,16 +3646,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     } text-sm`}></i>
                                 </button>
                                 
-                                <select value={emptyFilter} onChange={e => setEmptyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase bg-slate-800 text-red-400 flex-1 sm:flex-initial">
-                                    <option value="None">Records</option>
-                                    <option value="Synonyms">No Synonyms</option><option value="Context">No Context</option>
-                                    <option value="Family">No Family</option>
-                                </select>
-                                <select value={familyFilter} onChange={e => setFamilyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 sm:flex-initial"><option value="All">Family</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select>
-                                <select value={difficultyFilter} onChange={e => setDifficultyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 sm:flex-initial"><option value="All">Difficulty</option>{DIFFICULTIES.map(eff => <option key={eff} value={eff}>{eff}</option>)}</select>
+                                {/* ðŸ†• V11.58: Favourite filter AFTER search mode */}
                                 <button 
                                     onClick={() => setFavouriteLevel((favouriteLevel + 1) % 4)} 
-                                    className={`p-2 lg:p-3 rounded-xl border ${
+                                    className={`p-2 lg:p-3 rounded-xl border flex-shrink-0 ${
                                         favouriteLevel === 0 ? 'border-slate-700 text-slate-500' :
                                         favouriteLevel === 1 ? 'bg-yellow-500/20 border-yellow-500 text-yellow-500' :
                                         favouriteLevel === 2 ? 'bg-yellow-600/30 border-yellow-600 text-yellow-600' :
@@ -3503,51 +3670,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     } text-sm`}></i>
                                 </button>
                                 
-                                <button 
-                                    onClick={loadFlashcards} 
-                                    className="bg-purple-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-purple-500 flex items-center gap-2"
-                                    title="Practice with Flashcards"
-                                >
-                                    ðŸŽ´ FLASHCARDS
-                                </button>
-                                
-                                {/* ðŸ†• V11.4: Dictation Exercise button */}
-                                <button 
-                                    onClick={loadDictation} 
-                                    className="bg-blue-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-blue-500 flex items-center gap-2"
-                                    title="Dictation Exercise"
-                                >
-                                    ðŸŽ¤ DICTATION
-                                </button>
-                                
-                                {/* ðŸ†• V11.11: Selection Exercise button */}
-                                <button 
-                                    onClick={loadSelection} 
-                                    className="bg-green-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-green-500 flex items-center gap-2"
-                                    title="Selection Exercise"
-                                >
-                                    âœ“ SELECTION
-                                </button>
-                                
-                                {/* ðŸ†• V11.16: Guesswork Exercise button */}
-                                <button 
-                                    onClick={loadWriting} 
-                                    className="bg-orange-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-orange-500 flex items-center gap-2"
-                                    title="Guesswork Exercise"
-                                >
-                                    âœï¸ WRITING
-                                </button>
-                                
-                                {/* ðŸ†• V11.31: Translation Exercise button */}
-                                <button 
-                                    onClick={loadTranslation} 
-                                    className="bg-pink-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-pink-500 flex items-center gap-2"
-                                    title="Translation Exercise - Spanish to English"
-                                >
-                                    ðŸŒ TRANSLATION
-                                </button>
-                                
-                                <button onClick={() => {setEditingWord(null); setShowAddModal(true);}} className="bg-indigo-600 px-4 lg:px-6 py-2 lg:py-2.5 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-indigo-500 w-full sm:w-auto">+ NEW</button>
+                                {/* Other filters */}
+                                <select value={emptyFilter} onChange={e => setEmptyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase bg-slate-800 text-red-400 flex-1 min-w-[85px] sm:flex-initial">
+                                    <option value="None">Records</option>
+                                    <option value="Synonyms">No Synonyms</option><option value="Context">No Context</option>
+                                    <option value="Family">No Family</option>
+                                    <option value="Difficulty">No Difficulty</option>
+                                </select>
+                                <select value={familyFilter} onChange={e => setFamilyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[80px] sm:flex-initial"><option value="All">Family</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select>
+                                <select value={difficultyFilter} onChange={e => setDifficultyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[100px] sm:flex-initial"><option value="All">Difficulty</option>{DIFFICULTIES.map(eff => <option key={eff} value={eff}>{eff}</option>)}</select>
                             </div>
                         </div>
                     </header>
@@ -3571,24 +3702,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <tr key={w.id} className="hover:bg-indigo-500/[0.03] transition-colors">
                                             <td className="p-5 pl-8 text-center"><button onClick={() => toggleFavourite(w.id, w.favourite || 0)} className="tooltip" data-tip="Toggle favourite"><i className={`fa-star ${w.favourite === 0 ? 'far star-off' : w.favourite === 1 ? 'fas fa-star-half-alt star-half' : 'fas star-on'} text-xl`}></i></button></td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border border-indigo-500/20 text-indigo-300 uppercase">{w.difficulty || 'â€”'}</span></td>
-                                            <td className="p-5 font-black text-slate-100 text-lg cursor-pointer" onClick={() => {
-                                                // ðŸ†• V11.10: Enhanced web search options
-                                                if(clickAction === 'perplexity' || clickAction === 'chatgpt' || clickAction === 'claude_ai') {
-                                                    const encodedPrompt = encodeURIComponent(aiSearchPrompt.replace('{word}', w.vocabulary));
-                                                    const urls = {
-                                                        perplexity: `https://www.perplexity.ai/search?q=${encodedPrompt}`,
-                                                        chatgpt: `https://chat.openai.com/?q=${encodedPrompt}`,
-                                                        claude_ai: `https://claude.ai/new?q=${encodedPrompt}`
-                                                    };
-                                                    window.open(urls[clickAction], '_blank');
-                                                } else {
-                                                    window.open({
-                                                        wordreference:`https://www.wordreference.com/enes/${w.vocabulary}`, 
-                                                        cambridge:`https://dictionary.cambridge.org/dictionary/english/${w.vocabulary}`, 
-                                                        youglish:`https://youglish.com/pronounce/${w.vocabulary}/english`
-                                                    }[clickAction], '_blank');
-                                                }
-                                            }}>{w.vocabulary}</td>
+                                            <td 
+                                                className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
+                                                onClick={() => speakText(w.vocabulary, 1.0)}
+                                                title="Click to hear pronunciation"
+                                            >{w.vocabulary}</td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || 'â€”'}</span></td>
                                             <td className="p-5 font-bold text-slate-100 text-sm italic">{w.synonyms || 'â€”'}</td>
                                             <td 
@@ -3599,14 +3717,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 {w.context ? highlightWordInContext(w.context, w.vocabulary) : 'â€”'}
                                             </td>
                                             <td className="p-5 text-right pr-10">
-                                                <div className="flex justify-end gap-2">
+                                                <div className="flex justify-end gap-1">
                                                     {(() => {
                                                         const hasAllData = w.family && w.synonyms && w.context;
                                                         return (
                                                             <button 
                                                                 onClick={() => hasAllData ? handleImproveWord(w.vocabulary, w.id) : handleMagicFill(w.vocabulary, null, w.id)} 
                                                                 disabled={magicLoading}
-                                                                className={`${hasAllData ? 'improve-btn' : 'magic-btn'} p-2 rounded-lg tooltip`}
+                                                                className={`${hasAllData ? 'improve-btn' : 'magic-btn'} p-1 rounded-lg tooltip`}
                                                                 data-tip={hasAllData ? "Improve with AI" : "Auto-fill with AI"}
                                                             >
                                                                 <span className={`text-xl ${magicLoading ? 'animate-spin-slow inline-block' : ''}`}>
@@ -3615,26 +3733,34 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             </button>
                                                         );
                                                     })()}
+                                                    {/* ðŸ†• V11.61: Reduced padding in desktop buttons */}
+                                                    <button 
+                                                        onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
+                                                        className="text-blue-500 hover:text-blue-400 tooltip p-1" 
+                                                        data-tip="Open in Dictionary"
+                                                    >
+                                                        <i className="fas fa-book text-xl"></i>
+                                                    </button>
                                                     <button 
                                                         onClick={() => handleFindSimilar(w)}
                                                         disabled={findingSimilar === w.id}
-                                                        className="text-orange-500 hover:text-orange-400 tooltip p-2" 
+                                                        className="text-orange-500 hover:text-orange-400 tooltip p-1" 
                                                         data-tip="Find & Merge Similar"
                                                     >
                                                         <span className="text-xl">{findingSimilar === w.id ? 'â³' : 'ðŸ”€'}</span>
                                                     </button>
-                                                    {/* ðŸ†• V11.11: Edit button (3rd position) */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} className="text-slate-500 hover:text-white tooltip p-2" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
-                                                    {/* ðŸ†• V11.11: Undo button (4th position) */}
+                                                    {/* Edit button */}
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    {/* Undo button */}
                                                     <button 
                                                         onClick={() => handleUndo(w.id)}
                                                         disabled={!undoHistory[w.id]}
-                                                        className={`tooltip p-2 ${undoHistory[w.id] ? 'text-yellow-500 hover:text-yellow-400' : 'text-slate-700 cursor-not-allowed'}`}
+                                                        className={`tooltip p-1 ${undoHistory[w.id] ? 'text-yellow-500 hover:text-yellow-400' : 'text-slate-700 cursor-not-allowed'}`}
                                                         data-tip={undoHistory[w.id] ? "Undo last change" : "No changes to undo"}
                                                     >
                                                         <i className="fas fa-undo text-lg"></i>
                                                     </button>
-                                                    {/* ðŸ†• V11.11: Delete button (5th position) */}
+                                                    {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
                                                             // ðŸ†• V11.2: Soft delete
@@ -3642,7 +3768,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             fetchWords(0, true);
                                                             checkRecycleBinCount(); // ðŸ†• V11.4
                                                         }
-                                                    }} className="text-slate-700 hover:text-red-500 tooltip p-2" data-tip="Delete word"><i className="fas fa-trash text-xl"></i></button>
+                                                    }} className="text-slate-700 hover:text-red-500 tooltip p-1" data-tip="Delete word"><i className="fas fa-trash text-xl"></i></button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -3673,24 +3799,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         
                                         <div 
                                             className="text-2xl font-black text-white mb-4 cursor-pointer hover:text-indigo-400 transition-colors"
-                                            onClick={() => {
-                                                // ðŸ†• V11.10: Enhanced web search options
-                                                if(clickAction === 'perplexity' || clickAction === 'chatgpt' || clickAction === 'claude_ai') {
-                                                    const encodedPrompt = encodeURIComponent(aiSearchPrompt.replace('{word}', w.vocabulary));
-                                                    const urls = {
-                                                        perplexity: `https://www.perplexity.ai/search?q=${encodedPrompt}`,
-                                                        chatgpt: `https://chat.openai.com/?q=${encodedPrompt}`,
-                                                        claude_ai: `https://claude.ai/new?q=${encodedPrompt}`
-                                                    };
-                                                    window.open(urls[clickAction], '_blank');
-                                                } else {
-                                                    window.open({
-                                                        wordreference:`https://www.wordreference.com/enes/${w.vocabulary}`, 
-                                                        cambridge:`https://dictionary.cambridge.org/dictionary/english/${w.vocabulary}`, 
-                                                        youglish:`https://youglish.com/pronounce/${w.vocabulary}/english`
-                                                    }[clickAction], '_blank');
-                                                }
-                                            }}
+                                            onClick={() => speakText(w.vocabulary, 1.0)}
+                                            title="Click to hear pronunciation"
                                         >
                                             {w.vocabulary}
                                         </div>
@@ -3715,30 +3825,38 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
                                         
-                                        <div className="flex justify-between items-center gap-2 pt-4 border-t border-white/5">
+                                        {/* ðŸ†• V11.61: Reduced padding and gap for more compact mobile buttons */}
+                                        <div className="flex justify-between items-center gap-1 pt-2 border-t border-white/5">
                                             {(() => {
                                                 const hasAllData = w.family && w.synonyms && w.context;
                                                 return (
                                                     <button 
                                                         onClick={() => hasAllData ? handleImproveWord(w.vocabulary, w.id) : handleMagicFill(w.vocabulary, null, w.id)} 
                                                         disabled={magicLoading}
-                                                        className={`${hasAllData ? 'improve-btn' : 'magic-btn'} p-3 rounded-xl flex-1 text-xl`}
+                                                        className={`${hasAllData ? 'improve-btn' : 'magic-btn'} p-2 rounded-xl flex-1 text-xl`}
                                                     >
                                                         âœ¨
                                                     </button>
                                                 );
                                             })()}
+                                            {/* ðŸ†• V11.58: Reduced padding for mobile buttons to fit all */}
+                                            <button 
+                                                onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
+                                                className="p-2 text-blue-500 bg-blue-500/10 rounded-xl flex-1 text-xl"
+                                            >
+                                                ðŸ“–
+                                            </button>
                                             <button 
                                                 onClick={() => handleFindSimilar(w)}
                                                 disabled={findingSimilar === w.id}
-                                                className="p-3 text-orange-500 bg-orange-500/10 rounded-xl flex-1 text-xl" 
+                                                className="p-2 text-orange-500 bg-orange-500/10 rounded-xl flex-1 text-xl" 
                                             >
                                                 {findingSimilar === w.id ? 'â³' : 'ðŸ”€'}
                                             </button>
                                             {/* ðŸ†• V11.11: Edit button (3rd position) */}
                                             <button 
                                                 onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} 
-                                                className="p-3 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
+                                                className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 âœï¸
                                             </button>
@@ -3746,7 +3864,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <button 
                                                 onClick={() => handleUndo(w.id)}
                                                 disabled={!undoHistory[w.id]}
-                                                className={`p-3 rounded-xl flex-1 text-xl ${undoHistory[w.id] ? 'text-yellow-500 bg-yellow-500/10' : 'text-slate-700 bg-slate-800 cursor-not-allowed'}`}
+                                                className={`p-2 rounded-xl flex-1 text-xl ${undoHistory[w.id] ? 'text-yellow-500 bg-yellow-500/10' : 'text-slate-700 bg-slate-800 cursor-not-allowed'}`}
                                             >
                                                 â†©ï¸
                                             </button>
@@ -3759,7 +3877,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         checkRecycleBinCount(); // ðŸ†• V11.4
                                                     }
                                                 }} 
-                                                className="p-3 text-red-500 bg-red-500/10 rounded-xl flex-1 text-xl"
+                                                className="p-2 text-red-500 bg-red-500/10 rounded-xl flex-1 text-xl"
                                             >
                                                 ðŸ—‘ï¸
                                             </button>
@@ -3855,35 +3973,22 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         />
                                         <p className="text-xs text-slate-500 mt-2">Customize how AI generates vocabulary data. Use {'{word}'} to insert the word being processed.</p>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Default Click Action</label>
-                                        <select value={clickAction} onChange={e => {setClickAction(e.target.value); localStorage.setItem('click_action', e.target.value)}} className="w-full p-4 rounded-xl text-sm font-bold">
-                                            <option value="wordreference">WordReference</option>
-                                            <option value="cambridge">Cambridge</option>
-                                            <option value="youglish">YouGlish</option>
-                                            <option value="perplexity">Web search Perplexity</option>
-                                            <option value="chatgpt">Web search ChatGPT</option>
-                                            <option value="claude_ai">Web search Claude</option>
-                                        </select>
-                                    </div>
                                     
-                                    {/* ðŸ†• V11.10: Web Search Prompt (only for web search options) */}
-                                    {(clickAction === 'perplexity' || clickAction === 'chatgpt' || clickAction === 'claude_ai') && (
-                                        <div>
-                                            <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Web Search Prompt (use {'{word}'} placeholder)</label>
-                                            <textarea 
-                                                value={aiSearchPrompt} 
-                                                onChange={e => {
-                                                    setAiSearchPrompt(e.target.value);
-                                                    localStorage.setItem('ai_search_prompt', e.target.value);
-                                                }}
-                                                rows="5"
-                                                className="w-full p-4 rounded-xl text-xs font-mono"
-                                                placeholder="For the English word/expression..."
-                                            />
-                                            <p className="text-xs text-slate-500 mt-2">This prompt will be sent to the AI when you click on a vocabulary word. Use {'{word}'} as placeholder.</p>
-                                        </div>
-                                    )}
+                                    {/* ðŸ†• V11.55: Web Search Prompt for Perplexity in dictionary modal */}
+                                    <div>
+                                        <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Web Search Prompt (use {'{word}'} placeholder)</label>
+                                        <textarea 
+                                            value={aiSearchPrompt} 
+                                            onChange={e => {
+                                                setAiSearchPrompt(e.target.value);
+                                                localStorage.setItem('ai_search_prompt', e.target.value);
+                                            }}
+                                            rows="5"
+                                            className="w-full p-4 rounded-xl text-xs font-mono"
+                                            placeholder="For the English word/expression {word}, provide meaning, synonyms, context..."
+                                        />
+                                        <p className="text-xs text-slate-500 mt-2">This prompt is used when opening Perplexity AI from the dictionary modal ðŸ“–. Use {'{word}'} as placeholder.</p>
+                                    </div>
                                     
                                     {/* ðŸ†• V11.7: Voice selection */}
                                     <div>
@@ -3945,19 +4050,109 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
+                    {/* ðŸ†• V11.59: Exercises Modal */}
+                    {showExercisesModal && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+                            <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-2xl font-black main-gradient uppercase text-center italic">ðŸ‹ï¸ Choose Exercise</h2>
+                                    <button onClick={() => setShowExercisesModal(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Flashcards */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadFlashcards();
+                                        }}
+                                        className="group relative overflow-hidden bg-purple-600 hover:bg-purple-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">ðŸŽ´</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Flashcards</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Flip cards to test your vocabulary memory. Rate your knowledge level.</p>
+                                    </button>
+                                    
+                                    {/* Dictation */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadDictation();
+                                        }}
+                                        className="group relative overflow-hidden bg-blue-600 hover:bg-blue-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">ðŸŽ¤</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Dictation</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Listen and type what you hear. Improve listening and spelling skills.</p>
+                                    </button>
+                                    
+                                    {/* Selection */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadSelection();
+                                        }}
+                                        className="group relative overflow-hidden bg-green-600 hover:bg-green-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">âœ“</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Selection</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Choose the correct word from multiple options to complete sentences.</p>
+                                    </button>
+                                    
+                                    {/* Guesswork */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadGuesswork();
+                                        }}
+                                        className="group relative overflow-hidden bg-orange-600 hover:bg-orange-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">ðŸ¤”</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Guesswork</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Write sentences using vocabulary words. AI evaluates your guesswork.</p>
+                                    </button>
+                                    
+                                    {/* Translation */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadTranslation();
+                                        }}
+                                        className="group relative overflow-hidden bg-pink-600 hover:bg-pink-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl md:col-span-2"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">ðŸŒ</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Translation</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Translate Spanish sentences to English. Practice language conversion skills.</p>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {showAddModal && (
                         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-2xl">
                                 <div className="flex justify-between items-center mb-8">
                                     <h2 className="text-2xl font-black italic main-gradient uppercase tracking-widest">{editingWord ? 'Edit Word' : 'New Word'}</h2>
                                     <div className="flex items-center gap-2">
-                                        {/* ðŸ†• V11.13: Dictionary button */}
+                                        {/* ðŸ†• V11.56: Dictionary button updated to use modal */}
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 const vocabValue = document.getElementById('modalVocabInput')?.value || editingWord?.vocabulary || '';
                                                 if (vocabValue) {
-                                                    openInDictionary(vocabValue);
+                                                    setSelectedWordForDict(vocabValue);
+                                                    setShowDictionaryModal(true);
                                                 } else {
                                                     alert('Please enter a word first!');
                                                 }
@@ -4150,7 +4345,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (drag to AI panel â†’)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Synonyms (ðŸ“± Tap | ðŸ–¥ï¸ Drag to AI panel â†’)</div>
                                             <div className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4179,9 +4374,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('synonym', syn);
                                                             e.dataTransfer.setData('improveSynSource', 'current');
                                                         }}
-                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none"
+                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
-                                                            // ðŸ†• V11.21: Tap to move to green panel (mobile-friendly)
+                                                            // ðŸ“± MOBILE: Tap to move between panels (drag&drop not supported on touch devices) to green panel (mobile-friendly)
                                                             const currentSyns = (improveData.selections?.currentSynonyms || []).filter(s => s !== syn);
                                                             const improvedSyns = improveData.selections?.improvedSynonyms || [];
                                                             setImproveData({
@@ -4201,7 +4396,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (drag to AI panel â†’)</div>
+                                            <div className="text-xs font-bold uppercase text-red-400 mb-2">Context (ðŸ“± Tap | ðŸ–¥ï¸ Drag to AI panel â†’)</div>
                                             <div 
                                                 className="bg-red-950/30 border border-red-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4270,7 +4465,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div className="mb-6">
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Synonyms (drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Synonyms (ðŸ“± Tap | ðŸ–¥ï¸ Drag to current panel)</div>
                                             <div className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[100px]"
                                                 onDragOver={(e) => e.preventDefault()}
                                                 onDrop={(e) => {
@@ -4299,7 +4494,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('synonym', syn);
                                                             e.dataTransfer.setData('improveSynSource', 'improved');
                                                         }}
-                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none"
+                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-2 cursor-move inline-block mr-2 text-sm sm:text-base touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                         onClick={() => {
                                                             // ðŸ†• V11.21: Tap to move to red panel (mobile-friendly)
                                                             const improvedSyns = (improveData.selections?.improvedSynonyms || []).filter(s => s !== syn);
@@ -4321,7 +4516,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Context (drag to current panel)</div>
+                                            <div className="text-xs font-bold uppercase text-green-400 mb-2">â† Context (ðŸ“± Tap | ðŸ–¥ï¸ Drag to current panel)</div>
                                             <div 
                                                 className="bg-green-950/30 border border-green-500/30 rounded-lg p-3 min-h-[80px]"
                                                 onDragOver={(e) => e.preventDefault()}
@@ -4399,7 +4594,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     flashcardWords.find(w => w.id === improveData.wordId) ||
                                                     dictationWords.find(w => w.id === improveData.wordId) ||
                                                     selectionWords.find(w => w.id === improveData.wordId) ||
-                                                    writingWords.find(w => w.id === improveData.wordId)),
+                                                    guessworkWords.find(w => w.id === improveData.wordId)),
                                                 ...updateData
                                             };
                                             
@@ -4418,14 +4613,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 newSelection[selectionIndex] = updatedWord;
                                                 setSelectionWords(newSelection);
                                             }
-                                            if (showWriting) {
-                                                const newWriting = [...writingWords];
-                                                newWriting[writingIndex] = updatedWord;
-                                                setWritingWords(newWriting);
+                                            if (showGuesswork) {
+                                                const newGuesswork = [...guessworkWords];
+                                                newGuesswork[guessworkIndex] = updatedWord;
+                                                setGuessworkWords(newGuesswork);
                                             }
                                             
                                             // Update main table if not in exercise
-                                            if (!showFlashcards && !showDictation && !showSelection && !showWriting) {
+                                            if (!showFlashcards && !showDictation && !showSelection && !showGuesswork) {
                                                 setWords(prevWords => 
                                                     prevWords.map(w => w.id === improveData.wordId ? updatedWord : w)
                                                 );
@@ -4494,7 +4689,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
                                             <h2 className="text-3xl font-black text-white">ðŸ”€ Drag & Drop Merge</h2>
-                                            <p className="text-slate-400 text-sm mt-1">Drag synonyms and context between panels. RED = Delete | GREEN = Keep</p>
+                                            <p className="text-slate-400 text-sm mt-1">ðŸ“± MOBILE: Tap items to move | ðŸ–¥ï¸ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
                                         </div>
                                         <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
@@ -4896,7 +5091,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setFlashcardAudioEnabled(newState);
                                         localStorage.setItem('flashcard_audio', newState.toString());
                                     }}
-                                    onDictionary={openInDictionary}
+                                    onDictionary={(word) => {
+                                        setSelectedWordForDict(word);
+                                        setShowDictionaryModal(true);
+                                    }}
                                     onEdit={() => {
                                         setEditingWord(flashcardWords[flashcardIndex]);
                                         setOriginalEditData({...flashcardWords[flashcardIndex]});
@@ -5099,7 +5297,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setShowDictation(false);
                                         setTimeout(() => loadDictation(), 100);
                                     }}
-                                    onDictionary={openInDictionary}
+                                    onDictionary={(word) => {
+                                        setSelectedWordForDict(word);
+                                        setShowDictionaryModal(true);
+                                    }}
                                     onInfo={() => alert('ðŸŽ¤ DICTATION EXERCISE\n\nðŸ“Š SCORING:\nðŸŸ¢ Active: 0-1 errors\nðŸŸ¡ Emerging: 2 errors\nðŸ”´ Passive: 3+ errors\n\nâŒ¨ï¸ SHORTCUTS:\nâ€¢ Press ENTER to check your answer\nâ€¢ Press ENTER again to move to next word and auto-play\n\nðŸ”Š AUDIO:\nâ€¢ First play: Normal speed (1.0x)\nâ€¢ Second play: Slow speed (0.7x)\nâ€¢ Maximum 4 plays per word\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ ðŸ”Š = Play audio\nâ€¢ Check Answer = Verify your answer\nâ€¢ Skip = Skip to next word\nâ€¢ Edit Word = Modify current word\nâ€¢ Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(dictationWords[dictationIndex]);
@@ -5361,8 +5562,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setShowSelectionAnswer(false);
                                         setSelectionAttempts(0);
                                         setSelectionDifficulty('');
-                                        setSelectionWrongAnswers([]);
-                                        setSelectionExplanation('');
                                     }}
                                     onModeToggle={() => {
                                         const newMode = exerciseMode === 'random' ? 'memory' : 'random';
@@ -5371,7 +5570,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setShowSelection(false);
                                         setTimeout(() => loadSelection(), 100);
                                     }}
-                                    onDictionary={openInDictionary}
+                                    onDictionary={(word) => {
+                                        setSelectedWordForDict(word);
+                                        setShowDictionaryModal(true);
+                                    }}
                                     onInfo={() => alert('âœ“ SELECTION EXERCISE\n\nðŸ“Š SCORING:\nâœ… First try correct = Easy\nâš ï¸ Second try correct = Medium\nâŒ Third or more tries = Hard\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read the sentence with the blank\nâ€¢ Choose the correct word from 6 options\nâ€¢ You have unlimited attempts\nâ€¢ Difficulty is based on number of tries\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ Word options = Click to select answer\nâ€¢ Edit Word = Modify current word\nâ€¢ Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(selectionWords[selectionIndex]);
@@ -5405,14 +5607,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {selectionOptions.map((option, index) => (
                                         <button
                                             key={index}
-                                            onClick={async () => {
+                                            onClick={() => {
+                                                // 🆕 V11.64: Block if already wrong, answered, or not visible
                                                 if (showSelectionAnswer || !selectionOptionsVisible || selectionWrongAnswers.includes(option.vocabulary)) return;
                                                 
                                                 setSelectedAnswer(option.vocabulary);
                                                 const isCorrect = option.vocabulary === selectionWords[selectionIndex].vocabulary;
                                                 
                                                 if (!isCorrect) {
-                                                    // Wrong answer - increment attempts and track wrong answer
+                                                    // 🆕 V11.64: Track wrong answers
                                                     setSelectionAttempts(prev => prev + 1);
                                                     setSelectionWrongAnswers(prev => [...prev, option.vocabulary]);
                                                 } else {
@@ -5426,7 +5629,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setSelectionDifficulty(difficulty);
                                                     setShowSelectionAnswer(true);
                                                     
-                                                    // 🆕 V11.47: If there were wrong attempts, get AI explanation
+                                                    // 🆕 V11.64: Only explain if there were wrong attempts
                                                     if (selectionWrongAnswers.length > 0) {
                                                         explainSelectionAnswer(
                                                             selectionWords[selectionIndex].vocabulary,
@@ -5440,14 +5643,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className={`p-3 sm:p-6 rounded-xl sm:rounded-2xl font-bold text-base sm:text-lg transition-all ${
                                                 !selectionOptionsVisible 
                                                     ? 'blur-lg cursor-not-allowed bg-slate-800 text-slate-600'
-                                                    : showSelectionAnswer
-                                                        ? option.vocabulary === selectionWords[selectionIndex].vocabulary
-                                                            ? 'bg-green-600 text-white border-2 border-green-400'
-                                                            : selectionWrongAnswers.includes(option.vocabulary)
-                                                                ? 'bg-red-600/50 text-white border-2 border-red-400'
+                                                    : selectionWrongAnswers.includes(option.vocabulary)
+                                                        ? 'bg-red-900/40 text-red-400 line-through cursor-not-allowed border-2 border-red-800'
+                                                        : showSelectionAnswer
+                                                            ? option.vocabulary === selectionWords[selectionIndex].vocabulary
+                                                                ? 'bg-green-600 text-white border-2 border-green-400'
                                                                 : 'bg-slate-800 text-slate-500'
-                                                        : selectionWrongAnswers.includes(option.vocabulary)
-                                                            ? 'bg-red-900/50 text-red-300 border border-red-500/50 cursor-not-allowed'
                                                             : selectedAnswer === option.vocabulary
                                                                 ? 'bg-blue-600 text-white border-2 border-blue-400 scale-105'
                                                                 : 'bg-slate-800 hover:bg-slate-700 text-white hover:scale-105'
@@ -5462,7 +5663,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 {!showSelectionAnswer && (
                                     <div className="mt-4 sm:mt-6">
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 // Skip to next word without saving anything
                                                 if (selectionIndex < selectionWords.length - 1) {
                                                     const nextIndex = selectionIndex + 1;
@@ -5471,19 +5672,26 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setShowSelectionAnswer(false);
                                                     setSelectionAttempts(0);
                                                     setSelectionDifficulty('');
+                                                    // 🆕 V11.64: Reset wrong answers & explanation
                                                     setSelectionWrongAnswers([]);
                                                     setSelectionExplanation('');
-                                                    // Generate new options for next word
-                                                    const nextOptions = generateSelectionOptions(selectionWords[nextIndex], selectionWords);
-                                                    // ðŸ†• V11.19: Validate options were generated
+                                                    // 🆕 V11.64: Try AI options first, fallback to DB
+                                                    const nextWord = selectionWords[nextIndex];
+                                                    const aiOpts = await generateAISelectionOptions(nextWord);
+                                                    let nextOptions;
+                                                    if (aiOpts && aiOpts.length >= 3) {
+                                                        nextOptions = [nextWord, ...aiOpts.slice(0, 5)].sort(() => Math.random() - 0.5);
+                                                    } else {
+                                                        nextOptions = generateSelectionOptions(nextWord, selectionWords);
+                                                    }
                                                     if (!nextOptions) {
-                                                        alert('âš ï¸ Cannot generate options for next word. Ending exercise.');
+                                                        alert('⚠️ Cannot generate options. Ending exercise.');
                                                         setShowSelection(false);
                                                         return;
                                                     }
                                                     setSelectionOptions(nextOptions);
                                                 } else {
-                                                    alert('ðŸŽ‰ Exercise completed!');
+                                                    alert('🎉 Exercise completed!');
                                                     setShowSelection(false);
                                                     setSelectionWords([]);
                                                     setSelectionIndex(0);
@@ -5491,11 +5699,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setShowSelectionAnswer(false);
                                                     setSelectionAttempts(0);
                                                     setSelectionDifficulty('');
+                                                    setSelectionWrongAnswers([]);
+                                                    setSelectionExplanation('');
                                                 }
                                             }}
                                             className="w-full bg-slate-700 hover:bg-slate-600 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
                                         >
-                                            â­ï¸ Skip
+                                            ⏭️ Skip
                                         </button>
                                     </div>
                                 )}
@@ -5520,21 +5730,24 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         </div>
 
-                                        {/* 🆕 V11.47: AI Explanation when there were wrong attempts */}
-                                        {selectionWrongAnswers.length > 0 && (
-                                            <div className="p-4 bg-blue-900/20 border border-blue-500/30 rounded-xl sm:rounded-2xl">
-                                                <h4 className="text-xs uppercase font-black text-blue-400 mb-2">💡 Why "{selectionWords[selectionIndex].vocabulary}" is correct:</h4>
+                                        {/* 🆕 V11.64: AI Explanation Panel - shown only if user made wrong attempts */}
+                                        {showSelectionAnswer && selectionWrongAnswers.length > 0 && (
+                                            <div className="mt-4 p-4 bg-blue-900/20 border border-blue-500/40 rounded-xl">
                                                 {selectionExplLoading ? (
-                                                    <p className="text-blue-200/70 text-sm animate-pulse">🤖 Generating explanation...</p>
+                                                    <div className="flex items-center gap-2 text-blue-300">
+                                                        <span className="text-xl">🤖</span>
+                                                        <span className="text-sm">AI is explaining...</span>
+                                                    </div>
                                                 ) : selectionExplanation ? (
-                                                    <p className="text-blue-100/90 text-sm leading-relaxed">{selectionExplanation}</p>
-                                                ) : (
-                                                    <p className="text-blue-200/50 text-sm">Explanation unavailable.</p>
-                                                )}
+                                                    <>
+                                                        <h4 className="text-blue-300 text-xs font-black uppercase mb-2">💡 Why {selectionWords[selectionIndex].vocabulary} is the best answer</h4>
+                                                        <p className="text-white/80 text-sm leading-relaxed">{selectionExplanation}</p>
+                                                    </>
+                                                ) : null}
                                             </div>
                                         )}
 
-                                        {/* 🆕 V11.16: Removed Edit button - V11.19: Responsive */}
+                                        {/* ðŸ†• V11.16: Removed Edit button - V11.19: Responsive */}
                                         <div className="mt-4 sm:mt-6">
                                             <button
                                                 onClick={async () => {
@@ -5558,9 +5771,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowSelectionAnswer(false);
                                                         setSelectionAttempts(0);
                                                         setSelectionDifficulty('');
+                                                        // 🆕 V11.64: Reset wrong answers & explanation
                                                         setSelectionWrongAnswers([]);
                                                         setSelectionExplanation('');
-                                                        // 🆕 V11.47: Try AI options first, fallback to regular
+                                                        // 🆕 V11.64: Try AI options first, fallback to DB
                                                         const nextWord = selectionWords[nextIndex];
                                                         const aiOpts = await generateAISelectionOptions(nextWord);
                                                         let nextOptions;
@@ -5569,15 +5783,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         } else {
                                                             nextOptions = generateSelectionOptions(nextWord, selectionWords);
                                                         }
-                                                        // ðŸ†• V11.19: Validate options were generated
                                                         if (!nextOptions) {
-                                                            alert('âš ï¸ Cannot generate options for next word. Ending exercise.');
+                                                            alert('⚠️ Cannot generate options. Ending exercise.');
                                                             setShowSelection(false);
                                                             return;
                                                         }
                                                         setSelectionOptions(nextOptions);
                                                     } else {
-                                                        alert('ðŸŽ‰ Exercise completed!');
+                                                        alert('🎉 Exercise completed!');
                                                         setShowSelection(false);
                                                         setSelectionWords([]);
                                                         setSelectionIndex(0);
@@ -5591,7 +5804,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 }}
                                                 className="w-full bg-green-600 hover:bg-green-500 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {selectionIndex < selectionWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
+                                                {selectionIndex < selectionWords.length - 1 ? 'Next Word →' : '✅ Finish'}
                                             </button>
                                         </div>
                                     </div>
@@ -5609,40 +5822,43 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     )}
 
                     {/* ðŸ†• V11.16: GUESSWORK EXERCISE MODAL */}
-                    {showWriting && writingWords.length > 0 && (
+                    {showGuesswork && guessworkWords.length > 0 && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
                             <div className="w-full max-w-4xl my-2 sm:my-8">
                                 {/* Header */}
                                 <ExerciseHeader
-                                    title="🤔 Guesswork"
-                                    currentIndex={writingIndex}
-                                    totalCount={writingWords.length}
-                                    currentWord={writingWords[writingIndex].vocabulary}
+                                    title="ðŸ¤” Guesswork"
+                                    currentIndex={guessworkIndex}
+                                    totalCount={guessworkWords.length}
+                                    currentWord={guessworkWords[guessworkIndex].vocabulary}
                                     exerciseMode={exerciseMode}
                                     audioEnabled={false}
                                     onClose={() => {
-                                        setShowWriting(false);
-                                        setWritingWords([]);
-                                        setWritingIndex(0);
-                                        setWritingInput('');
-                                        setShowWritingAnswer(false);
-                                        setWritingDifficulty('');
-                                        setWritingAttempts(0);
-                                        setWritingAIResult(null);
+                                        setShowGuesswork(false);
+                                        setGuessworkWords([]);
+                                        setGuessworkIndex(0);
+                                        setGuessworkInput('');
+                                        setShowGuessworkAnswer(false);
+                                        setGuessworkDifficulty('');
+                                        setGuessworkAttempts(0);
+                                        setGuessworkAIResult(null);
                                     }}
                                     onModeToggle={() => {
                                         setExerciseMode(exerciseMode === 'random' ? 'memory' : 'random');
-                                        setShowWriting(false);
-                                        setTimeout(() => loadWriting(), 100);
+                                        setShowGuesswork(false);
+                                        setTimeout(() => loadGuesswork(), 100);
                                     }}
                                     onAudioToggle={null}
-                                    onDictionary={openInDictionary}
+                                    onDictionary={(word) => {
+                                        setSelectedWordForDict(word);
+                                        setShowDictionaryModal(true);
+                                    }}
                                     onEdit={() => {
-                                        setEditingWord(writingWords[writingIndex]);
-                                        setOriginalEditData({...writingWords[writingIndex]});
+                                        setEditingWord(guessworkWords[guessworkIndex]);
+                                        setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('âœï¸ WRITING EXERCISE\n\nðŸ“Š SCORING:\nâœ… Exact match = Active\nðŸ¤– AI evaluates quality when not exact match:\n  â€¢ Active = Excellent answer (correct grammar, perfect fit)\n  â€¢ Emerging = Acceptable answer (minor issues, generally correct)\n  â€¢ Passive = Poor answer (significant errors)\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read the sentence with the blank\nâ€¢ Write the correct word\nâ€¢ Click ðŸ’¡ Hint button (top-right of sentence) for help\nâ€¢ Exact match â†’ Easy (accepted immediately)\nâ€¢ Valid synonym â†’ AI validates and scores Easy/Medium/Hard\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ’¡ = Show hint (in sentence panel)\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ Check Answer = Verify your answer (uses AI if not exact match)\nâ€¢ Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('ðŸ¤” GUESSWORK EXERCISE\n\nðŸ“Š SCORING:\nâœ… Exact match = Easy\nðŸ¤– AI evaluates quality when not exact match:\n  â€¢ Active = Excellent answer (correct grammar, perfect fit)\n  â€¢ Emerging = Acceptable answer (minor issues, generally correct)\n  â€¢ Passive = Poor answer (significant errors)\n\nðŸŽ¯ HOW TO PLAY:\nâ€¢ Read the sentence with the blank\nâ€¢ Write the correct word\nâ€¢ Click ðŸ’¡ Hint button (top-right of sentence) for help\nâ€¢ Exact match â†’ Easy (accepted immediately)\nâ€¢ Non-exact â†’ AI validates and scores Easy/Medium/Hard\n\nðŸŽ® BUTTONS:\nâ€¢ ðŸ§ /ðŸŽ² = Toggle Memory/Random mode\nâ€¢ ðŸ’¡ = Show hint (in sentence panel)\nâ€¢ ðŸ“– = Open in dictionary\nâ€¢ â„¹ï¸ = Show this help\nâ€¢ âœï¸ = Edit current word\nâ€¢ Ã— = Close exercise\nâ€¢ Check Answer = Verify your answer (uses AI if not exact match)\nâ€¢ Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - ðŸ†• V11.21: Hint button in top-right corner */}
@@ -5650,8 +5866,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* Hint button in top-right corner */}
                                     <button
                                         onClick={async () => {
-                                            setShowWritingHint(true);
-                                            await generateWritingHintMeaning(writingWords[writingIndex].vocabulary);
+                                            setShowGuessworkHint(true);
+                                            await generateGuessworkHintMeaning(guessworkWords[guessworkIndex].vocabulary);
                                         }}
                                         className="absolute top-4 right-4 bg-yellow-500 hover:bg-yellow-400 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg transition-all hover:scale-110"
                                         title="Show hint"
@@ -5662,81 +5878,91 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="text-center">
                                         <h3 className="text-white/70 text-sm font-bold uppercase mb-4">Complete the sentence:</h3>
                                         <p className="text-white text-2xl font-bold leading-relaxed">
-                                            {hideWordInContext(writingWords[writingIndex].context, writingWords[writingIndex].vocabulary)}
+                                            {hideWordInContext(guessworkWords[guessworkIndex].context, guessworkWords[guessworkIndex].vocabulary)}
                                         </p>
                                     </div>
                                 </div>
 
-                                {!showWritingAnswer ? (
+                                {!showGuessworkAnswer ? (
                                     <>
                                         {/* Input field */}
                                         <input
                                             type="text"
-                                            value={writingInput}
-                                            onChange={(e) => setWritingInput(e.target.value)}
+                                            value={guessworkInput}
+                                            onChange={(e) => setGuessworkInput(e.target.value)}
                                             onKeyDown={async (e) => {
                                                 if (e.key === 'Enter') {
                                                     e.preventDefault();
                                                     
-                                                    if (!showWritingAnswer && writingInput.trim()) {
+                                                    if (!showGuessworkAnswer && guessworkInput.trim()) {
                                                         // First Enter: Check answer
-                                                        const userAnswer = writingInput.trim().toLowerCase();
-                                                        const correctAnswer = writingWords[writingIndex].vocabulary.toLowerCase();
+                                                        const userAnswer = guessworkInput.trim().toLowerCase();
+                                                        const correctAnswer = guessworkWords[guessworkIndex].vocabulary.toLowerCase();
                                                         
                                                         if (userAnswer === correctAnswer) {
                                                             // Exact match - Easy
-                                                            setWritingDifficulty('Active');
-                                                            setWritingAttempts(prev => prev + 1);
-                                                            setWritingAIResult({
+                                                            setGuessworkDifficulty('Active');
+                                                            setGuessworkAttempts(prev => prev + 1);
+                                                            setGuessworkAIResult({
                                                                 is_correct: true,
                                                                 explanation: 'Perfect! Exact match.',
                                                                 score: 'Active'
                                                             });
-                                                            setShowWritingAnswer(true);
+                                                            setShowGuessworkAnswer(true);
                                                         } else {
                                                             // Not exact - validate with AI
-                                                            const aiResult = await validateWritingWithAI(
+                                                            const aiResult = await validateGuessworkWithAI(
                                                                 userAnswer,
                                                                 correctAnswer,
-                                                                writingWords[writingIndex].context
+                                                                guessworkWords[guessworkIndex].context
                                                             );
                                                             if (aiResult) {
-                                                                setWritingAIResult(aiResult);
-                                                                setWritingDifficulty(aiResult.score || 'Passive');
-                                                                setWritingAttempts(prev => prev + 1);
-                                                                setShowWritingAnswer(true);
+                                                                // 🆕 V11.64: Map score and handle synonyms
+                                                                let finalScore = 'Passive';
+                                                                if (aiResult.is_synonym) {
+                                                                    finalScore = 'Emerging';
+                                                                } else if (aiResult.score === 'Easy') {
+                                                                    finalScore = 'Active';
+                                                                } else if (aiResult.score === 'Medium') {
+                                                                    finalScore = 'Emerging';
+                                                                }
+                                                                const updatedResult = { ...aiResult, score: finalScore };
+                                                                setGuessworkAIResult(updatedResult);
+                                                                setGuessworkDifficulty(finalScore);
+                                                                setGuessworkAttempts(prev => prev + 1);
+                                                                setShowGuessworkAnswer(true);
                                                             }
                                                         }
-                                                    } else if (showWritingAnswer) {
+                                                    } else if (showGuessworkAnswer) {
                                                         // Second Enter: Save and move to next word
                                                         try {
-                                                            const currentWritingWord = writingWords[writingIndex];
+                                                            const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                                                         } catch (error) {
                                                             console.error('Error saving difficulty:', error);
                                                         }
                                                         
-                                                        if (writingIndex < writingWords.length - 1) {
-                                                            setWritingIndex(writingIndex + 1);
-                                                            setWritingInput('');
-                                                            setShowWritingAnswer(false);
-                                                            setWritingAttempts(0);
-                                                            setWritingDifficulty('');
-                                                            setWritingAIResult(null);
+                                                        if (guessworkIndex < guessworkWords.length - 1) {
+                                                            setGuessworkIndex(guessworkIndex + 1);
+                                                            setGuessworkInput('');
+                                                            setShowGuessworkAnswer(false);
+                                                            setGuessworkAttempts(0);
+                                                            setGuessworkDifficulty('');
+                                                            setGuessworkAIResult(null);
                                                         } else {
                                                             alert('ðŸŽ‰ Exercise completed!');
-                                                            setShowWriting(false);
-                                                            setWritingWords([]);
-                                                            setWritingIndex(0);
-                                                            setWritingInput('');
-                                                            setShowWritingAnswer(false);
-                                                            setWritingAttempts(0);
-                                                            setWritingDifficulty('');
-                                                            setWritingAIResult(null);
+                                                            setShowGuesswork(false);
+                                                            setGuessworkWords([]);
+                                                            setGuessworkIndex(0);
+                                                            setGuessworkInput('');
+                                                            setShowGuessworkAnswer(false);
+                                                            setGuessworkAttempts(0);
+                                                            setGuessworkDifficulty('');
+                                                            setGuessworkAIResult(null);
                                                         }
                                                     }
                                                 }
@@ -5749,63 +5975,72 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="flex gap-4">
                                             <button
                                                 onClick={async () => {
-                                                    if (!writingInput.trim()) return;
+                                                    if (!guessworkInput.trim()) return;
                                                     
-                                                    const userAnswer = writingInput.trim().toLowerCase();
-                                                    const correctAnswer = writingWords[writingIndex].vocabulary.toLowerCase();
+                                                    const userAnswer = guessworkInput.trim().toLowerCase();
+                                                    const correctAnswer = guessworkWords[guessworkIndex].vocabulary.toLowerCase();
                                                     
                                                     if (userAnswer === correctAnswer) {
                                                         // Exact match - Easy
-                                                        setWritingDifficulty('Active');
-                                                        setWritingAttempts(prev => prev + 1);
-                                                        setWritingAIResult({
+                                                        setGuessworkDifficulty('Active');
+                                                        setGuessworkAttempts(prev => prev + 1);
+                                                        setGuessworkAIResult({
                                                             is_correct: true,
                                                             explanation: 'Perfect! Exact match.',
                                                             score: 'Active'
                                                         });
-                                                        setShowWritingAnswer(true);
+                                                        setShowGuessworkAnswer(true);
                                                     } else {
                                                         // Not exact - validate with AI
-                                                        const aiResult = await validateWritingWithAI(
+                                                        const aiResult = await validateGuessworkWithAI(
                                                             userAnswer,
                                                             correctAnswer,
-                                                            writingWords[writingIndex].context
+                                                            guessworkWords[guessworkIndex].context
                                                         );
                                                         if (aiResult) {
-                                                            setWritingAIResult(aiResult);
-                                                            // ðŸ†• V11.18: Use AI's score evaluation directly (Easy/Medium/Hard)
-                                                            setWritingDifficulty(aiResult.score || 'Passive');
-                                                            setWritingAttempts(prev => prev + 1);
-                                                            setShowWritingAnswer(true);
+                                                            // 🆕 V11.64: Map score and handle synonyms
+                                                            let finalScore2 = 'Passive';
+                                                            if (aiResult.is_synonym) {
+                                                                finalScore2 = 'Emerging';
+                                                            } else if (aiResult.score === 'Easy') {
+                                                                finalScore2 = 'Active';
+                                                            } else if (aiResult.score === 'Medium') {
+                                                                finalScore2 = 'Emerging';
+                                                            }
+                                                            const updatedResult2 = { ...aiResult, score: finalScore2 };
+                                                            setGuessworkAIResult(updatedResult2);
+                                                            setGuessworkDifficulty(finalScore2);
+                                                            setGuessworkAttempts(prev => prev + 1);
+                                                            setShowGuessworkAnswer(true);
                                                         }
                                                     }
                                                 }}
-                                                disabled={writingAIValidating || !writingInput.trim()}
+                                                disabled={guessworkAIValidating || !guessworkInput.trim()}
                                                 className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {writingAIValidating ? 'ðŸ¤– AI Validating...' : 'âœ… Check Answer'}
+                                                {guessworkAIValidating ? 'ðŸ¤– AI Validating...' : 'âœ… Check Answer'}
                                             </button>
                                             
                                             <button
                                                 onClick={() => {
                                                     // Skip to next word
-                                                    if (writingIndex < writingWords.length - 1) {
-                                                        setWritingIndex(writingIndex + 1);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                    if (guessworkIndex < guessworkWords.length - 1) {
+                                                        setGuessworkIndex(guessworkIndex + 1);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     } else {
                                                         alert('ðŸŽ‰ Exercise completed!');
-                                                        setShowWriting(false);
-                                                        setWritingWords([]);
-                                                        setWritingIndex(0);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                        setShowGuesswork(false);
+                                                        setGuessworkWords([]);
+                                                        setGuessworkIndex(0);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     }
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -5818,27 +6053,26 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <>
                                         {/* Result display */}
                                         <div className="space-y-6">
-                                            {/* AI Result - V11.47: Synonym support */}
-                                            {writingAIResult && (
+                                            {/* 🆕 V11.64: AI Result with Synonym Support */}
+                                            {guessworkAIResult && (
                                                 <div className={`p-6 rounded-2xl border-2 ${
-                                                    writingAIResult.is_synonym
+                                                    guessworkAIResult.is_synonym
                                                         ? 'bg-yellow-900/20 border-yellow-500'
-                                                        : writingAIResult.is_correct 
+                                                        : guessworkAIResult.is_correct 
                                                             ? 'bg-green-900/20 border-green-500' 
                                                             : 'bg-red-900/20 border-red-500'
                                                 }`}>
                                                     <div className="flex items-center gap-3 mb-3">
-                                                        <span className="text-3xl">{writingAIResult.is_synonym ? '↔️' : writingAIResult.is_correct ? '✅' : '❌'}</span>
+                                                        <span className="text-3xl">
+                                                            {guessworkAIResult.is_synonym ? '↔️' : guessworkAIResult.is_correct ? '✅' : '❌'}
+                                                        </span>
                                                         <h4 className="text-xl font-black text-white">
-                                                            {writingAIResult.is_synonym ? 'Valid Synonym!' : writingAIResult.is_correct ? 'Correct!' : 'Incorrect'}
+                                                            {guessworkAIResult.is_synonym ? 'Valid Synonym!' : guessworkAIResult.is_correct ? 'Correct!' : 'Incorrect'}
                                                         </h4>
                                                     </div>
-                                                    <p className="text-white/90 text-sm leading-relaxed">{writingAIResult.explanation}</p>
-                                                    {writingAIResult.is_synonym && writingAIResult.synonym_note && (
-                                                        <div className="mt-3 p-3 bg-yellow-900/30 rounded-xl border border-yellow-500/30">
-                                                            <p className="text-yellow-200 text-sm"><strong>💡 Note:</strong> {writingAIResult.synonym_note}</p>
-                                                            <p className="text-yellow-300/70 text-xs mt-1">Your answer is valid but not the exact word expected. Classified as <strong>Emerging</strong>.</p>
-                                                        </div>
+                                                    <p className="text-white/90 text-sm leading-relaxed">{guessworkAIResult.explanation}</p>
+                                                    {guessworkAIResult.is_synonym && guessworkAIResult.synonym_note && (
+                                                        <p className="text-yellow-200/80 text-xs mt-2 italic">💡 {guessworkAIResult.synonym_note}</p>
                                                     )}
                                                 </div>
                                             )}
@@ -5848,13 +6082,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div>
                                                     <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Answer:</h4>
                                                     <div className="bg-slate-800 p-4 rounded-xl text-lg text-white font-bold">
-                                                        {writingInput || '(empty)'}
+                                                        {guessworkInput || '(empty)'}
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xs uppercase font-black text-green-400 mb-2">Correct Answer:</h4>
                                                     <div className="bg-green-900/20 border border-green-500/30 p-4 rounded-xl text-lg text-green-100 font-bold">
-                                                        {writingWords[writingIndex].vocabulary}
+                                                        {guessworkWords[guessworkIndex].vocabulary}
                                                     </div>
                                                 </div>
                                             </div>
@@ -5863,15 +6097,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <div className="flex justify-center items-center gap-4 p-4 bg-slate-800/50 rounded-2xl">
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Attempts</p>
-                                                    <p className="text-2xl font-black text-white">{writingAttempts}</p>
+                                                    <p className="text-2xl font-black text-white">{guessworkAttempts}</p>
                                                 </div>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Difficulty</p>
                                                     <p className={`text-2xl font-black ${
-                                                        writingDifficulty === 'Active' ? 'text-green-400' :
-                                                        writingDifficulty === 'Emerging' ? 'text-yellow-400' : 'text-red-400'
+                                                        guessworkDifficulty === 'Active' ? 'text-green-400' :
+                                                        guessworkDifficulty === 'Emerging' ? 'text-yellow-400' : 'text-red-400'
                                                     }`}>
-                                                        {writingDifficulty}
+                                                        {guessworkDifficulty}
                                                     </p>
                                                 </div>
                                             </div>
@@ -5883,38 +6117,38 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 onClick={async () => {
                                                     // Save difficulty
                                                     try {
-                                                        const currentWritingWord = writingWords[writingIndex];
+                                                        const currentGuessworkWord = guessworkWords[guessworkIndex];
                                                     await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: writingDifficulty,
-                                                        writing_count: (currentWritingWord.writing_count || 0) + 1,
+                                                        difficulty: guessworkDifficulty,
+                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentWritingWord.id);
+                                                    }).eq('id', currentGuessworkWord.id);
                                                     } catch (error) {
                                                         console.error('Error saving difficulty:', error);
                                                     }
                                                     
-                                                    if (writingIndex < writingWords.length - 1) {
-                                                        setWritingIndex(writingIndex + 1);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                    if (guessworkIndex < guessworkWords.length - 1) {
+                                                        setGuessworkIndex(guessworkIndex + 1);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     } else {
                                                         alert('ðŸŽ‰ Exercise completed!');
-                                                        setShowWriting(false);
-                                                        setWritingWords([]);
-                                                        setWritingIndex(0);
-                                                        setWritingInput('');
-                                                        setShowWritingAnswer(false);
-                                                        setWritingDifficulty('');
-                                                        setWritingAttempts(0);
-                                                        setWritingAIResult(null);
+                                                        setShowGuesswork(false);
+                                                        setGuessworkWords([]);
+                                                        setGuessworkIndex(0);
+                                                        setGuessworkInput('');
+                                                        setShowGuessworkAnswer(false);
+                                                        setGuessworkDifficulty('');
+                                                        setGuessworkAttempts(0);
+                                                        setGuessworkAIResult(null);
                                                     }
                                                 }}
                                                 className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                {writingIndex < writingWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
+                                                {guessworkIndex < guessworkWords.length - 1 ? 'Next Word â†’' : 'âœ… Finish'}
                                             </button>
                                         </div>
                                     </>
@@ -5924,18 +6158,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="mt-6 bg-slate-800 rounded-full h-2 overflow-hidden">
                                     <div 
                                         className="bg-gradient-to-r from-orange-500 to-red-500 h-full transition-all duration-300"
-                                        style={{ width: `${((writingIndex + 1) / writingWords.length) * 100}%` }}
+                                        style={{ width: `${((guessworkIndex + 1) / guessworkWords.length) * 100}%` }}
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* ðŸ†• V11.20: Writing Hint Modal */}
-                    {showWritingHint && writingWords.length > 0 && (
+                    {/* ðŸ†• V11.20: Guesswork Hint Modal */}
+                    {showGuessworkHint && guessworkWords.length > 0 && (
                         <div 
                             className="fixed inset-0 bg-black/80 z-[150] flex items-center justify-center p-4"
-                            onClick={() => setShowWritingHint(false)}
+                            onClick={() => setShowGuessworkHint(false)}
                         >
                             <div 
                                 className="bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-yellow-500/30"
@@ -5946,7 +6180,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         ðŸ’¡ Hint
                                     </h3>
                                     <button 
-                                        onClick={() => setShowWritingHint(false)}
+                                        onClick={() => setShowGuessworkHint(false)}
                                         className="text-slate-400 hover:text-white text-3xl"
                                     >
                                         Ã—
@@ -5958,7 +6192,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">First Letter</p>
                                         <p className="text-6xl font-black text-white">
-                                            {writingWords[writingIndex].vocabulary[0].toUpperCase()}
+                                            {guessworkWords[guessworkIndex].vocabulary[0].toUpperCase()}
                                             <span className="text-slate-700">______</span>
                                         </p>
                                     </div>
@@ -5966,14 +6200,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* ðŸ†• V11.22: Show AI-generated meaning */}
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Meaning</p>
-                                        {writingHintLoading ? (
+                                        {guessworkHintLoading ? (
                                             <div className="flex items-center gap-2 text-yellow-400">
                                                 <i className="fas fa-spinner fa-spin"></i>
                                                 <span className="text-sm">Generating meaning...</span>
                                             </div>
                                         ) : (
                                             <p className="text-lg text-yellow-300 leading-relaxed">
-                                                {writingHintMeaning || 'Click the Hint button to generate meaning.'}
+                                                {guessworkHintMeaning || 'Click the Hint button to generate meaning.'}
                                             </p>
                                         )}
                                     </div>
@@ -5982,13 +6216,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div>
                                         <p className="text-xs uppercase font-black text-slate-500 mb-2">Family</p>
                                         <p className="text-2xl font-bold text-yellow-300">
-                                            {writingWords[writingIndex].family || 'Not specified'}
+                                            {guessworkWords[guessworkIndex].family || 'Not specified'}
                                         </p>
                                     </div>
                                 </div>
                                 
                                 <button
-                                    onClick={() => setShowWritingHint(false)}
+                                    onClick={() => setShowGuessworkHint(false)}
                                     className="w-full mt-6 bg-yellow-600 hover:bg-yellow-500 text-white py-3 rounded-xl font-black uppercase text-sm"
                                 >
                                     Close
@@ -6026,7 +6260,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setTimeout(() => loadTranslation(), 100);
                                     }}
                                     onAudioToggle={null}
-                                    onDictionary={openInDictionary}
+                                    onDictionary={(word) => {
+                                        setSelectedWordForDict(word);
+                                        setShowDictionaryModal(true);
+                                    }}
                                     onEdit={() => {
                                         setEditingWord(translationWords[translationIndex]);
                                         setOriginalEditData({...translationWords[translationIndex]});
@@ -6410,11 +6647,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     <span className="text-green-300 text-lg font-bold">{statsData.exercises.selection.count} practiced â€¢ Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
                                                 </button>
                                                 <button 
-                                                    onClick={() => openExerciseDrillDown('writing')}
+                                                    onClick={() => openExerciseDrillDown('guesswork')}
                                                     className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-orange-500"
                                                 >
                                                     <span className="text-white font-bold">âœï¸ Guesswork</span>
-                                                    <span className="text-orange-300 text-lg font-bold">{statsData.exercises.writing} practiced</span>
+                                                    <span className="text-orange-300 text-lg font-bold">{statsData.exercises.guesswork} practiced</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => openExerciseDrillDown('translation')}
@@ -6475,15 +6712,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {/* Reset Options - 3 buttons in grid */}
                                         <div className="glass-card rounded-2xl p-6">
                                             <h3 className="text-xl font-black text-white mb-4">âš ï¸ Reset Options</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                <button onClick={resetDifficulty} className="bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 text-yellow-300 py-4 rounded-xl font-bold">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <button 
+                                                    onClick={resetDifficulty} 
+                                                    className="bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 text-yellow-300 py-4 rounded-xl font-bold"
+                                                    title="Reset difficulty ratings to null. Words will be re-classified as you practice them again. Your vocabulary and exercise statistics will remain intact."
+                                                >
                                                     ðŸŸ¡ Reset Difficulty Only
                                                 </button>
-                                                <button onClick={resetExerciseStats} className="bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 py-4 rounded-xl font-bold">
+                                                <button 
+                                                    onClick={resetExerciseStats} 
+                                                    className="bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 py-4 rounded-xl font-bold"
+                                                    title="Reset all exercise counters and statistics (flashcard, dictation, selection, guesswork, translation counts and grades). Your vocabulary and difficulty ratings will remain intact."
+                                                >
                                                     ðŸŸ  Reset Exercise Stats
-                                                </button>
-                                                <button onClick={resetAllProgress} className="bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 py-4 rounded-xl font-bold">
-                                                    ðŸ”´ Reset All Progress
                                                 </button>
                                             </div>
                                         </div>
@@ -6505,14 +6747,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {drillDownExercise === 'flashcard' && 'ðŸŽ´ Flashcard Difficult Words'}
                                             {drillDownExercise === 'dictation' && 'ðŸŽ¤ Dictation Difficult Words'}
                                             {drillDownExercise === 'selection' && 'âœ“ Selection Difficult Words'}
-                                            {drillDownExercise === 'writing' && 'âœï¸ Guesswork Difficult Words'}
+                                            {drillDownExercise === 'guesswork' && 'âœï¸ Guesswork Difficult Words'}
                                             {drillDownExercise === 'translation' && 'ðŸŒ Translation Difficult Words'}
                                         </h2>
                                         <p className="text-slate-400 text-sm mt-2">
                                             {drillDownExercise === 'flashcard' && 'Words marked as Passive/Emerging in flashcard practice'}
                                             {drillDownExercise === 'dictation' && 'Words with >2 average errors per attempt'}
                                             {drillDownExercise === 'selection' && 'Words with >2 average attempts per question'}
-                                            {drillDownExercise === 'writing' && 'Words marked as Passive/Emerging in writing practice'}
+                                            {drillDownExercise === 'guesswork' && 'Words marked as Passive/Emerging in guesswork practice'}
                                             {drillDownExercise === 'translation' && 'Words with B1/B2 Cambridge grades'}
                                         </p>
                                     </div>
@@ -6616,9 +6858,226 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     )}
 
 
+                    {/* ðŸ†• V11.47: Reset Confirmation Modal */}
+                    {showResetConfirm && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+                            <div className="glass-card p-8 rounded-3xl w-full max-w-2xl border-red-500/30">
+                                <div className="text-center">
+                                    <div className="text-6xl mb-4">
+                                        {resetType === 'difficulty' && 'ðŸŸ¡'}
+                                        {resetType === 'stats' && 'ðŸŸ '}
+                                        {resetType === 'all' && 'ðŸ”´'}
+                                    </div>
+                                    <h2 className="text-3xl font-black text-white mb-4">
+                                        {resetType === 'difficulty' && 'Reset Difficulty Ratings?'}
+                                        {resetType === 'stats' && 'Reset Exercise Statistics?'}
+                                        {resetType === 'all' && 'Reset ALL Progress?'}
+                                    </h2>
+                                    
+                                    <div className="bg-slate-800/50 rounded-xl p-6 mb-6 text-left">
+                                        <p className="text-slate-300 mb-3 font-semibold">This action will:</p>
+                                        
+                                        {resetType === 'difficulty' && (
+                                            <>
+                                                <p className="text-red-400 mb-2">âŒ Clear all difficulty ratings (Active/Emerging/Passive)</p>
+                                                <p className="text-slate-400 mb-2">â†’ Words will need to be re-classified through practice</p>
+                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
+                                                <p className="text-green-400">âœ… Keep all exercise statistics (counts, grades, errors)</p>
+                                            </>
+                                        )}
+                                        
+                                        {resetType === 'stats' && (
+                                            <>
+                                                <p className="text-red-400 mb-2">âŒ Clear ALL exercise counters and statistics:</p>
+                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Flashcard practice counts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Dictation errors and attempts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Selection attempts</p>
+                                                <p className="text-slate-400 ml-6 mb-1">â€¢ Guesswork practice counts</p>
+                                                <p className="text-slate-400 ml-6 mb-2">â€¢ Translation grades</p>
+                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
+                                                <p className="text-green-400">âœ… Keep difficulty ratings</p>
+                                            </>
+                                        )}
+                                        
+                                        {resetType === 'all' && (
+                                            <>
+                                                <p className="text-red-400 mb-2">âŒ Clear EVERYTHING:</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All difficulty ratings</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All exercise statistics</p>
+                                                <p className="text-red-300 ml-6 mb-1 font-semibold">â€¢ All practice history</p>
+                                                <p className="text-red-300 ml-6 mb-2 font-semibold">â€¢ All performance data</p>
+                                                <p className="text-green-400 mt-4">âœ… Keep your vocabulary list intact</p>
+                                                <p className="text-yellow-300 mt-3 font-semibold">âš ï¸ This gives you a completely fresh start!</p>
+                                            </>
+                                        )}
+                                    </div>
+                                    
+                                    <p className="text-slate-500 italic mb-6">
+                                        {resetType === 'all' 
+                                            ? 'âš ï¸ This action cannot be undone. All your progress will be permanently lost.' 
+                                            : 'This action cannot be undone. Make sure this is what you want.'}
+                                    </p>
+                                    
+                                    <div className="flex gap-4 justify-center">
+                                        <button
+                                            onClick={() => setShowResetConfirm(false)}
+                                            className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold"
+                                        >
+                                            âŒ Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (resetType === 'difficulty') executeResetDifficulty();
+                                                else if (resetType === 'stats') executeResetExerciseStats();
+                                                else if (resetType === 'all') executeResetAllProgress();
+                                            }}
+                                            className={`px-8 py-3 rounded-xl font-bold ${
+                                                resetType === 'difficulty' ? 'bg-yellow-600 hover:bg-yellow-500 text-white' :
+                                                resetType === 'stats' ? 'bg-orange-600 hover:bg-orange-500 text-white' :
+                                                'bg-red-600 hover:bg-red-500 text-white'
+                                            }`}
+                                        >
+                                            {resetType === 'difficulty' && 'ðŸŸ¡ Yes, Reset Difficulty'}
+                                            {resetType === 'stats' && 'ðŸŸ  Yes, Reset Stats'}
+                                            {resetType === 'all' && 'ðŸ”´ Yes, Reset Everything'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ðŸ†• V11.57: Dictionary Modal - Increased z-index to appear above all other modals */}
+                    {showDictionaryModal && (
+                        <div className="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+                            <div className="glass-card p-8 rounded-3xl w-full max-w-2xl border-blue-500/30 my-8 max-h-[90vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-6 sticky top-0 bg-slate-900/95 backdrop-blur-md pb-4 -mt-2 z-10">
+                                    <h2 className="text-2xl font-black text-white">ðŸ“– Open in Dictionary</h2>
+                                    <button onClick={() => setShowDictionaryModal(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <p className="text-slate-300 mb-2">Word to search:</p>
+                                    <p className="text-2xl font-bold text-blue-400">{selectedWordForDict || '(no word selected)'}</p>
+                                </div>
+                                
+                                {selectedWordForDict ? (
+                                    <div className="space-y-3">
+                                        {/* Web Search - Perplexity */}
+                                        <button
+                                            onClick={() => {
+                                                const encodedPrompt = encodeURIComponent(aiSearchPrompt.replace('{word}', selectedWordForDict));
+                                                window.open(`https://www.perplexity.ai/search?q=${encodedPrompt}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold text-left flex items-center gap-3 shadow-lg"
+                                        >
+                                            <span className="text-2xl">ðŸ”</span>
+                                            <div>
+                                                <div className="text-base">Perplexity AI Search</div>
+                                                <div className="text-xs opacity-80">Deep web research with AI</div>
+                                            </div>
+                                        </button>
+                                        
+                                        {/* Youglish */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://youglish.com/pronounce/${encodeURIComponent(selectedWordForDict)}/english`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white rounded-xl font-bold text-left flex items-center gap-3 shadow-lg"
+                                        >
+                                            <span className="text-2xl">ðŸŽ¬</span>
+                                            <div>
+                                                <div className="text-base">YouGlish</div>
+                                                <div className="text-xs opacity-80">Learn pronunciation from YouTube videos</div>
+                                            </div>
+                                        </button>
+                                        
+                                        <div className="border-t border-slate-700 my-4 pt-4">
+                                            <p className="text-xs uppercase text-slate-500 font-black mb-3">ðŸ“š Dictionaries</p>
+                                        </div>
+                                        
+                                        {/* WordReference */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://www.wordreference.com/es/translation.asp?tranword=${encodeURIComponent(selectedWordForDict)}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
+                                        >
+                                            <span className="text-2xl">ðŸ“˜</span>
+                                            <span>WordReference</span>
+                                        </button>
+                                        
+                                        {/* Cambridge */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://dictionary.cambridge.org/dictionary/english/${encodeURIComponent(selectedWordForDict)}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
+                                        >
+                                            <span className="text-2xl">ðŸŽ“</span>
+                                            <span>Cambridge Dictionary</span>
+                                        </button>
+                                        
+                                        {/* Collins */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://www.collinsdictionary.com/dictionary/english/${encodeURIComponent(selectedWordForDict)}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
+                                        >
+                                            <span className="text-2xl">ðŸ“–</span>
+                                            <span>Collins Dictionary</span>
+                                        </button>
+                                        
+                                        {/* Oxford */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://www.oxfordlearnersdictionaries.com/definition/english/${encodeURIComponent(selectedWordForDict)}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
+                                        >
+                                            <span className="text-2xl">ðŸŽ¯</span>
+                                            <span>Oxford Learner's</span>
+                                        </button>
+                                        
+                                        {/* Merriam-Webster */}
+                                        <button
+                                            onClick={() => {
+                                                window.open(`https://www.merriam-webster.com/dictionary/${encodeURIComponent(selectedWordForDict)}`, '_blank');
+                                                setShowDictionaryModal(false);
+                                            }}
+                                            className="w-full px-6 py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-left flex items-center gap-3"
+                                        >
+                                            <span className="text-2xl">ðŸ“•</span>
+                                            <span>Merriam-Webster</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8">
+                                        <p className="text-slate-500 text-sm">No word selected. Click the dictionary icon ðŸ“– on any word to open this menu.</p>
+                                    </div>
+                                )}
+                                
+                                <button
+                                    onClick={() => setShowDictionaryModal(false)}
+                                    className="w-full mt-6 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold sticky bottom-0"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+
                 </div>
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+
+export default App
