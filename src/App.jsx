@@ -2140,31 +2140,40 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
 
                 setGuessworkAIValidating(true);
                 try {
-                    const prompt = `You are an English vocabulary expert. Evaluate the user's answer for a fill-in-the-blank exercise.
+                    const prompt = `You are an English vocabulary expert and language teacher. Your task is to give educational, nuanced feedback comparing the user's answer to the correct answer.
 
 CONTEXT SENTENCE: "${context}"
 CORRECT ANSWER: "${correctAnswer}"
 USER'S ANSWER: "${userAnswer}"
 
-EVALUATION RULES:
-1. EXACT MATCH: If the user's answer matches exactly (same spelling, same word form), set is_correct=true, score="Easy", is_synonym=false
-2. VALID SYNONYM: If the user's answer is a genuine synonym that:
-   - Has correct English spelling
-   - Belongs to the same grammatical family (same part of speech)
-   - Fits the context sentence perfectly (grammatically and semantically)
-   - Is clearly a synonym of the correct answer
-   Then: is_correct=true, score="Medium", is_synonym=true, synonym_note="[short explanation why it's valid but not the exact answer]"
-3. WRONG ANSWER: Any other response: is_correct=false, score="Hard", is_synonym=false
+IMPORTANT RULES:
+- NEVER say the user is 'wrong' or 'incorrect'
+- ALWAYS give a nuanced comparison between the user's answer and the correct answer
+- Even if the answers are completely different, explain HOW they differ in meaning/usage
+- Write the explanation like a teacher showing a student the subtle difference
 
-Be STRICT - only accept true synonyms, not just related words or loose alternatives.
+SCORING:
+1. EXACT MATCH: User's answer = correct answer (same spelling/form)
+   -> score='Active', is_synonym=false
+   -> explanation: 'Perfect! Exact match.'
+2. VALID SYNONYM: User's answer is a genuine synonym that fits the context perfectly
+   -> score='Emerging', is_synonym=true
+   -> explanation: Acknowledge it's valid, explain the subtle nuance difference
+3. CLOSE BUT DIFFERENT: User's answer is related but not a true synonym
+   -> score='Passive', is_synonym=false
+   -> explanation: Write like this example - "While similar, 'correct answer' specifically implies [X], whereas 'user answer' [Y]. In this context, [Z]."
+4. COMPLETELY DIFFERENT: User's answer is unrelated
+   -> score='Passive', is_synonym=false
+   -> explanation: Still give a comparative explanation of both phrases/words
+
+The explanation should be 2-3 sentences maximum. Be educational and encouraging.
 
 Respond ONLY in this exact JSON format (no markdown, no backticks):
 {
-  "is_correct": true/false,
-  "explanation": "Brief evaluation explanation",
-  "score": "Easy/Medium/Hard",
+  "explanation": "Educational comparison between the two answers",
+  "score": "Active/Emerging/Passive",
   "is_synonym": true/false,
-  "synonym_note": "Why this is a valid synonym but not exact (only if is_synonym=true, else empty string)"
+  "synonym_note": "Brief nuance note (if is_synonym=true, else empty string)"
 }`;
 
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -2219,24 +2228,25 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 if (!apiKey) return null;
                 
                 try {
-                    const prompt = `You are an English vocabulary expert. Generate 5 near-synonym distractors for a vocabulary exercise.
+                    const prompt = `You are an English vocabulary expert specializing in vocabulary exercises. Generate 5 'red herring' distractors for a fill-in-the-blank vocabulary exercise.
 
 CORRECT ANSWER: "${correctWord.vocabulary}"
 WORD FAMILY: "${correctWord.family}"
-CONTEXT: "${correctWord.context}"
+CONTEXT SENTENCE: "${correctWord.context}"
 
-Generate 5 words that are:
-- Similar in meaning or usage (near-synonyms or related words from the same semantic field)
-- Same grammatical family as the correct answer (same part of speech)
-- Plausible in a vocabulary quiz but NOT perfect replacements in the given context
-- Clearly different words (not the same word with different suffix)
-- Real English words with correct spelling
+Generate exactly 5 distractors that:
+1. Are PLAUSIBLE at first glance (student might be tempted to pick them)
+2. Belong to the same grammatical category (same part of speech as the correct answer)
+3. Are semantically related (same general topic/field) but do NOT fit the context perfectly
+4. Are real English words/phrases with correct spelling
+5. Do NOT include the correct answer itself or exact synonyms
+
+IMPORTANT: Return ONLY single words or short phrases (2-3 words max), matching the style of the correct answer.
 
 Respond ONLY in this JSON format (no markdown, no backticks):
 {
   "distractors": ["word1", "word2", "word3", "word4", "word5"]
-}\`;
-
+}`;
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: {
@@ -2256,6 +2266,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     const data = await response.json();
                     let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                     const result = JSON.parse(textResponse);
+                    console.log('🆕 V11.65 AI Distractors:', result.distractors);
                     
                     // Convert distractors to word objects like the correct word
                     return (result.distractors || []).map(word => ({
@@ -2264,12 +2275,12 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         _isAIGenerated: true
                     }));
                 } catch (error) {
-                    console.error('AI Selection Options Error:', error);
+                    console.error('🆕 AI Selection Options Error:', error);
                     return null;
                 }
             }
 
-            // 🆕 V11.64: Explain why correct answer is best (only if user made wrong attempts)
+            // 🆕 V11.65: Explain why correct answer is best (only if user made wrong attempts)
             async function explainSelectionAnswer(correctWord, wrongAnswers, context) {
                 const apiKey = geminiKey.trim();
                 if (!apiKey || !wrongAnswers || wrongAnswers.length === 0) return;
@@ -2286,7 +2297,7 @@ In 2-3 clear sentences, explain:
 1. Why "${correctWord}" is the best fit in this context
 2. Why the wrong answer(s) don't work as well (be specific)
 
-Keep it educational and encouraging. Use simple language.\`;
+Keep it educational and encouraging. Use simple language.`;
 
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
@@ -3554,7 +3565,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.62</span>
+                                        English Booster <span className="version-text">v11.65</span>
                                     </h1>
                                     {/* ðŸ†• V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5917,17 +5928,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 guessworkWords[guessworkIndex].context
                                                             );
                                                             if (aiResult) {
-                                                                // 🆕 V11.64: Map score and handle synonyms
-                                                                let finalScore = 'Passive';
-                                                                if (aiResult.is_synonym) {
-                                                                    finalScore = 'Emerging';
-                                                                } else if (aiResult.score === 'Easy') {
-                                                                    finalScore = 'Active';
-                                                                } else if (aiResult.score === 'Medium') {
-                                                                    finalScore = 'Emerging';
-                                                                }
-                                                                const updatedResult = { ...aiResult, score: finalScore };
-                                                                setGuessworkAIResult(updatedResult);
+                                                                // 🆕 V11.65: Score is now returned directly as Active/Emerging/Passive
+                                                                const finalScore = aiResult.score || 'Passive';
+                                                                setGuessworkAIResult(aiResult);
                                                                 setGuessworkDifficulty(finalScore);
                                                                 setGuessworkAttempts(prev => prev + 1);
                                                                 setShowGuessworkAnswer(true);
@@ -5998,17 +6001,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             guessworkWords[guessworkIndex].context
                                                         );
                                                         if (aiResult) {
-                                                            // 🆕 V11.64: Map score and handle synonyms
-                                                            let finalScore2 = 'Passive';
-                                                            if (aiResult.is_synonym) {
-                                                                finalScore2 = 'Emerging';
-                                                            } else if (aiResult.score === 'Easy') {
-                                                                finalScore2 = 'Active';
-                                                            } else if (aiResult.score === 'Medium') {
-                                                                finalScore2 = 'Emerging';
-                                                            }
-                                                            const updatedResult2 = { ...aiResult, score: finalScore2 };
-                                                            setGuessworkAIResult(updatedResult2);
+                                                            // 🆕 V11.65: Score returned directly as Active/Emerging/Passive
+                                                            const finalScore2 = aiResult.score || 'Passive';
+                                                            setGuessworkAIResult(aiResult);
                                                             setGuessworkDifficulty(finalScore2);
                                                             setGuessworkAttempts(prev => prev + 1);
                                                             setShowGuessworkAnswer(true);
@@ -6053,21 +6048,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <>
                                         {/* Result display */}
                                         <div className="space-y-6">
-                                            {/* 🆕 V11.64: AI Result with Synonym Support */}
+                                            {/* 🆕 V11.65: AI Result - Educational comparison, never 'Incorrect' */}
                                             {guessworkAIResult && (
                                                 <div className={`p-6 rounded-2xl border-2 ${
-                                                    guessworkAIResult.is_synonym
-                                                        ? 'bg-yellow-900/20 border-yellow-500'
-                                                        : guessworkAIResult.is_correct 
-                                                            ? 'bg-green-900/20 border-green-500' 
-                                                            : 'bg-red-900/20 border-red-500'
+                                                    guessworkAIResult.score === 'Active'
+                                                        ? 'bg-green-900/20 border-green-500'
+                                                        : guessworkAIResult.score === 'Emerging'
+                                                            ? 'bg-yellow-900/20 border-yellow-500'
+                                                            : 'bg-blue-900/20 border-blue-500'
                                                 }`}>
                                                     <div className="flex items-center gap-3 mb-3">
                                                         <span className="text-3xl">
-                                                            {guessworkAIResult.is_synonym ? '↔️' : guessworkAIResult.is_correct ? '✅' : '❌'}
+                                                            {guessworkAIResult.score === 'Active' ? '✅' : guessworkAIResult.score === 'Emerging' ? '↔️' : '📚'}
                                                         </span>
                                                         <h4 className="text-xl font-black text-white">
-                                                            {guessworkAIResult.is_synonym ? 'Valid Synonym!' : guessworkAIResult.is_correct ? 'Correct!' : 'Incorrect'}
+                                                            {guessworkAIResult.score === 'Active' ? 'Perfect match!' : guessworkAIResult.score === 'Emerging' ? 'Valid synonym!' : "Here's the difference"}
                                                         </h4>
                                                     </div>
                                                     <p className="text-white/90 text-sm leading-relaxed">{guessworkAIResult.explanation}</p>
