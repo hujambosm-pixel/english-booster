@@ -1394,9 +1394,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const pending = total - practiced;
                     const favourites = allWords.filter(w => w.favourite).length;
                     
-                    const easy = allWords.filter(w => w.difficulty === 'Active').length;
-                    const medium = allWords.filter(w => w.difficulty === 'Emerging').length;
-                    const hard = allWords.filter(w => w.difficulty === 'Passive').length;
+                    const easy = allWords.filter(w => w.difficulty === 'Active' || w.difficulty === 'Easy').length;
+                    const medium = allWords.filter(w => w.difficulty === 'Emerging' || w.difficulty === 'Medium').length;
+                    const hard = allWords.filter(w => w.difficulty === 'Passive' || w.difficulty === 'Hard').length;
                     const notPracticed = total - easy - medium - hard;
                     
                     const flashcardPracticed = allWords.filter(w => w.flashcard_count > 0).length;
@@ -1419,27 +1419,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const gradeB1 = translationPracticed.filter(w => w.translation_best_grade === 'B1').length;
                     
                     // Sorted word lists per exercise for drill-down
+                    // Legacy mapping: normalize old Easy/Medium/Hard values to Active/Emerging/Passive
+                    const normDiff = d => d === 'Easy' ? 'Active' : d === 'Medium' ? 'Emerging' : d === 'Hard' ? 'Passive' : d;
+                    const diffOrder = { 'Passive': 0, 'Emerging': 1, 'Active': 2, null: 3, undefined: 3 };
+                    
                     const flashcardSorted = allWords.filter(w => w.flashcard_count > 0)
-                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: w.difficulty, count: w.flashcard_count }))
-                        .sort((a, b) => {
-                            const order = { 'Passive': 0, 'Emerging': 1, 'Active': 2, null: 3, undefined: 3 };
-                            return (order[a.difficulty] ?? 3) - (order[b.difficulty] ?? 3);
-                        });
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: normDiff(w.difficulty), count: w.flashcard_count }))
+                        .sort((a, b) => (diffOrder[a.difficulty] ?? 3) - (diffOrder[b.difficulty] ?? 3));
                     
                     const dictationSorted = dictationPracticed
-                        .map(w => ({ id: w.id, word: w.vocabulary, count: w.dictation_count, errors: w.dictation_errors_total || 0, avgErrors: ((w.dictation_errors_total || 0) / w.dictation_count) }))
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: normDiff(w.difficulty), count: w.dictation_count, errors: w.dictation_errors_total || 0, avgErrors: ((w.dictation_errors_total || 0) / w.dictation_count) }))
                         .sort((a, b) => b.avgErrors - a.avgErrors);
                     
                     const selectionSorted = selectionPracticed
-                        .map(w => ({ id: w.id, word: w.vocabulary, count: w.selection_count, attempts: w.selection_attempts_total || 0, avgAttempts: ((w.selection_attempts_total || 0) / w.selection_count) }))
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: normDiff(w.difficulty), count: w.selection_count, attempts: w.selection_attempts_total || 0, avgAttempts: ((w.selection_attempts_total || 0) / w.selection_count) }))
                         .sort((a, b) => b.avgAttempts - a.avgAttempts);
                     
                     const guessworkSorted = allWords.filter(w => w.guesswork_count > 0)
-                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: w.difficulty, count: w.guesswork_count }))
-                        .sort((a, b) => {
-                            const order = { 'Passive': 0, 'Emerging': 1, 'Active': 2, null: 3, undefined: 3 };
-                            return (order[a.difficulty] ?? 3) - (order[b.difficulty] ?? 3);
-                        });
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: normDiff(w.difficulty), count: w.guesswork_count }))
+                        .sort((a, b) => (diffOrder[a.difficulty] ?? 3) - (diffOrder[b.difficulty] ?? 3));
                     
                     const translationSorted = translationPracticed
                         .map(w => ({ id: w.id, word: w.vocabulary, grade: w.translation_best_grade, count: w.translation_count }))
@@ -1448,6 +1446,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             return (order[a.grade] ?? 4) - (order[b.grade] ?? 4);
                         });
                     
+                    // Difficulty distribution for flashcard/guesswork stats
+                    const fcActive = flashcardSorted.filter(w => w.difficulty === 'Active').length;
+                    const fcEmerging = flashcardSorted.filter(w => w.difficulty === 'Emerging').length;
+                    const fcPassive = flashcardSorted.filter(w => w.difficulty === 'Passive').length;
+                    const gwActive = guessworkSorted.filter(w => w.difficulty === 'Active').length;
+                    const gwEmerging = guessworkSorted.filter(w => w.difficulty === 'Emerging').length;
+                    const gwPassive = guessworkSorted.filter(w => w.difficulty === 'Passive').length;
+                    
                     setStatsData({
                         overview: { 
                             total, practiced, pending, favourites, 
@@ -1455,10 +1461,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         },
                         difficulty: { easy, medium, hard, notPracticed },
                         exercises: {
-                            flashcard: flashcardPracticed,
+                            flashcard: { count: flashcardPracticed, active: fcActive, emerging: fcEmerging, passive: fcPassive },
                             dictation: { count: dictationPracticed.length, avgErrors: dictationAvgErrors },
                             selection: { count: selectionPracticed.length, avgAttempts: selectionAvgAttempts },
-                            guesswork: guessworkPracticed,
+                            guesswork: { count: guessworkPracticed, active: gwActive, emerging: gwEmerging, passive: gwPassive },
                             translation: { count: translationPracticed.length, gradeC2, gradeC1, gradeB2, gradeB1 }
                         },
                         wordLists: { flashcard: flashcardSorted, dictation: dictationSorted, selection: selectionSorted, guesswork: guessworkSorted, translation: translationSorted }
@@ -3643,7 +3649,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.78</span>
+                                        English Booster <span className="version-text">v11.79</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6781,12 +6787,17 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                             <div className="space-y-3">
                                                 <button onClick={() => openExerciseDrillDown('flashcard')} className="w-full bg-purple-900/20 hover:bg-purple-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-purple-500">
-                                                    <div className="flex justify-between items-center">
+                                                    <div className="flex justify-between items-center mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-white font-bold">🃏 Flashcards</span>
                                                             <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
                                                         </div>
-                                                        <span className="text-purple-300 font-bold">{statsData.exercises.flashcard} practiced</span>
+                                                        <span className="text-purple-300 font-bold">{statsData.exercises.flashcard.count} practiced</span>
+                                                    </div>
+                                                    <div className="flex gap-4 text-xs">
+                                                        <span className="text-green-400 font-bold">🟢 {statsData.exercises.flashcard.active} Active</span>
+                                                        <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.flashcard.emerging} Emerging</span>
+                                                        <span className="text-red-400 font-bold">🔴 {statsData.exercises.flashcard.passive} Passive</span>
                                                     </div>
                                                 </button>
                                                 <button onClick={() => openExerciseDrillDown('dictation')} className="w-full flex justify-between items-center bg-blue-900/20 hover:bg-blue-900/40 p-4 rounded-xl transition-all border border-transparent hover:border-blue-500">
@@ -6803,12 +6814,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     </div>
                                                     <span className="text-green-300 font-bold">{statsData.exercises.selection.count} practiced • Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
                                                 </button>
-                                                <button onClick={() => openExerciseDrillDown('guesswork')} className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-orange-500">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-white font-bold">✏️ Guesswork</span>
-                                                        <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
+                                                <button onClick={() => openExerciseDrillDown('guesswork')} className="w-full bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-orange-500">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-white font-bold">✏️ Guesswork</span>
+                                                            <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
+                                                        </div>
+                                                        <span className="text-orange-300 font-bold">{statsData.exercises.guesswork.count} practiced</span>
                                                     </div>
-                                                    <span className="text-orange-300 font-bold">{statsData.exercises.guesswork} practiced</span>
+                                                    <div className="flex gap-4 text-xs">
+                                                        <span className="text-green-400 font-bold">🟢 {statsData.exercises.guesswork.active} Active</span>
+                                                        <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.guesswork.emerging} Emerging</span>
+                                                        <span className="text-red-400 font-bold">🔴 {statsData.exercises.guesswork.passive} Passive</span>
+                                                    </div>
                                                 </button>
                                                 <button onClick={() => openExerciseDrillDown('translation')} className="w-full bg-pink-900/20 hover:bg-pink-900/40 p-4 rounded-xl transition-all border border-transparent hover:border-pink-500">
                                                     <div className="flex justify-between items-center mb-2">
@@ -6893,72 +6911,92 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         
                                         <div className="flex-1 overflow-y-auto custom-scroll mb-6 space-y-2">
                                             {drillDownWords.map((word, idx) => {
-                                                // Build metric display based on exercise type
+                                                // Build metric text per exercise
                                                 let metricText = '';
                                                 let metricColor = 'text-slate-400';
                                                 if (drillDownExercise === 'dictation') {
                                                     const avg = word.avgErrors || 0;
-                                                    metricText = `${avg.toFixed(2)} avg errors · ${word.errors} total`;
+                                                    metricText = `${avg.toFixed(2)} avg errors/attempt · ${word.errors} total`;
                                                     metricColor = avg > 1 ? 'text-red-400' : avg > 0 ? 'text-yellow-400' : 'text-green-400';
                                                 } else if (drillDownExercise === 'selection') {
                                                     const avg = word.avgAttempts || 0;
-                                                    metricText = `${avg.toFixed(2)} avg attempts · ${word.attempts} total`;
+                                                    metricText = `${avg.toFixed(2)} avg attempts/word · ${word.attempts} total`;
                                                     metricColor = avg > 2 ? 'text-red-400' : avg > 1 ? 'text-yellow-400' : 'text-green-400';
                                                 } else if (drillDownExercise === 'translation') {
                                                     metricText = `Best grade: ${word.grade || 'N/A'} · ${word.count} practiced`;
                                                     metricColor = (word.grade === 'B1' || word.grade === 'B2') ? 'text-yellow-400' : 'text-green-400';
                                                 } else {
-                                                    // flashcard / guesswork
                                                     metricText = `${word.count} practiced`;
-                                                    metricColor = 'text-slate-400';
                                                 }
+                                                // Difficulty badge color (handles legacy Hard/Medium/Easy already normalized)
+                                                const diffColor = word.difficulty === 'Active' ? 'bg-green-600/30 text-green-400 border-green-500/40' :
+                                                    word.difficulty === 'Emerging' ? 'bg-yellow-600/30 text-yellow-400 border-yellow-500/40' :
+                                                    word.difficulty === 'Passive' ? 'bg-red-600/30 text-red-400 border-red-500/40' :
+                                                    'bg-slate-700/50 text-slate-500 border-slate-600';
+                                                const hasClassifier = drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork' || drillDownExercise === 'selection';
                                                 return (
-                                                    <label
+                                                    <div
                                                         key={word.id}
-                                                        className="flex items-start gap-4 bg-slate-800/50 hover:bg-slate-800 p-4 rounded-xl cursor-pointer transition-colors"
+                                                        className="flex items-center gap-3 bg-slate-800/50 hover:bg-slate-800 px-3 py-3 rounded-xl transition-colors"
                                                     >
-                                                        <div className="flex items-center gap-2 mt-1">
-                                                            <span className="text-slate-600 text-xs font-mono w-5 text-right">{idx+1}</span>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedDrillDownWords.includes(word.id)}
-                                                                onChange={(e) => {
-                                                                    if (e.target.checked) { setSelectedDrillDownWords([...selectedDrillDownWords, word.id]); }
-                                                                    else { setSelectedDrillDownWords(selectedDrillDownWords.filter(id => id !== word.id)); }
+                                                        {/* Number + Checkbox */}
+                                                        <span className="text-slate-600 text-xs font-mono w-4 text-right shrink-0">{idx+1}</span>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedDrillDownWords.includes(word.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) { setSelectedDrillDownWords([...selectedDrillDownWords, word.id]); }
+                                                                else { setSelectedDrillDownWords(selectedDrillDownWords.filter(id => id !== word.id)); }
+                                                            }}
+                                                            className="w-4 h-4 shrink-0"
+                                                        />
+                                                        {/* Word + badges */}
+                                                        <div className="flex-1 flex flex-wrap items-center gap-2 min-w-0">
+                                                            <span className="text-white font-bold">{word.word}</span>
+                                                            {hasClassifier && (
+                                                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${diffColor}`}>
+                                                                    {word.difficulty || 'Not rated'}
+                                                                </span>
+                                                            )}
+                                                            <span className={`text-xs font-semibold ${metricColor}`}>{metricText}</span>
+                                                        </div>
+                                                        {/* RIGHT: Reset buttons */}
+                                                        <div className="flex gap-1 shrink-0">
+                                                            {hasClassifier && (
+                                                                <button
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        try {
+                                                                            await supabase.from('vocabulary_v4').update({ difficulty: null }).eq('id', word.id);
+                                                                            setDrillDownWords(prev => prev.map(w => w.id === word.id ? {...w, difficulty: null} : w));
+                                                                        } catch(err) { alert('Error'); }
+                                                                    }}
+                                                                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-700 hover:bg-yellow-900/40 text-slate-400 hover:text-yellow-300 border border-slate-600 hover:border-yellow-500/50 transition-colors whitespace-nowrap"
+                                                                    title="Reset difficulty classification"
+                                                                >
+                                                                    ↺ A/E/P
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    const statsReset = drillDownExercise === 'flashcard' ? { flashcard_count: 0 } :
+                                                                        drillDownExercise === 'dictation' ? { dictation_count: 0, dictation_errors_total: 0 } :
+                                                                        drillDownExercise === 'selection' ? { selection_count: 0, selection_attempts_total: 0 } :
+                                                                        drillDownExercise === 'guesswork' ? { guesswork_count: 0 } :
+                                                                        { translation_count: 0, translation_best_grade: null };
+                                                                    try {
+                                                                        await supabase.from('vocabulary_v4').update(statsReset).eq('id', word.id);
+                                                                        setDrillDownWords(prev => prev.filter(w => w.id !== word.id));
+                                                                    } catch(err) { alert('Error'); }
                                                                 }}
-                                                                className="w-5 h-5"
-                                                            />
+                                                                className="text-[10px] px-2 py-1 rounded-lg bg-slate-700 hover:bg-red-900/40 text-slate-400 hover:text-red-300 border border-slate-600 hover:border-red-500/50 transition-colors whitespace-nowrap"
+                                                                title="Reset exercise stats for this word"
+                                                            >
+                                                                🗑 Stats
+                                                            </button>
                                                         </div>
-                                                        <div className="flex-1">
-                                                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                                <p className="text-white font-bold text-lg">{word.word}</p>
-                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork' || drillDownExercise === 'selection') && word.difficulty && (
-                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                                                        word.difficulty === 'Active' ? 'bg-green-600/30 text-green-400' :
-                                                                        word.difficulty === 'Emerging' ? 'bg-yellow-600/30 text-yellow-400' :
-                                                                        'bg-red-600/30 text-red-400'
-                                                                    }`}>{word.difficulty}</span>
-                                                                )}
-                                                                <span className={`text-sm font-bold ${metricColor}`}>{metricText}</span>
-                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork' || drillDownExercise === 'selection') && word.difficulty && word.difficulty !== 'Active' && (
-                                                                    <button
-                                                                        onClick={async (e) => {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
-                                                                            try {
-                                                                                await supabase.from('vocabulary_v4').update({ difficulty: null }).eq('id', word.id);
-                                                                                setDrillDownWords(prev => prev.map(w => w.id === word.id ? {...w, difficulty: null} : w));
-                                                                            } catch(e) { alert('Error resetting'); }
-                                                                        }}
-                                                                        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 hover:bg-red-900/40 text-slate-400 hover:text-red-400 border border-slate-600 hover:border-red-500/50 transition-colors"
-                                                                        title="Reset classification"
-                                                                    >
-                                                                        ↺ Reset
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </label>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
