@@ -3652,7 +3652,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.83</span>
+                                        English Booster <span className="version-text">v11.84</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6727,152 +6727,153 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                     {/* 🆕 V11.41: STATS DASHBOARD MODAL */}
                     {showStats && (
-                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
-                            <div className="glass-card p-8 rounded-[2rem] w-full max-w-[98vw] border-indigo-500/30 max-h-[96vh] overflow-y-auto custom-scroll">
-                                <div className="flex justify-between items-center mb-8">
-                                    <div className="flex items-center gap-3">
-                                        <h2 className="text-3xl font-black main-gradient uppercase italic">📊 Statistics Dashboard</h2>
-                                        <button 
-                                            onClick={() => alert('ℹ️ HOW EFFORT LEVELS WORK\n\n🎯 SYSTEM: Single "Difficulty" level per word\n\n📝 UPDATES:\n• Each exercise you complete updates the word\'s effort level\n• The LAST exercise result overwrites previous level\n• Example: Flashcard (Active) → Dictation fails (Passive) → Level becomes Passive\n\n💡 THIS MEANS:\n• "Difficulty" filter shows current overall difficulty\n• Not exercise-specific (coming in future version)\n• Stats show average performance per exercise\n\n📊 DIFFICULT WORDS CRITERIA:\n🎴 Flashcards: Passive/Emerging + practiced\n🎤 Dictation: Avg >2 errors per attempt\n✓ Selection: Avg >2 attempts per question  \n✏️ Guesswork: Passive/Emerging + practiced\n🌐 Translation: B1/B2 Cambridge grade\n\n💾 BACKUPS:\n✅ All exercise data saved in JSON/CSV exports\n✅ Includes: counts, errors, grades, dates\n\n📌 Click exercise lines to practice difficult words!')}
-                                            className="text-blue-400 hover:text-blue-300 text-xl"
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-start sm:items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
+                            <div className="glass-card w-full max-w-5xl border-indigo-500/30 rounded-2xl sm:rounded-[2rem] my-2 sm:my-0 overflow-hidden">
+                                {/* Header */}
+                                <div className="flex justify-between items-center px-4 sm:px-8 py-3 sm:py-5 border-b border-white/10">
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-lg sm:text-2xl font-black main-gradient uppercase italic">📊 Statistics Dashboard</h2>
+                                        <button
+                                            onClick={() => alert('ℹ️ HOW EFFORT LEVELS WORK\n\n🎯 SYSTEM: Single classification across all exercises\n\n🟢 ACTIVE: You retrieve it instantly\n🟡 EMERGING: You find it after a moment\n🔴 PASSIVE: You recognise but can\'t produce it\n⫪ UNRATED: Not yet classified')}
+                                            className="text-blue-400 hover:text-blue-300 text-base"
                                             title="How Effort levels work"
                                         >
                                             ℹ️
                                         </button>
                                     </div>
-                                    <button onClick={() => setShowStats(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                    <button onClick={() => setShowStats(false)} className="text-slate-400 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
                                 </div>
-                                
+
+                                <div className="px-4 sm:px-8 py-4 sm:py-6 overflow-y-auto max-h-[85vh] sm:max-h-[80vh] custom-scroll">
                                 {statsData ? (
-                                 <div className="space-y-3">
-                                        {/* Overview - compact strip */}
-                                        <div className="flex items-center justify-around glass-card rounded-xl px-6 py-3">
-                                            <div className="text-center">
-                                                <span className="text-slate-400 text-[9px] uppercase font-bold block tracking-widest">Total</span>
-                                                <span className="text-white text-xl font-black">{statsData.overview.total}</span>
+                                    <div className="space-y-3">
+
+                                        {/* Overview — 4 numbers in a row */}
+                                        <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                                            <div className="glass-card rounded-xl p-2 sm:p-3 text-center">
+                                                <p className="text-slate-400 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest">Total</p>
+                                                <p className="text-white text-base sm:text-2xl font-black">{statsData.overview.total}</p>
                                             </div>
-                                            <div className="w-px h-8 bg-slate-700"></div>
-                                            <div className="text-center">
-                                                <span className="text-slate-400 text-[9px] uppercase font-bold block tracking-widest">Practiced</span>
-                                                <span className="text-green-400 text-xl font-black">{statsData.overview.practiced}</span>
-                                                <span className="text-green-300 text-[9px] ml-1">{statsData.overview.practicedPercent}%</span>
+                                            <div className="glass-card rounded-xl p-2 sm:p-3 text-center">
+                                                <p className="text-slate-400 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest">Practiced</p>
+                                                <p className="text-green-400 text-base sm:text-2xl font-black">{statsData.overview.practiced}</p>
+                                                <p className="text-green-300 text-[8px]">{statsData.overview.practicedPercent}%</p>
                                             </div>
-                                            <div className="w-px h-8 bg-slate-700"></div>
-                                            <div className="text-center">
-                                                <span className="text-slate-400 text-[9px] uppercase font-bold block tracking-widest">Pending</span>
-                                                <span className="text-yellow-400 text-xl font-black">{statsData.overview.pending}</span>
+                                            <div className="glass-card rounded-xl p-2 sm:p-3 text-center">
+                                                <p className="text-slate-400 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest">Pending</p>
+                                                <p className="text-yellow-400 text-base sm:text-2xl font-black">{statsData.overview.pending}</p>
                                             </div>
-                                            <div className="w-px h-8 bg-slate-700"></div>
-                                            <div className="text-center">
-                                                <span className="text-slate-400 text-[9px] uppercase font-bold block tracking-widest">Favourites</span>
-                                                <span className="text-purple-400 text-xl font-black">{statsData.overview.favourites}</span>
+                                            <div className="glass-card rounded-xl p-2 sm:p-3 text-center">
+                                                <p className="text-slate-400 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest">Favourites</p>
+                                                <p className="text-purple-400 text-base sm:text-2xl font-black">{statsData.overview.favourites}</p>
                                             </div>
                                         </div>
 
-                                        {/* Difficulty Distribution - centered, with Reset Difficulty btn in header */}
-                                        <div className="glass-card rounded-xl px-6 py-4">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <span className="text-xs font-black uppercase text-slate-400 tracking-widest">Difficulty Distribution</span>
-                                                <button onClick={resetDifficulty} className="text-[9px] font-black uppercase bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 text-yellow-300 px-3 py-1 rounded-full transition-colors" title="Reset difficulty ratings to null">🟡 Reset Difficulty</button>
+                                        {/* Difficulty Distribution — coloured cards, no big emoji circles */}
+                                        <div className="glass-card rounded-xl px-3 sm:px-5 py-3">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[9px] sm:text-xs font-black uppercase text-slate-400 tracking-widest">Difficulty Distribution</span>
+                                                <button onClick={resetDifficulty} className="text-[8px] sm:text-[9px] font-black uppercase bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 text-yellow-300 px-2 sm:px-3 py-1 rounded-full transition-colors">🟡 Reset Difficulty</button>
                                             </div>
-                                            <div className="flex items-center justify-center gap-12">
-                                                <div className="text-center tooltip" data-tip="Active: Retrieves the word instantly. Speak without thinking.">
-                                                    <span className="text-5xl">🟢</span>
-                                                    <p className="text-white font-black text-2xl mt-1">{statsData.difficulty.easy}</p>
-                                                    <p className="text-green-400 text-sm font-bold">Active</p>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                <div className="text-center bg-green-900/20 border border-green-500/20 rounded-xl py-2 sm:py-3 tooltip" data-tip="Active: Retrieves the word instantly. Speak without thinking.">
+                                                    <p className="text-white font-black text-xl sm:text-3xl">{statsData.difficulty.easy}</p>
+                                                    <p className="text-green-400 text-[10px] sm:text-xs font-bold mt-0.5">🟢 Active</p>
                                                 </div>
-                                                <div className="text-center tooltip" data-tip="Emerging: Searches for the word in your mental archive.">
-                                                    <span className="text-5xl">🟡</span>
-                                                    <p className="text-white font-black text-2xl mt-1">{statsData.difficulty.medium}</p>
-                                                    <p className="text-yellow-400 text-sm font-bold">Emerging</p>
+                                                <div className="text-center bg-yellow-900/20 border border-yellow-500/20 rounded-xl py-2 sm:py-3 tooltip" data-tip="Emerging: Searches for the word in your mental archive.">
+                                                    <p className="text-white font-black text-xl sm:text-3xl">{statsData.difficulty.medium}</p>
+                                                    <p className="text-yellow-400 text-[10px] sm:text-xs font-bold mt-0.5">🟡 Emerging</p>
                                                 </div>
-                                                <div className="text-center tooltip" data-tip="Passive: Decodes others' messages. Read a New York Times article.">
-                                                    <span className="text-5xl">🔴</span>
-                                                    <p className="text-white font-black text-2xl mt-1">{statsData.difficulty.hard}</p>
-                                                    <p className="text-red-400 text-sm font-bold">Passive</p>
+                                                <div className="text-center bg-red-900/20 border border-red-500/20 rounded-xl py-2 sm:py-3 tooltip" data-tip="Passive: Decodes others' messages.">
+                                                    <p className="text-white font-black text-xl sm:text-3xl">{statsData.difficulty.hard}</p>
+                                                    <p className="text-red-400 text-[10px] sm:text-xs font-bold mt-0.5">🔴 Passive</p>
                                                 </div>
-                                                <div className="text-center">
-                                                    <span className="text-5xl">⫪</span>
-                                                    <p className="text-white font-black text-2xl mt-1">{statsData.difficulty.notPracticed}</p>
-                                                    <p className="text-slate-500 text-sm font-bold">Unrated</p>
+                                                <div className="text-center bg-slate-800/60 border border-slate-600/30 rounded-xl py-2 sm:py-3">
+                                                    <p className="text-white font-black text-xl sm:text-3xl">{statsData.difficulty.notPracticed}</p>
+                                                    <p className="text-slate-500 text-[10px] sm:text-xs font-bold mt-0.5">⫪ Unrated</p>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Exercise Statistics - main section */}
-                                        <div className="glass-card rounded-2xl px-6 py-4">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <h3 className="text-lg font-black text-white">Exercise Statistics</h3>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-[9px] text-slate-500 italic">(Click to see words hardest→easiest)</span>
-                                                    <button onClick={resetExerciseStats} className="text-[9px] font-black uppercase bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 px-3 py-1 rounded-full transition-colors" title="Reset all exercise counters">🔠 Reset Exercise Stats</button>
+                                        {/* Exercise Statistics */}
+                                        <div className="glass-card rounded-xl px-3 sm:px-5 py-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                                <h3 className="text-base sm:text-lg font-black text-white">Exercise Statistics</h3>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-[8px] text-slate-500 italic hidden sm:inline">(Click to see words hardest→easiest)</span>
+                                                    <button onClick={resetExerciseStats} className="text-[8px] sm:text-[9px] font-black uppercase bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 px-2 sm:px-3 py-1 rounded-full transition-colors">🔠 Reset Exercise Stats</button>
                                                 </div>
                                             </div>
-                                            <div className="space-y-2">
+                                            <div className="space-y-1.5">
+
                                                 {/* Flashcards */}
-                                                <button onClick={() => openExerciseDrillDown('flashcard')} className="w-full bg-purple-900/20 hover:bg-purple-900/40 px-5 py-3 rounded-xl transition-all border border-green-500/30 hover:border-purple-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-white font-bold">🃏 Flashcards</span>
-                                                            <span className="text-[9px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
+                                                <button onClick={() => openExerciseDrillDown('flashcard')} className="w-full bg-purple-900/20 hover:bg-purple-900/40 px-3 sm:px-4 py-2.5 rounded-xl transition-all border border-green-500/20 hover:border-purple-500 text-left">
+                                                    <div className="flex flex-wrap justify-between items-center gap-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-white font-bold text-sm">🃏 Flashcards</span>
+                                                            <span className="text-[8px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
                                                         </div>
-                                                        <div className="flex items-center gap-5 text-sm">
-                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.flashcard.active} Active</span>
-                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.flashcard.emerging} Emerging</span>
-                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.flashcard.passive} Passive</span>
+                                                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.flashcard.active}</span>
+                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.flashcard.emerging}</span>
+                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.flashcard.passive}</span>
                                                             <span className="text-purple-300 font-black">{statsData.exercises.flashcard.count} practiced</span>
                                                         </div>
                                                     </div>
                                                 </button>
+
                                                 {/* Dictation */}
-                                                <button onClick={() => openExerciseDrillDown('dictation')} className="w-full flex justify-between items-center bg-blue-900/20 hover:bg-blue-900/40 px-5 py-3 rounded-xl transition-all border border-transparent hover:border-blue-500">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-white font-bold">🎤 Dictation</span>
-                                                        <span className="text-[9px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-1.5 py-0.5 rounded-full">Practice only</span>
+                                                <button onClick={() => openExerciseDrillDown('dictation')} className="w-full flex flex-wrap justify-between items-center gap-1 bg-blue-900/20 hover:bg-blue-900/40 px-3 sm:px-4 py-2.5 rounded-xl transition-all border border-transparent hover:border-blue-500 text-left">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-white font-bold text-sm">🎤 Dictation</span>
+                                                        <span className="text-[8px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-1.5 py-0.5 rounded-full">Practice only</span>
                                                     </div>
-                                                    <div className="flex items-center gap-5 text-sm">
-                                                        <span className="text-blue-300/60 font-semibold">Avg {statsData.exercises.dictation.avgErrors} errors/attempt</span>
+                                                    <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+                                                        <span className="text-blue-300/60 font-semibold">Avg {statsData.exercises.dictation.avgErrors} err/attempt</span>
                                                         <span className="text-blue-300 font-black">{statsData.exercises.dictation.count} practiced</span>
                                                     </div>
                                                 </button>
-                                                {/* Selection - shows A/E/P like Flashcards */}
-                                                <button onClick={() => openExerciseDrillDown('selection')} className="w-full bg-green-900/20 hover:bg-green-900/40 px-5 py-3 rounded-xl transition-all border border-green-500/30 hover:border-green-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-white font-bold">✔ Selection</span>
-                                                            <span className="text-[9px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
+
+                                                {/* Selection */}
+                                                <button onClick={() => openExerciseDrillDown('selection')} className="w-full bg-green-900/20 hover:bg-green-900/40 px-3 sm:px-4 py-2.5 rounded-xl transition-all border border-green-500/20 hover:border-green-500 text-left">
+                                                    <div className="flex flex-wrap justify-between items-center gap-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-white font-bold text-sm">✔ Selection</span>
+                                                            <span className="text-[8px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
                                                         </div>
-                                                        <div className="flex items-center gap-5 text-sm">
-                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.selection.active} Active</span>
-                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.selection.emerging} Emerging</span>
-                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.selection.passive} Passive</span>
+                                                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.selection.active}</span>
+                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.selection.emerging}</span>
+                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.selection.passive}</span>
                                                             <span className="text-green-300 font-black">{statsData.exercises.selection.count} practiced</span>
                                                         </div>
                                                     </div>
                                                 </button>
+
                                                 {/* Guesswork */}
-                                                <button onClick={() => openExerciseDrillDown('guesswork')} className="w-full bg-orange-900/20 hover:bg-orange-900/40 px-5 py-3 rounded-xl transition-all border border-green-500/30 hover:border-orange-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-white font-bold">✏️ Guesswork</span>
-                                                            <span className="text-[9px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
+                                                <button onClick={() => openExerciseDrillDown('guesswork')} className="w-full bg-orange-900/20 hover:bg-orange-900/40 px-3 sm:px-4 py-2.5 rounded-xl transition-all border border-green-500/20 hover:border-orange-500 text-left">
+                                                    <div className="flex flex-wrap justify-between items-center gap-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-white font-bold text-sm">✏️ Guesswork</span>
+                                                            <span className="text-[8px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded-full">Classifies</span>
                                                         </div>
-                                                        <div className="flex items-center gap-5 text-sm">
-                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.guesswork.active} Active</span>
-                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.guesswork.emerging} Emerging</span>
-                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.guesswork.passive} Passive</span>
+                                                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
+                                                            <span className="text-green-400 font-bold">🟢 {statsData.exercises.guesswork.active}</span>
+                                                            <span className="text-yellow-400 font-bold">🟡 {statsData.exercises.guesswork.emerging}</span>
+                                                            <span className="text-red-400 font-bold">🔴 {statsData.exercises.guesswork.passive}</span>
                                                             <span className="text-orange-300 font-black">{statsData.exercises.guesswork.count} practiced</span>
                                                         </div>
                                                     </div>
                                                 </button>
+
                                                 {/* Translation */}
-                                                <button onClick={() => openExerciseDrillDown('translation')} className="w-full bg-pink-900/20 hover:bg-pink-900/40 px-5 py-3 rounded-xl transition-all border border-transparent hover:border-pink-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-white font-bold">🌐 Translation</span>
-                                                            <span className="text-[9px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-1.5 py-0.5 rounded-full">Practice only</span>
+                                                <button onClick={() => openExerciseDrillDown('translation')} className="w-full bg-pink-900/20 hover:bg-pink-900/40 px-3 sm:px-4 py-2.5 rounded-xl transition-all border border-transparent hover:border-pink-500 text-left">
+                                                    <div className="flex flex-wrap justify-between items-center gap-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-white font-bold text-sm">🌐 Translation</span>
+                                                            <span className="text-[8px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-1.5 py-0.5 rounded-full">Practice only</span>
                                                         </div>
-                                                        <div className="flex items-center gap-4 text-sm">
+                                                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
                                                             <span className="text-green-300 font-semibold">C2: <span className="font-black text-white">{statsData.exercises.translation.gradeC2}</span></span>
                                                             <span className="text-blue-300 font-semibold">C1: <span className="font-black text-white">{statsData.exercises.translation.gradeC1}</span></span>
                                                             <span className="text-yellow-300 font-semibold">B2: <span className="font-black text-white">{statsData.exercises.translation.gradeB2}</span></span>
@@ -6881,15 +6882,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         </div>
                                                     </div>
                                                 </button>
+
                                             </div>
                                         </div>
+
                                     </div>
                                 ) : (
-                                    <div className="text-center py-20"><p className="text-slate-500 text-xl">No statistics available</p></div>
+                                    <div className="text-center py-12"><p className="text-slate-500 text-xl">No data yet. Start practicing!</p></div>
                                 )}
+                                </div>
                             </div>
                         </div>
                     )}
+
 
                     {/* 🆕 V11.44: EXERCISE DRILL-DOWN MODAL - Practice Difficult Words */}
                     {showExerciseDrillDown && (
