@@ -638,6 +638,40 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
                 }
                 
+                // 3.5. Gap matching: handles idioms with inserted words (e.g. "keep in check" -> "keep inflation in check")
+                const gapCoreWords = coreVocab.split(/\s+/);
+                if (gapCoreWords.length >= 2) {
+                    const escapedGapWords = gapCoreWords.map(w => escapeRegex(w));
+                    const gapPatStr = escapedGapWords.join('(?:\\s+(?:\\w+\\s+){0,2}?)');
+                    const flexGapRegex = new RegExp('\\b' + gapPatStr + '\\b', 'gi');
+                    const gapMatchArr = context.match(flexGapRegex);
+                    if (gapMatchArr) {
+                        const parts = context.split(flexGapRegex);
+                        let gapMatchIdx = 0;
+                        return parts.map((part, index) => {
+                            if (index < parts.length - 1) {
+                                const span = gapMatchArr[gapMatchIdx++];
+                                // Within matched span, bold only the vocab core words (not inserted words)
+                                const spanTokens = span.split(/(\s+)/);
+                                const highlighted = spanTokens.map((token, ti) => {
+                                    const tokenClean = token.toLowerCase().replace(/[^\w]/g, '');
+                                    if (tokenClean && gapCoreWords.includes(tokenClean)) {
+                                        return <strong key={`g-${index}-${ti}`} className="text-white font-black">{token}</strong>;
+                                    }
+                                    return token;
+                                });
+                                return (
+                                    <React.Fragment key={index}>
+                                        {part}
+                                        {highlighted}
+                                    </React.Fragment>
+                                );
+                            }
+                            return part;
+                        });
+                    }
+                }
+
                 // 4. Partial word-by-word matching with key words priority
                 const vocabWords = coreVocab.split(/\s+/);
                 const contextWords = context.split(/\s+/);
@@ -3598,7 +3632,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.68</span>
+                                        English Booster <span className="version-text">v11.69</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6105,6 +6139,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             )}
                                             
+                                                                                  {/* Context sentence with correct answer highlighted */}
+                                            <div className="bg-slate-800/50 p-4 rounded-xl">
+                                                <p className="text-xs uppercase font-black text-slate-500 mb-2">Context:</p>
+                                                <p className="text-white/90 text-sm leading-relaxed italic">
+                                                    {highlightWordInContext(guessworkWords[guessworkIndex].context, guessworkWords[guessworkIndex].vocabulary)}
+                                                </p>
+                                            </div>
+
                                             {/* Your answer vs Correct answer */}
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
