@@ -244,7 +244,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         try {
                             const currentDictationWord = dictationWords[dictationIndex];
                                                         await supabase.from('vocabulary_v4').update({ 
-                                                            difficulty: dictationDifficulty,
+
                                                             dictation_count: (currentDictationWord.dictation_count || 0) + 1,
                                                             dictation_errors_total: (currentDictationWord.dictation_errors_total || 0) + dictationErrorCount,
                                                             last_practiced_date: new Date().toISOString()
@@ -306,11 +306,20 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         // Save difficulty
                         try {
                             const currentGuessworkWord = guessworkWords[guessworkIndex];
-                                                    await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: guessworkDifficulty || 'Emerging',
-                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
-                                                        last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentGuessworkWord.id);
+                                                    try {
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                    } catch (colErr) {
+                                                        // guesswork_count column missing - save without it
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                        console.warn('guesswork_count column missing - run DB migration in Settings');
+                                                    }
                                                         // Update local state to keep counts accurate
                                                         const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty || 'Emerging', guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
                                                         setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
@@ -365,7 +374,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             await supabase
                                 .from('vocabulary_v4')
                                 .update({ 
-                                    difficulty: translationDifficulty,
+
                                     translation_count: (currentTranslationWord.translation_count || 0) + 1,
                                     translation_best_grade: translationAIResult?.grade || currentTranslationWord.translation_best_grade,
                                     last_practiced_date: new Date().toISOString()
@@ -1409,15 +1418,35 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const gradeB2 = translationPracticed.filter(w => w.translation_best_grade === 'B2').length;
                     const gradeB1 = translationPracticed.filter(w => w.translation_best_grade === 'B1').length;
                     
-                    const hardestByErrors = dictationPracticed
-                        .map(w => ({ word: w.vocabulary, errors: (w.dictation_errors_total || 0) / w.dictation_count }))
-                        .sort((a, b) => b.errors - a.errors)
-                        .slice(0, 10);
+                    // Sorted word lists per exercise for drill-down
+                    const flashcardSorted = allWords.filter(w => w.flashcard_count > 0)
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: w.difficulty, count: w.flashcard_count }))
+                        .sort((a, b) => {
+                            const order = { 'Passive': 0, 'Emerging': 1, 'Active': 2, null: 3, undefined: 3 };
+                            return (order[a.difficulty] ?? 3) - (order[b.difficulty] ?? 3);
+                        });
                     
-                    const hardestByAttempts = selectionPracticed
-                        .map(w => ({ word: w.vocabulary, attempts: (w.selection_attempts_total || 0) / w.selection_count }))
-                        .sort((a, b) => b.attempts - a.attempts)
-                        .slice(0, 10);
+                    const dictationSorted = dictationPracticed
+                        .map(w => ({ id: w.id, word: w.vocabulary, count: w.dictation_count, errors: w.dictation_errors_total || 0, avgErrors: ((w.dictation_errors_total || 0) / w.dictation_count) }))
+                        .sort((a, b) => b.avgErrors - a.avgErrors);
+                    
+                    const selectionSorted = selectionPracticed
+                        .map(w => ({ id: w.id, word: w.vocabulary, count: w.selection_count, attempts: w.selection_attempts_total || 0, avgAttempts: ((w.selection_attempts_total || 0) / w.selection_count) }))
+                        .sort((a, b) => b.avgAttempts - a.avgAttempts);
+                    
+                    const guessworkSorted = allWords.filter(w => w.guesswork_count > 0)
+                        .map(w => ({ id: w.id, word: w.vocabulary, difficulty: w.difficulty, count: w.guesswork_count }))
+                        .sort((a, b) => {
+                            const order = { 'Passive': 0, 'Emerging': 1, 'Active': 2, null: 3, undefined: 3 };
+                            return (order[a.difficulty] ?? 3) - (order[b.difficulty] ?? 3);
+                        });
+                    
+                    const translationSorted = translationPracticed
+                        .map(w => ({ id: w.id, word: w.vocabulary, grade: w.translation_best_grade, count: w.translation_count }))
+                        .sort((a, b) => {
+                            const order = { 'B1': 0, 'B2': 1, 'C1': 2, 'C2': 3, null: 4 };
+                            return (order[a.grade] ?? 4) - (order[b.grade] ?? 4);
+                        });
                     
                     setStatsData({
                         overview: { 
@@ -1432,7 +1461,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             guesswork: guessworkPracticed,
                             translation: { count: translationPracticed.length, gradeC2, gradeC1, gradeB2, gradeB1 }
                         },
-                        hardest: { byErrors: hardestByErrors, byAttempts: hardestByAttempts }
+                        wordLists: { flashcard: flashcardSorted, dictation: dictationSorted, selection: selectionSorted, guesswork: guessworkSorted, translation: translationSorted }
                     });
                 } catch (error) {
                     console.error('Stats error:', error);
@@ -1443,71 +1472,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
             
             // 🆕 V11.44: Open exercise drill-down to practice difficult words
-            async function openExerciseDrillDown(exerciseType) {
-                try {
-                    const { data: allWords } = await supabase
-                        .from('vocabulary_v4')
-                        .select('*')
-                        .is('deleted_at', null);
-                    
-                    if (!allWords) return;
-                    
-                    let difficultWords = [];
-                    
-                    // Filter words based on exercise-specific difficulty criteria
-                    switch(exerciseType) {
-                        case 'flashcard':
-                            // Words with Passive/Emerging difficulty that have been practiced
-                            difficultWords = allWords.filter(w => 
-                                w.flashcard_count > 0 && 
-                                (w.difficulty === 'Passive' || w.difficulty === 'Emerging')
-                            );
-                            break;
-                            
-                        case 'dictation':
-                            // Words with average > 2 errors per attempt
-                            difficultWords = allWords.filter(w => 
-                                w.dictation_count > 0 && 
-                                (w.dictation_errors_total / w.dictation_count) > 2
-                            );
-                            break;
-                            
-                        case 'selection':
-                            // Words with average > 2 attempts per question
-                            difficultWords = allWords.filter(w => 
-                                w.selection_count > 0 && 
-                                (w.selection_attempts_total / w.selection_count) > 2
-                            );
-                            break;
-                            
-                        case 'guesswork':
-                            // Words with Passive/Emerging difficulty that have been practiced
-                            difficultWords = allWords.filter(w => 
-                                w.guesswork_count > 0 && 
-                                (w.difficulty === 'Passive' || w.difficulty === 'Emerging')
-                            );
-                            break;
-                            
-                        case 'translation':
-                            // Words with B1/B2 grade (lower Cambridge levels)
-                            difficultWords = allWords.filter(w => 
-                                w.translation_count > 0 && 
-                                (w.translation_best_grade === 'B1' || w.translation_best_grade === 'B2')
-                            );
-                            break;
-                    }
-                    
-                    // 🆕 V11.52: Close Stats modal before opening drill-down
-                    setShowStats(false);
-                    setDrillDownExercise(exerciseType);
-                    setDrillDownWords(difficultWords);
-                    setSelectedDrillDownWords([]);
-                    setShowExerciseDrillDown(true);
-                    
-                } catch (error) {
-                    console.error('Error loading drill-down:', error);
-                    alert('Error loading exercise details');
-                }
+            function openExerciseDrillDown(exerciseType) {
+                if (!statsData || !statsData.wordLists) return;
+                const wordList = statsData.wordLists[exerciseType] || [];
+                setShowStats(false);
+                setDrillDownExercise(exerciseType);
+                setDrillDownWords(wordList);
+                setSelectedDrillDownWords([]);
+                setShowExerciseDrillDown(true);
             }
             
             // 🆕 V11.44: Practice selected difficult words
@@ -3663,7 +3635,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.75</span>
+                                        English Booster <span className="version-text">v11.77</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4153,6 +4125,24 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <input type="file" accept=".json,.csv" onChange={handleImport} className="hidden" />
                                         </label>
                                     </div>
+                                    {/* 🔧 V11.76: DB Migration */}
+                                    <div className="bg-amber-900/20 border border-amber-500/40 rounded-2xl p-4">
+                                        <p className="text-[10px] uppercase font-black text-amber-400 mb-2 tracking-widest">🔧 Database Migration</p>
+                                        <p className="text-xs text-slate-400 mb-3">If Guesswork stats are not updating, the <code className="text-amber-300">guesswork_count</code> column may be missing. Run this SQL in your Supabase SQL Editor:</p>
+                                        <div className="bg-slate-900 rounded-xl p-3 font-mono text-xs text-green-300 mb-3 break-all">
+                                            ALTER TABLE vocabulary_v4 ADD COLUMN IF NOT EXISTS guesswork_count INTEGER DEFAULT 0;
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const sql = 'ALTER TABLE vocabulary_v4 ADD COLUMN IF NOT EXISTS guesswork_count INTEGER DEFAULT 0;';
+                                                navigator.clipboard.writeText(sql).then(() => alert('✅ SQL copied! Go to Supabase Dashboard → SQL Editor → paste and run.')).catch(() => alert('Copy failed — please select and copy the SQL above manually.'));
+                                            }}
+                                            className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-black uppercase text-xs"
+                                        >
+                                            📋 Copy Migration SQL to Clipboard
+                                        </button>
+                                    </div>
+
                                     <button onClick={() => setShowSettings(false)} className="w-full bg-indigo-600 py-4 rounded-2xl font-black uppercase shadow-xl">Close</button>
                                 </div>
                             </div>
@@ -5209,7 +5199,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...flashcardWords[flashcardIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🎴 FLASHCARDS EXERCISE\n\n📊 DIFFICULTY TRACKING:\n🟢 Active: You know it well\n🟡 Emerging: Need more practice\n🔴 Passive: Difficult to remember\n\n🎯 HOW TO USE:\n• Click card to flip and see answer\n• Rate your knowledge (Active/Emerging/Passive)\n• 🧠 Memory mode: Shows hardest cards first\n• 🎲 Random mode: Shuffles all cards\n\n🔊 AUDIO:\n• Auto-plays context when card flips (if enabled)\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 🔊/🔇 = Toggle audio on/off\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• ← → = Navigate between cards\n• Easy/Medium/Passive = Rate difficulty')}
+                                    onInfo={() => alert('🎴 FLASHCARDS EXERCISE\n✅ CLASSIFIES vocabulary (Active / Emerging / Passive)\n\n📊 HOW IT CLASSIFIES:\n🟢 Active: You know it well\n🟡 Emerging: Need more practice\n🔴 Passive: Difficult to remember\n\n🎯 HOW TO USE:\n• Click card to flip and see answer\n• Rate your knowledge (Active/Emerging/Passive)\n• 🧠 Memory mode: Shows hardest cards first\n• 🎲 Random mode: Shuffles all cards\n\n🔊 AUDIO:\n• Auto-plays context when card flips (if enabled)\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 🔊/🔇 = Toggle audio on/off\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• ← → = Navigate between cards\n• Active/Emerging/Passive = Rate difficulty')}
                                 />
 
                                 {/* 🆕 V11.2: Difficulty indicator */}
@@ -5410,7 +5400,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('🎤 DICTATION EXERCISE\n\n📊 SCORING:\n🟢 Active: 0 errors\n🟡 Emerging: 1-2 errors\n🔴 Passive: 3+ errors\n\n⌨️ SHORTCUTS:\n• Press ENTER to check your answer\n• Press ENTER again to move to next word and auto-play\n\n🔊 AUDIO:\n• First play: Normal speed (1.0x)\n• Second play: Slow speed (0.7x)\n• Maximum 4 plays per word\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• 🔊 = Play audio\n• Check Answer = Verify your answer\n• Skip = Skip to next word\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🎤 DICTATION EXERCISE\n⛔ PRACTICE ONLY — does NOT classify vocabulary\n\n📊 PERFORMANCE TRACKING (for your own reference):\n🟢 Active: 0 errors\n🟡 Emerging: 1-2 errors\n🔴 Passive: 3+ errors\n\n⌨️ SHORTCUTS:\n• Press ENTER to check your answer\n• Press ENTER again to move to next word and auto-play\n\n🔊 AUDIO:\n• First play: Normal speed (1.0x)\n• Second play: Slow speed (0.7x)\n• Maximum 4 plays per word\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• 🔊 = Play audio\n• Check Answer = Verify your answer\n• Skip = Skip to next word\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(dictationWords[dictationIndex]);
                                         setOriginalEditData({...dictationWords[dictationIndex]});
@@ -5474,7 +5464,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             try {
                                                                 const currentDictationWord = dictationWords[dictationIndex];
                                                         await supabase.from('vocabulary_v4').update({ 
-                                                            difficulty: dictationDifficulty,
+
                                                             dictation_count: (currentDictationWord.dictation_count || 0) + 1,
                                                             dictation_errors_total: (currentDictationWord.dictation_errors_total || 0) + dictationErrorCount,
                                                             last_practiced_date: new Date().toISOString()
@@ -5606,7 +5596,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         try {
                                                             const currentDictationWord = dictationWords[dictationIndex];
                                                         await supabase.from('vocabulary_v4').update({ 
-                                                            difficulty: dictationDifficulty,
+
                                                             dictation_count: (currentDictationWord.dictation_count || 0) + 1,
                                                             dictation_errors_total: (currentDictationWord.dictation_errors_total || 0) + dictationErrorCount,
                                                             last_practiced_date: new Date().toISOString()
@@ -5687,7 +5677,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('✓ SELECTION EXERCISE\n\n📊 SCORING:\n✅ First try correct = Active\n⚠️ Second try correct = Emerging\n❌ Third or more tries = Passive\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Choose the correct word from 6 options\n• You have unlimited attempts\n• Difficulty is based on number of tries\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Word options = Click to select answer\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('✓ SELECTION EXERCISE\n✅ CLASSIFIES vocabulary (Active / Emerging / Passive)\n\n📊 HOW IT CLASSIFIES:\n✅ First try correct = Active\n⚠️ Second try correct = Emerging\n❌ Third or more tries = Passive\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Choose the correct word from 6 options\n• You have unlimited attempts\n• Difficulty is based on number of tries\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Word options = Click to select answer\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(selectionWords[selectionIndex]);
                                         setOriginalEditData({...selectionWords[selectionIndex]});
@@ -5974,7 +5964,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn\'t fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n✅ CLASSIFIES vocabulary (Active / Emerging / Passive)\n\n📊 HOW IT CLASSIFIES:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn\'t fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
@@ -6051,11 +6041,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         // Second Enter: Save and move to next word
                                                         try {
                                                             const currentGuessworkWord = guessworkWords[guessworkIndex];
-                                                    await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: guessworkDifficulty || 'Emerging',
-                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
-                                                        last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentGuessworkWord.id);
+                                                    try {
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                    } catch (colErr) {
+                                                        // guesswork_count column missing - save without it
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                        console.warn('guesswork_count column missing - run DB migration in Settings');
+                                                    }
                                                         // Update local state to keep counts accurate
                                                         const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty || 'Emerging', guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
                                                         setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
@@ -6244,11 +6243,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     // Save difficulty
                                                     try {
                                                         const currentGuessworkWord = guessworkWords[guessworkIndex];
-                                                    await supabase.from('vocabulary_v4').update({ 
-                                                        difficulty: guessworkDifficulty || 'Emerging',
-                                                        guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
-                                                        last_practiced_date: new Date().toISOString()
-                                                    }).eq('id', currentGuessworkWord.id);
+                                                    try {
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                    } catch (colErr) {
+                                                        // guesswork_count column missing - save without it
+                                                        await supabase.from('vocabulary_v4').update({ 
+                                                            difficulty: guessworkDifficulty || 'Emerging',
+                                                            last_practiced_date: new Date().toISOString()
+                                                        }).eq('id', currentGuessworkWord.id);
+                                                        console.warn('guesswork_count column missing - run DB migration in Settings');
+                                                    }
                                                         // Update local state to keep counts accurate
                                                         const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty || 'Emerging', guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
                                                         setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
@@ -6401,7 +6409,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...translationWords[translationIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🌐 TRANSLATION EXERCISE\n\n📊 CAMBRIDGE GRADING (V11.38):\n🟢 C1/C2 (Easy): 0 errors - Perfect! 90-100%\n  • C2 = Very sophisticated grammar\n  • C1 = Advanced grammar\n🟡 B2 (Medium): 1 error - Good, minor mistake, 70-85%\n🔴 B1 (Hard): 2+ errors - Needs practice, 40-65%\n\n⚡ IMPORTANT:\n  Easy/Medium/Passive = Your memorization difficulty\n  Cambridge level = English proficiency grade\n\n✅ Exact match = AI evaluates C1 or C2\n\n🎯 HOW TO PLAY:\n• Read Spanish translation\n• Translate to English\n• Type OR use 🎤 voice\n• Press ENTER to check\n• Get Cambridge evaluation\n• Detailed feedback on ENGLISH errors only\n\n🎤 VOICE TO TEXT:\n• Click microphone 🎤\n• Speak English translation\n• Text appears automatically\n• 📱 Mobile: Enable mic in browser settings\n\n🎮 BUTTONS:\n• 🧠/🎲 = Memory/Random\n• 🎤 = Voice input\n• 📖 = Dictionary\n• ✏️ = Edit word\n• × = Close\n• Check Translation = Evaluate\n• Next/Finish = Continue')}
+                                    onInfo={() => alert('🌐 TRANSLATION EXERCISE\n⛔ PRACTICE ONLY — does NOT classify vocabulary\n\n📊 CAMBRIDGE GRADING (V11.38):\n🟢 C1/C2 (Easy): 0 errors - Perfect! 90-100%\n  • C2 = Very sophisticated grammar\n  • C1 = Advanced grammar\n🟡 B2 (Medium): 1 error - Good, minor mistake, 70-85%\n🔴 B1 (Hard): 2+ errors - Needs practice, 40-65%\n\n⚡ IMPORTANT:\n  Easy/Medium/Passive = Your memorization difficulty\n  Cambridge level = English proficiency grade\n\n✅ Exact match = AI evaluates C1 or C2\n\n🎯 HOW TO PLAY:\n• Read Spanish translation\n• Translate to English\n• Type OR use 🎤 voice\n• Press ENTER to check\n• Get Cambridge evaluation\n• Detailed feedback on ENGLISH errors only\n\n🎤 VOICE TO TEXT:\n• Click microphone 🎤\n• Speak English translation\n• Text appears automatically\n• 📱 Mobile: Enable mic in browser settings\n\n🎮 BUTTONS:\n• 🧠/🎲 = Memory/Random\n• 🎤 = Voice input\n• 📖 = Dictionary\n• ✏️ = Edit word\n• × = Close\n• Check Translation = Evaluate\n• Next/Finish = Continue')}
                                 />
 
                                 {/* Spanish translation panel */}
@@ -6634,7 +6642,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             await supabase
                                 .from('vocabulary_v4')
                                 .update({ 
-                                    difficulty: translationDifficulty,
+
                                     translation_count: (currentTranslationWord.translation_count || 0) + 1,
                                     translation_best_grade: translationAIResult?.grade || currentTranslationWord.translation_best_grade,
                                     last_practiced_date: new Date().toISOString()
@@ -6757,89 +6765,58 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                                         {/* Exercise Statistics */}
                                         <div className="glass-card rounded-2xl p-6">
-                                            <h3 className="text-xl font-black text-white mb-4">Exercise Statistics <span className="text-sm text-slate-400 font-normal">(Click to practice difficult words)</span></h3>
-                                            <div className="space-y-4">
-                                                <button 
-                                                    onClick={() => openExerciseDrillDown('flashcard')}
-                                                    className="w-full flex justify-between items-center bg-purple-900/20 hover:bg-purple-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-purple-500"
-                                                >
-                                                    <span className="text-white font-bold">🎴 Flashcards</span>
-                                                    <span className="text-purple-300 text-lg font-bold">{statsData.exercises.flashcard} practiced</span>
+                                            <h3 className="text-xl font-black text-white mb-1">Exercise Statistics</h3>
+                                            <p className="text-xs text-slate-500 mb-4">(Click to see words ordered from hardest to easiest)</p>
+                                            <div className="flex gap-4 mb-3">
+                                                <span className="text-[10px] uppercase font-black text-green-400 tracking-widest">● Classifies A/E/P</span>
+                                                <span className="text-[10px] uppercase font-black text-slate-500 tracking-widest">○ Practice only</span>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <button onClick={() => openExerciseDrillDown('flashcard')} className="w-full bg-purple-900/20 hover:bg-purple-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-purple-500">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-white font-bold">🃏 Flashcards</span>
+                                                            <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
+                                                        </div>
+                                                        <span className="text-purple-300 font-bold">{statsData.exercises.flashcard} practiced</span>
+                                                    </div>
                                                 </button>
-                                                <button 
-                                                    onClick={() => openExerciseDrillDown('dictation')}
-                                                    className="w-full flex justify-between items-center bg-blue-900/20 hover:bg-blue-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-blue-500"
-                                                >
-                                                    <span className="text-white font-bold">🎤 Dictation</span>
-                                                    <span className="text-blue-300 text-lg font-bold">{statsData.exercises.dictation.count} practiced • Avg {statsData.exercises.dictation.avgErrors} errors/attempt</span>
+                                                <button onClick={() => openExerciseDrillDown('dictation')} className="w-full flex justify-between items-center bg-blue-900/20 hover:bg-blue-900/40 p-4 rounded-xl transition-all border border-transparent hover:border-blue-500">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white font-bold">🎤 Dictation</span>
+                                                        <span className="text-[10px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-2 py-0.5 rounded-full">Practice only</span>
+                                                    </div>
+                                                    <span className="text-blue-300 font-bold">{statsData.exercises.dictation.count} practiced • Avg {statsData.exercises.dictation.avgErrors} errors/attempt</span>
                                                 </button>
-                                                <button 
-                                                    onClick={() => openExerciseDrillDown('selection')}
-                                                    className="w-full flex justify-between items-center bg-green-900/20 hover:bg-green-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-green-500"
-                                                >
-                                                    <span className="text-white font-bold">✓ Selection</span>
-                                                    <span className="text-green-300 text-lg font-bold">{statsData.exercises.selection.count} practiced • Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
+                                                <button onClick={() => openExerciseDrillDown('selection')} className="w-full flex justify-between items-center bg-green-900/20 hover:bg-green-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-green-500">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white font-bold">✔ Selection</span>
+                                                        <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
+                                                    </div>
+                                                    <span className="text-green-300 font-bold">{statsData.exercises.selection.count} practiced • Avg {statsData.exercises.selection.avgAttempts} attempts/word</span>
                                                 </button>
-                                                <button 
-                                                    onClick={() => openExerciseDrillDown('guesswork')}
-                                                    className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-orange-500"
-                                                >
-                                                    <span className="text-white font-bold">✏️ Guesswork</span>
-                                                    <span className="text-orange-300 text-lg font-bold">{statsData.exercises.guesswork} practiced</span>
+                                                <button onClick={() => openExerciseDrillDown('guesswork')} className="w-full flex justify-between items-center bg-orange-900/20 hover:bg-orange-900/40 p-4 rounded-xl transition-all border border-green-500/30 hover:border-orange-500">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white font-bold">✏️ Guesswork</span>
+                                                        <span className="text-[10px] font-black uppercase bg-green-900/40 text-green-400 border border-green-500/40 px-2 py-0.5 rounded-full">Classifies</span>
+                                                    </div>
+                                                    <span className="text-orange-300 font-bold">{statsData.exercises.guesswork} practiced</span>
                                                 </button>
-                                                <button 
-                                                    onClick={() => openExerciseDrillDown('translation')}
-                                                    className="w-full bg-pink-900/20 hover:bg-pink-900/40 p-4 rounded-xl transition-all cursor-pointer border border-transparent hover:border-pink-500"
-                                                >
+                                                <button onClick={() => openExerciseDrillDown('translation')} className="w-full bg-pink-900/20 hover:bg-pink-900/40 p-4 rounded-xl transition-all border border-transparent hover:border-pink-500">
                                                     <div className="flex justify-between items-center mb-2">
-                                                        <span className="text-white font-bold">🌍 Translation</span>
-                                                        <span className="text-pink-300 text-lg font-bold">{statsData.exercises.translation.count} practiced</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-white font-bold">🌐 Translation</span>
+                                                            <span className="text-[10px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-2 py-0.5 rounded-full">Practice only</span>
+                                                        </div>
+                                                        <span className="text-pink-300 font-bold">{statsData.exercises.translation.count} practiced</span>
                                                     </div>
-                                                    <div className="grid grid-cols-4 gap-2 mt-3">
-                                                        <div className="text-center">
-                                                            <p className="text-green-300 text-xl font-bold">{statsData.exercises.translation.gradeC2}</p>
-                                                            <p className="text-xs text-green-400">C2</p>
-                                                        </div>
-                                                        <div className="text-center">
-                                                            <p className="text-blue-300 text-xl font-bold">{statsData.exercises.translation.gradeC1}</p>
-                                                            <p className="text-xs text-blue-400">C1</p>
-                                                        </div>
-                                                        <div className="text-center">
-                                                            <p className="text-yellow-300 text-xl font-bold">{statsData.exercises.translation.gradeB2}</p>
-                                                            <p className="text-xs text-yellow-400">B2</p>
-                                                        </div>
-                                                        <div className="text-center">
-                                                            <p className="text-orange-300 text-xl font-bold">{statsData.exercises.translation.gradeB1}</p>
-                                                            <p className="text-xs text-orange-400">B1</p>
-                                                        </div>
+                                                    <div className="grid grid-cols-4 gap-2 mt-2">
+                                                        <div className="text-center"><p className="text-green-300 text-xl font-bold">{statsData.exercises.translation.gradeC2}</p><p className="text-xs text-green-400">C2</p></div>
+                                                        <div className="text-center"><p className="text-blue-300 text-xl font-bold">{statsData.exercises.translation.gradeC1}</p><p className="text-xs text-blue-400">C1</p></div>
+                                                        <div className="text-center"><p className="text-yellow-300 text-xl font-bold">{statsData.exercises.translation.gradeB2}</p><p className="text-xs text-yellow-400">B2</p></div>
+                                                        <div className="text-center"><p className="text-orange-300 text-xl font-bold">{statsData.exercises.translation.gradeB1}</p><p className="text-xs text-orange-400">B1</p></div>
                                                     </div>
                                                 </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Hardest Words */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="glass-card rounded-2xl p-6">
-                                                <h3 className="text-xl font-black text-white mb-4">🎤 Hardest Words (Dictation)</h3>
-                                                <div className="space-y-2">
-                                                    {statsData.hardest.byErrors.slice(0, 10).map((item, i) => (
-                                                        <div key={i} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg">
-                                                            <span className="text-white font-bold">{item.word}</span>
-                                                            <span className="text-red-400">{item.errors.toFixed(2)} errors/attempt</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div className="glass-card rounded-2xl p-6">
-                                                <h3 className="text-xl font-black text-white mb-4">✓ Hardest Words (Selection)</h3>
-                                                <div className="space-y-2">
-                                                    {statsData.hardest.byAttempts.slice(0, 10).map((item, i) => (
-                                                        <div key={i} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg">
-                                                            <span className="text-white font-bold">{item.word}</span>
-                                                            <span className="text-yellow-400">{item.attempts.toFixed(2)} attempts/word</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
                                             </div>
                                         </div>
 
@@ -6885,11 +6862,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {drillDownExercise === 'translation' && '🌍 Translation Difficult Words'}
                                         </h2>
                                         <p className="text-slate-400 text-sm mt-2">
-                                            {drillDownExercise === 'flashcard' && 'Words marked as Passive/Emerging in flashcard practice'}
-                                            {drillDownExercise === 'dictation' && 'Words with >2 average errors per attempt'}
-                                            {drillDownExercise === 'selection' && 'Words with >2 average attempts per question'}
-                                            {drillDownExercise === 'guesswork' && 'Words marked as Passive/Emerging in guesswork practice'}
-                                            {drillDownExercise === 'translation' && 'Words with B1/B2 Cambridge grades'}
+                                            {drillDownExercise === 'flashcard' && 'All practiced words — ordered by difficulty (Passive → Active)'}
+                                            {drillDownExercise === 'dictation' && 'All practiced words — ordered by avg errors (most difficult first)'}
+                                            {drillDownExercise === 'selection' && 'All practiced words — ordered by avg attempts (most failed first)'}
+                                            {drillDownExercise === 'guesswork' && 'All practiced words — ordered by difficulty (Passive → Active)'}
+                                            {drillDownExercise === 'translation' && 'All practiced words — ordered by grade (lowest first)'}
                                         </p>
                                     </div>
                                     <button onClick={() => setShowExerciseDrillDown(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
@@ -6907,57 +6884,56 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </p>
                                         
                                         <div className="flex-1 overflow-y-auto custom-scroll mb-6 space-y-2">
-                                            {drillDownWords.map(word => {
-                                                // Calculate difficulty metric for display
-                                                let metric = '';
+                                            {drillDownWords.map((word, idx) => {
+                                                // Build metric display based on exercise type
+                                                let metricText = '';
+                                                let metricColor = 'text-slate-400';
                                                 if (drillDownExercise === 'dictation') {
-                                                    metric = `${(word.dictation_errors_total / word.dictation_count).toFixed(2)} avg errors`;
+                                                    const avg = word.avgErrors || 0;
+                                                    metricText = `${avg.toFixed(2)} avg errors · ${word.errors} total`;
+                                                    metricColor = avg > 1 ? 'text-red-400' : avg > 0 ? 'text-yellow-400' : 'text-green-400';
                                                 } else if (drillDownExercise === 'selection') {
-                                                    metric = `${(word.selection_attempts_total / word.selection_count).toFixed(2)} avg attempts`;
+                                                    const avg = word.avgAttempts || 0;
+                                                    metricText = `${avg.toFixed(2)} avg attempts · ${word.attempts} total`;
+                                                    metricColor = avg > 2 ? 'text-red-400' : avg > 1 ? 'text-yellow-400' : 'text-green-400';
                                                 } else if (drillDownExercise === 'translation') {
-                                                    metric = `Grade: ${word.translation_best_grade || 'N/A'}`;
+                                                    metricText = `Best grade: ${word.grade || 'N/A'} · ${word.count} practiced`;
+                                                    metricColor = (word.grade === 'B1' || word.grade === 'B2') ? 'text-yellow-400' : 'text-green-400';
                                                 } else {
-                                                    metric = `Effort: ${word.difficulty || 'Not rated'}`;
+                                                    // flashcard / guesswork
+                                                    metricText = `${word.count} practiced`;
+                                                    metricColor = 'text-slate-400';
                                                 }
-                                                
                                                 return (
-                                                    <label 
-                                                        key={word.id} 
+                                                    <label
+                                                        key={word.id}
                                                         className="flex items-start gap-4 bg-slate-800/50 hover:bg-slate-800 p-4 rounded-xl cursor-pointer transition-colors"
                                                     >
-                                                        <input 
-                                                            type="checkbox"
-                                                            checked={selectedDrillDownWords.includes(word.id)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setSelectedDrillDownWords([...selectedDrillDownWords, word.id]);
-                                                                } else {
-                                                                    setSelectedDrillDownWords(selectedDrillDownWords.filter(id => id !== word.id));
-                                                                }
-                                                            }}
-                                                            className="mt-1 w-5 h-5"
-                                                        />
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-slate-600 text-xs font-mono w-5 text-right">{idx+1}</span>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedDrillDownWords.includes(word.id)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) { setSelectedDrillDownWords([...selectedDrillDownWords, word.id]); }
+                                                                    else { setSelectedDrillDownWords(selectedDrillDownWords.filter(id => id !== word.id)); }
+                                                                }}
+                                                                className="w-5 h-5"
+                                                            />
+                                                        </div>
                                                         <div className="flex-1">
-                                                            <div className="flex items-center gap-3 mb-2">
-                                                                <p className="text-white font-bold text-lg">{word.vocabulary}</p>
-                                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                                                    word.difficulty === 'Active' ? 'bg-green-600/30 text-green-400' :
-                                                                    word.difficulty === 'Emerging' ? 'bg-yellow-600/30 text-yellow-400' :
-                                                                    word.difficulty === 'Passive' ? 'bg-red-600/30 text-red-400' :
-                                                                    'bg-slate-700 text-slate-400'
-                                                                }`}>
-                                                                    {word.difficulty || 'Not rated'}
-                                                                </span>
-                                                                <span className="text-slate-500 text-xs">{metric}</span>
+                                                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                                <p className="text-white font-bold text-lg">{word.word}</p>
+                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork') && (
+                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                        word.difficulty === 'Active' ? 'bg-green-600/30 text-green-400' :
+                                                                        word.difficulty === 'Emerging' ? 'bg-yellow-600/30 text-yellow-400' :
+                                                                        word.difficulty === 'Passive' ? 'bg-red-600/30 text-red-400' :
+                                                                        'bg-slate-700 text-slate-400'
+                                                                    }`}>{word.difficulty || 'Not rated'}</span>
+                                                                )}
+                                                                <span className={`text-sm font-bold ${metricColor}`}>{metricText}</span>
                                                             </div>
-                                                            <p className="text-slate-400 text-sm">
-                                                                Family: {word.family || '—'}
-                                                            </p>
-                                                            {word.context && (
-                                                                <p className="text-slate-500 text-sm mt-2 italic line-clamp-2">
-                                                                    "{word.context}"
-                                                                </p>
-                                                            )}
                                                         </div>
                                                     </label>
                                                 );
