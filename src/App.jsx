@@ -3649,7 +3649,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.79</span>
+                                        English Booster <span className="version-text">v11.80</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4139,24 +4139,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             <input type="file" accept=".json,.csv" onChange={handleImport} className="hidden" />
                                         </label>
                                     </div>
-                                    {/* 🔧 V11.76: DB Migration */}
-                                    <div className="bg-amber-900/20 border border-amber-500/40 rounded-2xl p-4">
-                                        <p className="text-[10px] uppercase font-black text-amber-400 mb-2 tracking-widest">🔧 Database Migration</p>
-                                        <p className="text-xs text-slate-400 mb-3">If Guesswork stats are not updating, the <code className="text-amber-300">guesswork_count</code> column may be missing. Run this SQL in your Supabase SQL Editor:</p>
-                                        <div className="bg-slate-900 rounded-xl p-3 font-mono text-xs text-green-300 mb-3 break-all">
-                                            ALTER TABLE vocabulary_v4 ADD COLUMN IF NOT EXISTS guesswork_count INTEGER DEFAULT 0;
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                const sql = 'ALTER TABLE vocabulary_v4 ADD COLUMN IF NOT EXISTS guesswork_count INTEGER DEFAULT 0;';
-                                                navigator.clipboard.writeText(sql).then(() => alert('✅ SQL copied! Go to Supabase Dashboard → SQL Editor → paste and run.')).catch(() => alert('Copy failed — please select and copy the SQL above manually.'));
-                                            }}
-                                            className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-black uppercase text-xs"
-                                        >
-                                            📋 Copy Migration SQL to Clipboard
-                                        </button>
-                                    </div>
-
                                     <button onClick={() => setShowSettings(false)} className="w-full bg-indigo-600 py-4 rounded-2xl font-black uppercase shadow-xl">Close</button>
                                 </div>
                             </div>
@@ -5473,6 +5455,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationErrorCount(errorCount);
                                                             setDictationDifficulty(difficulty);
                                                             setShowDictationAnswer(true);
+                                                            // Save immediately so closing won't lose data
+                                                            try {
+                                                                const w = dictationWords[dictationIndex];
+                                                                await supabase.from('vocabulary_v4').update({ dictation_count: (w.dictation_count||0)+1, dictation_errors_total: (w.dictation_errors_total||0)+errorCount, last_practiced_date: new Date().toISOString() }).eq('id', w.id);
+                                                                dictationWords[dictationIndex] = { ...w, dictation_count: (w.dictation_count||0)+1, dictation_errors_total: (w.dictation_errors_total||0)+errorCount };
+                                                            } catch(e) { /* silent */ }
                                                         } else {
                                                             // Second Enter: Save and move to next word (same as Next Word button)
                                                             try {
@@ -5517,13 +5505,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             />
                                             <div className="flex gap-4">
                                                 <button
-                                                    onClick={() => {
+                                                    onClick={async () => {
                                                         // 🆕 V11.5: Calculate errors and difficulty
                                                         const { errorCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
                                                         const difficulty = calculateDifficulty(errorCount);
                                                         setDictationErrorCount(errorCount);
                                                         setDictationDifficulty(difficulty);
                                                         setShowDictationAnswer(true);
+                                                        // Save immediately so closing won't lose data
+                                                        try {
+                                                            const w = dictationWords[dictationIndex];
+                                                            await supabase.from('vocabulary_v4').update({ dictation_count: (w.dictation_count||0)+1, dictation_errors_total: (w.dictation_errors_total||0)+errorCount, last_practiced_date: new Date().toISOString() }).eq('id', w.id);
+                                                            dictationWords[dictationIndex] = { ...w, dictation_count: (w.dictation_count||0)+1, dictation_errors_total: (w.dictation_errors_total||0)+errorCount };
+                                                        } catch(e) { /* silent */ }
                                                     }}
                                                     className="flex-1 bg-green-600 hover:bg-green-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                                 >
@@ -5724,7 +5718,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {selectionOptions.map((option, index) => (
                                         <button
                                             key={index}
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 // 🆕 V11.64: Block if already wrong, answered, or not visible
                                                 if (showSelectionAnswer || !selectionOptionsVisible || selectionWrongAnswers.includes(option.vocabulary)) return;
                                                 
@@ -5745,6 +5739,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     
                                                     setSelectionDifficulty(difficulty);
                                                     setShowSelectionAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    const totalAttempts = (selectionAttempts + 1);
+                                                    try {
+                                                        const w = selectionWords[selectionIndex];
+                                                        await supabase.from('vocabulary_v4').update({ difficulty, selection_count: (w.selection_count||0)+1, selection_attempts_total: (w.selection_attempts_total||0)+totalAttempts, last_practiced_date: new Date().toISOString() }).eq('id', w.id);
+                                                        selectionWords[selectionIndex] = { ...w, selection_count: (w.selection_count||0)+1, selection_attempts_total: (w.selection_attempts_total||0)+totalAttempts };
+                                                    } catch(e) { /* silent */ }
                                                     
                                                     // 🆕 V11.64: Only explain if there were wrong attempts
                                                     if (selectionWrongAnswers.length > 0) {
@@ -6029,6 +6030,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 score: 'Active'
                                                             });
                                                             setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: 'Active', guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                         } else {
                                                             // Not exact - validate with AI
                                                             const aiResult = await validateGuessworkWithAI(
@@ -6043,12 +6046,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 setGuessworkDifficulty(finalScore);
                                                                 setGuessworkAttempts(prev => prev + 1);
                                                                 setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: finalScore, guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                             } else {
                                                                 // AI unavailable - show answer with fallback so save can proceed
                                                                 setGuessworkDifficulty('Passive');
                                                                 setGuessworkAIResult({ is_correct: false, explanation: 'AI validation unavailable. Please check your API key in Settings.', score: 'Passive', is_synonym: false, synonym_note: '' });
                                                                 setGuessworkAttempts(prev => prev + 1);
                                                                 setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: 'Passive', guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                             }
                                                         }
                                                     } else if (showGuessworkAnswer) {
@@ -6122,6 +6129,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             score: 'Active'
                                                         });
                                                         setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: 'Active', guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                     } else {
                                                         // Not exact - validate with AI
                                                         const aiResult = await validateGuessworkWithAI(
@@ -6136,12 +6145,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setGuessworkDifficulty(finalScore2);
                                                             setGuessworkAttempts(prev => prev + 1);
                                                             setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: finalScore2, guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                         } else {
                                                             // AI unavailable - show answer with fallback so save can proceed
                                                             setGuessworkDifficulty('Passive');
                                                             setGuessworkAIResult({ is_correct: false, explanation: 'AI validation unavailable. Please check your API key in Settings.', score: 'Passive', is_synonym: false, synonym_note: '' });
                                                             setGuessworkAttempts(prev => prev + 1);
                                                             setShowGuessworkAnswer(true);
+                                                    // Save immediately so closing won't lose data
+                                                    try { const w = guessworkWords[guessworkIndex]; await supabase.from('vocabulary_v4').update({ difficulty: 'Passive', guesswork_count: (w.guesswork_count||0)+1, last_practiced_date: new Date().toISOString() }).eq('id', w.id); guessworkWords[guessworkIndex] = { ...w, guesswork_count: (w.guesswork_count||0)+1 }; } catch(e) { /* silent */ }
                                                         }
                                                     }
                                                 }}
@@ -6750,29 +6763,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         </div>
 
-                                        {/* Difficulty Distribution */}
-                                        <div className="glass-card rounded-2xl p-6">
-                                            <h3 className="text-xl font-black text-white mb-4">Difficulty Distribution</h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                <div className="text-center tooltip" data-tip="Active: Retrieves the word instantly. Speak without thinking.">
-                                                    <p className="text-5xl mb-2">🟢</p>
-                                                    <p className="text-white text-2xl font-bold">{statsData.difficulty.easy}</p>
-                                                    <p className="text-green-400 text-sm">Active</p>
-                                                </div>
-                                                <div className="text-center tooltip" data-tip="Emerging: Searches for the word in your mental archive. Write a formal email calmly.">
-                                                    <p className="text-5xl mb-2">🟡</p>
-                                                    <p className="text-white text-2xl font-bold">{statsData.difficulty.medium}</p>
-                                                    <p className="text-yellow-400 text-sm">Emerging</p>
-                                                </div>
-                                                <div className="text-center tooltip" data-tip="Passive: Decodes others' messages. Read a New York Times article.">
-                                                    <p className="text-5xl mb-2">🔴</p>
-                                                    <p className="text-white text-2xl font-bold">{statsData.difficulty.hard}</p>
-                                                    <p className="text-red-400 text-sm">Passive</p>
-                                                </div>
-                                                <div className="text-center">
-                                                    <p className="text-5xl mb-2">⚪</p>
-                                                    <p className="text-white text-2xl font-bold">{statsData.difficulty.notPracticed}</p>
-                                                    <p className="text-slate-400 text-sm">Not Practiced</p>
+                                        {/* Difficulty Distribution - compact */}
+                                        <div className="glass-card rounded-2xl px-5 py-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-black uppercase text-slate-400 tracking-widest">Difficulty</span>
+                                                <div className="flex items-center gap-6">
+                                                    <div className="flex items-center gap-1 tooltip" data-tip="Active: Retrieves the word instantly. Speak without thinking.">
+                                                        <span className="text-white font-black text-xl">{statsData.difficulty.easy}</span>
+                                                        <span className="text-green-400 text-xs">🟢 Active</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 tooltip" data-tip="Emerging: Searches for the word in your mental archive.">
+                                                        <span className="text-white font-black text-xl">{statsData.difficulty.medium}</span>
+                                                        <span className="text-yellow-400 text-xs">🟡 Emerging</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 tooltip" data-tip="Passive: Decodes others' messages.">
+                                                        <span className="text-white font-black text-xl">{statsData.difficulty.hard}</span>
+                                                        <span className="text-red-400 text-xs">🔴 Passive</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-white font-black text-xl">{statsData.difficulty.notPracticed}</span>
+                                                        <span className="text-slate-500 text-xs">⫪ Unrated</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
