@@ -281,6 +281,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             setDictationDifficulty('');
                             setDictationPlayCount(0);
                             setDictationPlaySpeed('normal');
+                            setShowExercisesModal(true);
                         }
                     }
                 };
@@ -310,6 +311,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                                         guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
                                                     }).eq('id', currentGuessworkWord.id);
+                                                        // Update local state to keep counts accurate
+                                                        const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty, guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
+                                                        setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
+                                                        setWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
                         } catch (error) {
                             console.error('Error saving difficulty:', error);
                         }
@@ -322,6 +327,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             setGuessworkDifficulty('');
                             setGuessworkAttempts(0);
                             setGuessworkAIResult(null);
+                            setShowExercisesModal(true);
                         } else {
                             alert('🎉 Exercise completed!');
                             setShowGuesswork(false);
@@ -332,6 +338,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             setGuessworkDifficulty('');
                             setGuessworkAttempts(0);
                             setGuessworkAIResult(null);
+                            setShowExercisesModal(true);
                         }
                     }
                 };
@@ -391,6 +398,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             setTranslationDifficulty('');
                             setTranslationAttempts(0);
                             setTranslationAIResult(null);
+                            setShowExercisesModal(true);
                         }
                     }
                 };
@@ -1094,8 +1102,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V11.5: Calculate difficulty based on error count
             function calculateDifficulty(errorCount) {
-                if (errorCount <= 1) return 'Active';
-                if (errorCount === 2) return 'Emerging';
+                if (errorCount === 0) return 'Active';
+                if (errorCount <= 2) return 'Emerging';
                 return 'Passive';
             }
 
@@ -2306,25 +2314,30 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 if (!apiKey) return null;
                 
                 try {
-                    const prompt = `You are an English vocabulary expert specializing in vocabulary exercises. Generate 5 'red herring' distractors for a fill-in-the-blank vocabulary exercise.
+                    const prompt = `You are an English vocabulary expert. Generate distractors for a fill-in-the-blank exercise.
 
 CORRECT ANSWER: "${correctWord.vocabulary}"
 WORD FAMILY: "${correctWord.family}"
 CONTEXT SENTENCE: "${correctWord.context}"
 
-Generate exactly 5 distractors that:
-1. Are PLAUSIBLE at first glance (student might be tempted to pick them)
-2. Belong to the same grammatical category (same part of speech as the correct answer)
-3. Are semantically related (same general topic/field) but do NOT fit the context perfectly
-4. Are real English words/phrases with correct spelling
-5. Do NOT include the correct answer itself or exact synonyms
+GRAMMAR RULE: Look at the context sentence. Identify the TENSE and GRAMMATICAL FORM required.
+All options (including the correct answer) MUST use the same grammatical form.
+Example: if the sentence is past tense, all options must be past tense.
 
-IMPORTANT: Return ONLY single words or short phrases (2-3 words max), matching the style of the correct answer.
+Generate EXACTLY 4 distractors:
+- Distractor 1: ONE plausible 'red herring' - semantically related, same grammar, but wrong for this specific context
+- Distractor 2, 3, 4: THREE clearly unsuitable options - same grammatical category but obviously wrong in meaning or register
+
+Rules:
+- ALL options must match the grammatical form/tense of the correct answer in context
+- Real English words/phrases only
+- Do NOT include the correct answer itself
+- Short (1-4 words max), matching the style of the correct answer
 
 Respond ONLY in this JSON format (no markdown, no backticks):
 {
-  "distractors": ["word1", "word2", "word3", "word4", "word5"]
-}`;
+  "distractors": ["red_herring", "clearly_wrong1", "clearly_wrong2", "clearly_wrong3"]
+}``;
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: {
@@ -3651,7 +3664,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.70</span>
+                                        English Booster <span className="version-text">v11.71</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4725,7 +4738,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             
                                             setShowImproveModal(false);
                                             setImproveData(null);
-                                            alert('✅ Fields updated with your selection!');
                                         }}
                                         className="flex-1 bg-green-600 hover:bg-green-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                     >
@@ -5177,6 +5189,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setFlashcardWords([]);
                                         setFlashcardIndex(0);
                                         setIsFlipped(false);
+                                        setShowExercisesModal(true);
                                     }}
                                     onModeToggle={() => {
                                         setExerciseMode(exerciseMode === 'random' ? 'memory' : 'random');
@@ -5197,7 +5210,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...flashcardWords[flashcardIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🎴 FLASHCARDS EXERCISE\n\n📊 DIFFICULTY TRACKING:\n🟢 Active: You know it well\n🟡 Emerging: Need more practice\n🔴 Passive: Difficult to remember\n\n🎯 HOW TO USE:\n• Click card to flip and see answer\n• Rate your knowledge (Easy/Medium/Hard)\n• 🧠 Memory mode: Shows hardest cards first\n• 🎲 Random mode: Shuffles all cards\n\n🔊 AUDIO:\n• Auto-plays context when card flips (if enabled)\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 🔊/🔇 = Toggle audio on/off\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• ← → = Navigate between cards\n• Easy/Medium/Passive = Rate difficulty')}
+                                    onInfo={() => alert('🎴 FLASHCARDS EXERCISE\n\n📊 DIFFICULTY TRACKING:\n🟢 Active: You know it well\n🟡 Emerging: Need more practice\n🔴 Passive: Difficult to remember\n\n🎯 HOW TO USE:\n• Click card to flip and see answer\n• Rate your knowledge (Active/Emerging/Passive)\n• 🧠 Memory mode: Shows hardest cards first\n• 🎲 Random mode: Shuffles all cards\n\n🔊 AUDIO:\n• Auto-plays context when card flips (if enabled)\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 🔊/🔇 = Toggle audio on/off\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• ← → = Navigate between cards\n• Easy/Medium/Passive = Rate difficulty')}
                                 />
 
                                 {/* 🆕 V11.2: Difficulty indicator */}
@@ -5398,7 +5411,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('🎤 DICTATION EXERCISE\n\n📊 SCORING:\n🟢 Active: 0-1 errors\n🟡 Emerging: 2 errors\n🔴 Passive: 3+ errors\n\n⌨️ SHORTCUTS:\n• Press ENTER to check your answer\n• Press ENTER again to move to next word and auto-play\n\n🔊 AUDIO:\n• First play: Normal speed (1.0x)\n• Second play: Slow speed (0.7x)\n• Maximum 4 plays per word\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• 🔊 = Play audio\n• Check Answer = Verify your answer\n• Skip = Skip to next word\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🎤 DICTATION EXERCISE\n\n📊 SCORING:\n🟢 Active: 0 errors\n🟡 Emerging: 1-2 errors\n🔴 Passive: 3+ errors\n\n⌨️ SHORTCUTS:\n• Press ENTER to check your answer\n• Press ENTER again to move to next word and auto-play\n\n🔊 AUDIO:\n• First play: Normal speed (1.0x)\n• Second play: Slow speed (0.7x)\n• Maximum 4 plays per word\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• 🔊 = Play audio\n• Check Answer = Verify your answer\n• Skip = Skip to next word\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(dictationWords[dictationIndex]);
                                         setOriginalEditData({...dictationWords[dictationIndex]});
@@ -5479,6 +5492,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 setDictationDifficulty('');
                                                                 setDictationPlayCount(0);
                                                                 setDictationPlaySpeed('normal');
+                                                                setShowExercisesModal(true);
                                                             } else {
                                                                 alert('🎉 Exercise completed!');
                                                                 setShowDictation(false);
@@ -5490,6 +5504,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 setDictationDifficulty('');
                                                                 setDictationPlayCount(0);
                                                                 setDictationPlaySpeed('normal');
+                                                                setShowExercisesModal(true);
                                                             }
                                                         }
                                                     }
@@ -5524,6 +5539,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setShowExercisesModal(true);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
                                                             setShowDictation(false);
@@ -5535,6 +5551,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setShowExercisesModal(true);
                                                         }
                                                     }}
                                                     className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -5609,6 +5626,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setShowExercisesModal(true);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
                                                             setShowDictation(false);
@@ -5620,6 +5638,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setShowExercisesModal(true);
                                                         }
                                                     }}
                                                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -5659,6 +5678,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setShowSelectionAnswer(false);
                                         setSelectionAttempts(0);
                                         setSelectionDifficulty('');
+                                        setShowExercisesModal(true);
                                     }}
                                     onModeToggle={() => {
                                         const newMode = exerciseMode === 'random' ? 'memory' : 'random';
@@ -5671,7 +5691,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setSelectedWordForDict(word);
                                         setShowDictionaryModal(true);
                                     }}
-                                    onInfo={() => alert('✓ SELECTION EXERCISE\n\n📊 SCORING:\n✅ First try correct = Easy\n⚠️ Second try correct = Medium\n❌ Third or more tries = Hard\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Choose the correct word from 6 options\n• You have unlimited attempts\n• Difficulty is based on number of tries\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Word options = Click to select answer\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('✓ SELECTION EXERCISE\n\n📊 SCORING:\n✅ First try correct = Active\n⚠️ Second try correct = Emerging\n❌ Third or more tries = Passive\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Choose the correct word from 6 options\n• You have unlimited attempts\n• Difficulty is based on number of tries\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Word options = Click to select answer\n• Edit Word = Modify current word\n• Next Word/Finish = Continue or complete')}
                                     onEdit={() => {
                                         setEditingWord(selectionWords[selectionIndex]);
                                         setOriginalEditData({...selectionWords[selectionIndex]});
@@ -5798,6 +5818,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     setSelectionDifficulty('');
                                                     setSelectionWrongAnswers([]);
                                                     setSelectionExplanation('');
+                                                    setShowExercisesModal(true);
                                                 }
                                             }}
                                             className="w-full bg-slate-700 hover:bg-slate-600 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
@@ -5897,6 +5918,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setSelectionDifficulty('');
                                                         setSelectionWrongAnswers([]);
                                                         setSelectionExplanation('');
+                                                        setShowExercisesModal(true);
                                                     }
                                                 }}
                                                 className="w-full bg-green-600 hover:bg-green-500 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-sm"
@@ -5939,6 +5961,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setGuessworkDifficulty('');
                                         setGuessworkAttempts(0);
                                         setGuessworkAIResult(null);
+                                        setShowExercisesModal(true);
                                     }}
                                     onModeToggle={() => {
                                         setExerciseMode(exerciseMode === 'random' ? 'memory' : 'random');
@@ -5955,7 +5978,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Easy\n🤖 AI evaluates quality when not exact match:\n  • Active = Excellent answer (correct grammar, perfect fit)\n  • Emerging = Acceptable answer (minor issues, generally correct)\n  • Passive = Poor answer (significant errors)\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn't fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
@@ -6031,6 +6054,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
                                                     }).eq('id', currentGuessworkWord.id);
+                                                        // Update local state to keep counts accurate
+                                                        const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty, guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
+                                                        setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
+                                                        setWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
                                                         } catch (error) {
                                                             console.error('Error saving difficulty:', error);
                                                         }
@@ -6042,6 +6069,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setGuessworkAttempts(0);
                                                             setGuessworkDifficulty('');
                                                             setGuessworkAIResult(null);
+                                                            setShowExercisesModal(true);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
                                                             setShowGuesswork(false);
@@ -6052,6 +6080,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setGuessworkAttempts(0);
                                                             setGuessworkDifficulty('');
                                                             setGuessworkAIResult(null);
+                                                            setShowExercisesModal(true);
                                                         }
                                                     }
                                                 }
@@ -6112,6 +6141,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkDifficulty('');
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     } else {
                                                         alert('🎉 Exercise completed!');
                                                         setShowGuesswork(false);
@@ -6122,6 +6152,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkDifficulty('');
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     }
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -6212,6 +6243,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1,
                                                         last_practiced_date: new Date().toISOString()
                                                     }).eq('id', currentGuessworkWord.id);
+                                                        // Update local state to keep counts accurate
+                                                        const updatedGW = {...currentGuessworkWord, difficulty: guessworkDifficulty, guesswork_count: (currentGuessworkWord.guesswork_count || 0) + 1};
+                                                        setGuessworkWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
+                                                        setWords(prev => prev.map(w => w.id === currentGuessworkWord.id ? updatedGW : w));
                                                     } catch (error) {
                                                         console.error('Error saving difficulty:', error);
                                                     }
@@ -6223,6 +6258,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkDifficulty('');
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     } else {
                                                         alert('🎉 Exercise completed!');
                                                         setShowGuesswork(false);
@@ -6233,6 +6269,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setGuessworkDifficulty('');
                                                         setGuessworkAttempts(0);
                                                         setGuessworkAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     }
                                                 }}
                                                 className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -6342,6 +6379,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setTranslationDifficulty('');
                                         setTranslationAttempts(0);
                                         setTranslationAIResult(null);
+                                        setShowExercisesModal(true);
                                     }}
                                     onModeToggle={() => {
                                         setExerciseMode(exerciseMode === 'random' ? 'memory' : 'random');
@@ -6473,6 +6511,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
                                                         setTranslationAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     }
                                                 }}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
@@ -6621,6 +6660,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
                                                         setTranslationAIResult(null);
+                                                        setShowExercisesModal(true);
                                                     }
                                                 }}
                                                 className="w-full bg-pink-600 hover:bg-pink-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
