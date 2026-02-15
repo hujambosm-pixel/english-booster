@@ -3726,7 +3726,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.87</span>
+                                        English Booster <span className="version-text">v11.88</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3908,7 +3908,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     {/* 🆕 V11.61: Reduced padding in desktop buttons */}
                                                     <button 
                                                          onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
-                                                                }}
                                                         className="text-blue-500 hover:text-blue-400 tooltip p-1" 
                                                         data-tip="Open in Dictionary"
                                                     >
@@ -4015,7 +4014,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {/* 🆕 V11.58: Reduced padding for mobile buttons to fit all */}
                                             <button 
                                                  onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
-                                                                }}
                                                 className="p-2 text-blue-500 bg-blue-500/10 rounded-xl flex-1 text-xl"
                                             >
                                                 📖
