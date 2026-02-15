@@ -856,8 +856,27 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const escapedGapWords = gapCoreWords.map(w => w.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'));
                     const gapPatStr = escapedGapWords.join('(?:\\s+(?:\\w+\\s+){0,2}?)');
                     const flexGapRegex = new RegExp('\\b' + gapPatStr + '\\b', 'gi');
-                    if (context.match(flexGapRegex)) {
-                        return context.replace(flexGapRegex, '______');
+                    const gapMatch = context.match(flexGapRegex);
+                    if (gapMatch) {
+                        // Replace only vocab core words with blanks, keep inserted words visible
+                        // e.g. 'keep inflation in check' -> '______ inflation ______'
+                        return context.replace(flexGapRegex, (span) => {
+                            // Build result: blank vocab words, keep inserted words, merge adjacent blanks
+                            const spanWords = span.split(/\s+/);
+                            const parts = [];
+                            let inBlank = false;
+                            for (const token of spanWords) {
+                                const tokenClean = token.toLowerCase().replace(/[^\w]/g, '');
+                                if (tokenClean && gapCoreWords.includes(tokenClean)) {
+                                    if (!inBlank) { parts.push('______'); inBlank = true; }
+                                    // merge: don't add another blank
+                                } else {
+                                    if (inBlank) { inBlank = false; }
+                                    parts.push(token);
+                                }
+                            }
+                            return parts.join(' ');
+                        });
                     }
                 }
                 
@@ -3632,7 +3651,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.69</span>
+                                        English Booster <span className="version-text">v11.70</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
