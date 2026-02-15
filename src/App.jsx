@@ -60,8 +60,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             const [geminiKey, setGeminiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
             const [magicLoading, setMagicLoading] = useState(false);
-            const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });
+            const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
             const dupDebounceTimer = React.useRef(null);
+            const [dupViewMode, setDupViewMode] = React.useState(false);
+            const dupPendingWord = React.useRef('');
             const [showImproveModal, setShowImproveModal] = useState(false);
             const [improveData, setImproveData] = useState(null);
             const [showMergeModal, setShowMergeModal] = useState(false);
@@ -2806,9 +2808,17 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 reader.readAsText(file);
             };
 
+            // V11.85: Highlight matching text in results
+            const highlightMatch = (text, term) => {
+                if (!text || !term) return text;
+                const idx = text.toLowerCase().indexOf(term.toLowerCase());
+                if (idx === -1) return text;
+                return <>{text.slice(0, idx)}<mark className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{text.slice(idx, idx + term.length)}</mark>{text.slice(idx + term.length)}</>;
+            };
+
             // V11.85: Duplicate check - real-time basic search
             const searchDuplicates = async (term) => {
-                if (!term || term.trim().length < 2) { setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] }); return; }
+                if (!term || term.trim().length < 2) { setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); return; }
                 const t = term.trim().toLowerCase();
                 setDupCheck(prev => ({ ...prev, loading: true }));
                 try {
@@ -2820,7 +2830,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                         .limit(8);
                     const exact = (data || []).filter(w => w.vocabulary.toLowerCase() === t);
                     const partial = (data || []).filter(w => w.vocabulary.toLowerCase() !== t);
-                    setDupCheck(prev => ({ ...prev, loading: false, exact, partial }));
+                    setDupCheck(prev => ({ ...prev, loading: false, exact, partial, term: t }));
                 } catch(e) {
                     setDupCheck(prev => ({ ...prev, loading: false }));
                 }
@@ -3713,7 +3723,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.85</span>
+                                        English Booster <span className="version-text">v11.86</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3722,7 +3732,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -3894,7 +3904,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     })()}
                                                     {/* 🆕 V11.61: Reduced padding in desktop buttons */}
                                                     <button 
-                                                        onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
+                                                        onClick={() => {
+                                                                    dupPendingWord.current = document.getElementById('modalVocabInput')?.value || '';
+                                                                    setDupViewMode(true);
+                                                                    setEditingWord(w);
+                                                                    setOriginalEditData({...w});
+                                                                }}
                                                         className="text-blue-500 hover:text-blue-400 tooltip p-1" 
                                                         data-tip="Open in Dictionary"
                                                     >
@@ -4000,7 +4015,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             })()}
                                             {/* 🆕 V11.58: Reduced padding for mobile buttons to fit all */}
                                             <button 
-                                                onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }}
+                                                onClick={() => {
+                                                                    dupPendingWord.current = document.getElementById('modalVocabInput')?.value || '';
+                                                                    setDupViewMode(true);
+                                                                    setEditingWord(w);
+                                                                    setOriginalEditData({...w});
+                                                                }}
                                                 className="p-2 text-blue-500 bg-blue-500/10 rounded-xl flex-1 text-xl"
                                             >
                                                 📖
@@ -4302,7 +4322,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-2xl">
                                 <div className="flex justify-between items-center mb-8">
-                                    <h2 className="text-2xl font-black italic main-gradient uppercase tracking-widest">{editingWord ? 'Edit Word' : 'New Word'}</h2>
+                                    <h2 className="text-2xl font-black italic main-gradient uppercase tracking-widest">{dupViewMode ? 'View Word' : editingWord ? 'Edit Word' : 'New Word'}</h2>
                                     <div className="flex items-center gap-2">
                                         {/* 🆕 V11.56: Dictionary button updated to use modal */}
                                         <button
@@ -4366,7 +4386,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 </div>
                                 <form onSubmit={handleSave} className="grid grid-cols-2 gap-6">
-                                    <div className="col-span-2 lg:col-span-1 flex flex-col gap-1">
+                                    <div className="col-span-2 flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Vocabulary</label>
                                         <div className="relative">
                                             <input name="vocabulary" id="modalVocabInput" required defaultValue={editingWord?.vocabulary} className="p-4 rounded-xl w-full pr-20"
@@ -4427,7 +4447,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
                                         {/* V11.85: Duplicate detection results */}
                                         {!editingWord && (dupCheck.exact.length > 0 || dupCheck.partial.length > 0 || dupCheck.morphForms.length > 0 || dupCheck.loading || dupCheck.morphLoading) && (
-                                            <div className="mt-1 rounded-xl border border-slate-600/50 bg-slate-900/80 overflow-hidden text-xs">
+                                            <div className="mt-1 rounded-xl border border-slate-600/50 bg-slate-900/80 overflow-hidden text-xs w-full">
                                                 {dupCheck.loading && <div className="px-3 py-2 text-slate-400">Searching...</div>}
                                                 {dupCheck.exact.length > 0 && (
                                                     <div className="bg-red-900/30 border-b border-slate-700/50">
@@ -4437,10 +4457,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         {dupCheck.exact.map(w => (
                                                             <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-red-900/30">
                                                                 <div className="flex-1 min-w-0">
-                                                                    <span className="text-white font-bold">{w.vocabulary}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                    <span className="text-white font-bold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,80), dupCheck.term)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full hover:bg-red-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => {
+                                                                    dupPendingWord.current = document.getElementById('modalVocabInput')?.value || '';
+                                                                    setDupViewMode(true);
+                                                                    setEditingWord(w);
+                                                                    setOriginalEditData({...w});
+                                                                }} className="shrink-0 text-[9px] uppercase font-black text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full hover:bg-red-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4453,10 +4478,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         {dupCheck.partial.map(w => (
                                                             <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-slate-700/30">
                                                                 <div className="flex-1 min-w-0">
-                                                                    <span className="text-white font-semibold">{w.vocabulary}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                    <span className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,80), dupCheck.term)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-yellow-300 border border-yellow-500/40 px-2 py-0.5 rounded-full hover:bg-yellow-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => {
+                                                                    dupPendingWord.current = document.getElementById('modalVocabInput')?.value || '';
+                                                                    setDupViewMode(true);
+                                                                    setEditingWord(w);
+                                                                    setOriginalEditData({...w});
+                                                                }} className="shrink-0 text-[9px] uppercase font-black text-yellow-300 border border-yellow-500/40 px-2 py-0.5 rounded-full hover:bg-yellow-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4470,10 +4500,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         {dupCheck.morphForms.map(w => (
                                                             <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-slate-700/30">
                                                                 <div className="flex-1 min-w-0">
-                                                                    <span className="text-white font-semibold">{w.vocabulary}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                    <span className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,80), dupCheck.term)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-teal-300 border border-teal-500/40 px-2 py-0.5 rounded-full hover:bg-teal-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => {
+                                                                    dupPendingWord.current = document.getElementById('modalVocabInput')?.value || '';
+                                                                    setDupViewMode(true);
+                                                                    setEditingWord(w);
+                                                                    setOriginalEditData({...w});
+                                                                }} className="shrink-0 text-[9px] uppercase font-black text-teal-300 border border-teal-500/40 px-2 py-0.5 rounded-full hover:bg-teal-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4529,8 +4564,25 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
                                     <div className="col-span-2 flex gap-4 mt-4">
-                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
-                                        <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
+                                        {dupViewMode ? (
+                                            <button type="button" onClick={() => {
+                                                setDupViewMode(false);
+                                                setEditingWord(null);
+                                                setOriginalEditData(null);
+                                                // Restore the word being typed
+                                                setTimeout(() => {
+                                                    const inp = document.getElementById('modalVocabInput');
+                                                    if (inp) inp.value = dupPendingWord.current;
+                                                }, 50);
+                                            }} className="w-full bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/40 text-teal-300 py-4 rounded-2xl font-black uppercase text-sm">
+                                                ← Back to New Word
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
+                                                <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
+                                            </>
+                                        )}
                                     </div>
                                 </form>
                             </div>
