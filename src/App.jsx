@@ -3664,7 +3664,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.72</span>
+                                        English Booster <span className="version-text">v11.73</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5978,7 +5978,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn't fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n\n📊 SCORING:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn\'t fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
