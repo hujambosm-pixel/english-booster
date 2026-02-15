@@ -60,6 +60,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             const [geminiKey, setGeminiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
             const [magicLoading, setMagicLoading] = useState(false);
+            const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });
+            const dupDebounceTimer = React.useRef(null);
             const [showImproveModal, setShowImproveModal] = useState(false);
             const [improveData, setImproveData] = useState(null);
             const [showMergeModal, setShowMergeModal] = useState(false);
@@ -2804,6 +2806,65 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 reader.readAsText(file);
             };
 
+            // V11.85: Duplicate check - real-time basic search
+            const searchDuplicates = async (term) => {
+                if (!term || term.trim().length < 2) { setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] }); return; }
+                const t = term.trim().toLowerCase();
+                setDupCheck(prev => ({ ...prev, loading: true }));
+                try {
+                    const { data } = await supabase
+                        .from('vocabulary_v4')
+                        .select('id, vocabulary, synonyms, context')
+                        .or(`vocabulary.ilike.%${t}%,synonyms.ilike.%${t}%`)
+                        .is('deleted_at', null)
+                        .limit(8);
+                    const exact = (data || []).filter(w => w.vocabulary.toLowerCase() === t);
+                    const partial = (data || []).filter(w => w.vocabulary.toLowerCase() !== t);
+                    setDupCheck(prev => ({ ...prev, loading: false, exact, partial }));
+                } catch(e) {
+                    setDupCheck(prev => ({ ...prev, loading: false }));
+                }
+            };
+
+            // V11.85: Morphological search via Groq
+            const searchMorphological = async (term) => {
+                const apiKey = geminiKey.trim();
+                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
+                if (!term || term.trim().length < 2) return;
+                const t = term.trim();
+                setDupCheck(prev => ({ ...prev, morphLoading: true, morphForms: [] }));
+                try {
+                    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: `List all common English word forms of "${t}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${t}"` }],
+                            temperature: 0.1, max_tokens: 200
+                        })
+                    });
+                    const data = await resp.json();
+                    let raw = data.choices?.[0]?.message?.content || '[]';
+                    raw = raw.replace(/```json|```/g, '').trim();
+                    const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== t.toLowerCase()).slice(0, 10);
+                    // Search each form in DB
+                    const searchTerms = forms.map(f => `vocabulary.ilike.%${f}%,synonyms.ilike.%${f}%`).join(',');
+                    if (searchTerms) {
+                        const { data: morphData } = await supabase
+                            .from('vocabulary_v4')
+                            .select('id, vocabulary, synonyms, context')
+                            .or(searchTerms)
+                            .is('deleted_at', null)
+                            .limit(10);
+                        setDupCheck(prev => ({ ...prev, morphLoading: false, morphForms: morphData || [] }));
+                    } else {
+                        setDupCheck(prev => ({ ...prev, morphLoading: false, morphForms: [] }));
+                    }
+                } catch(e) {
+                    setDupCheck(prev => ({ ...prev, morphLoading: false }));
+                }
+            };
+
             const handleMagicFill = async (word, targetFields = null, wordId = null) => {
                 if (!word) return;
                 
@@ -3652,7 +3713,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.84</span>
+                                        English Booster <span className="version-text">v11.85</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3661,7 +3722,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -4308,7 +4369,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="col-span-2 lg:col-span-1 flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Vocabulary</label>
                                         <div className="relative">
-                                            <input name="vocabulary" id="modalVocabInput" required defaultValue={editingWord?.vocabulary} className="p-4 rounded-xl w-full pr-12" />
+                                            <input name="vocabulary" id="modalVocabInput" required defaultValue={editingWord?.vocabulary} className="p-4 rounded-xl w-full pr-20"
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (dupDebounceTimer.current) clearTimeout(dupDebounceTimer.current);
+                                                    if (!editingWord) {
+                                                        dupDebounceTimer.current = setTimeout(() => searchDuplicates(val), 500);
+                                                    }
+                                                }}
+                                            />
                                             <button 
                                                 type="button" 
                                                 onClick={async () => {
@@ -4334,14 +4403,83 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     }
                                                 }} 
                                                 disabled={magicLoading}
-                                                className={`absolute right-2 top-2 p-2 rounded-lg tooltip ${(editingWord?.synonyms && editingWord?.context && editingWord?.family) ? 'improve-btn' : 'magic-btn'}`}
+                                                className={`absolute right-14 top-2 p-2 rounded-lg tooltip ${(editingWord?.synonyms && editingWord?.context && editingWord?.family) ? 'improve-btn' : 'magic-btn'}`}
                                                 data-tip={(editingWord?.synonyms && editingWord?.context && editingWord?.family) ? "Improve with AI" : "Auto-fill with AI"}
                                             >
                                                 <span className={`text-xl ${magicLoading ? 'animate-spin-slow inline-block' : ''}`}>
                                                     ✨
                                                 </span>
                                             </button>
+                                            {/* V11.85: Duplicate check button */}
+                                            {!editingWord && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => searchMorphological(document.getElementById('modalVocabInput').value)}
+                                                    disabled={dupCheck.morphLoading}
+                                                    className="absolute right-2 top-2 p-2 rounded-lg tooltip bg-teal-600/20 text-teal-400 border border-teal-500/30 hover:bg-teal-600/40 transition-colors"
+                                                    data-tip="Search for similar and related word forms"
+                                                >
+                                                    <span className={`text-xl ${dupCheck.morphLoading ? 'animate-spin' : ''}`}>
+                                                        🔍
+                                                    </span>
+                                                </button>
+                                            )}
                                         </div>
+                                        {/* V11.85: Duplicate detection results */}
+                                        {!editingWord && (dupCheck.exact.length > 0 || dupCheck.partial.length > 0 || dupCheck.morphForms.length > 0 || dupCheck.loading || dupCheck.morphLoading) && (
+                                            <div className="mt-1 rounded-xl border border-slate-600/50 bg-slate-900/80 overflow-hidden text-xs">
+                                                {dupCheck.loading && <div className="px-3 py-2 text-slate-400">Searching...</div>}
+                                                {dupCheck.exact.length > 0 && (
+                                                    <div className="bg-red-900/30 border-b border-slate-700/50">
+                                                        <div className="px-3 py-1.5 flex items-center gap-1.5">
+                                                            <span className="text-red-400 font-black text-[10px] uppercase tracking-widest">⚠️ Exact match already exists</span>
+                                                        </div>
+                                                        {dupCheck.exact.map(w => (
+                                                            <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-red-900/30">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <span className="text-white font-bold">{w.vocabulary}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                </div>
+                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full hover:bg-red-900/40">👁 View</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {dupCheck.partial.length > 0 && (
+                                                    <div className="border-b border-slate-700/50">
+                                                        <div className="px-3 py-1.5">
+                                                            <span className="text-yellow-400 font-black text-[10px] uppercase tracking-widest">🔎 Similar words found</span>
+                                                        </div>
+                                                        {dupCheck.partial.map(w => (
+                                                            <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-slate-700/30">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <span className="text-white font-semibold">{w.vocabulary}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                </div>
+                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-yellow-300 border border-yellow-500/40 px-2 py-0.5 rounded-full hover:bg-yellow-900/40">👁 View</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {dupCheck.morphLoading && <div className="px-3 py-2 text-teal-400 flex items-center gap-2"><span className="animate-spin">🔍</span> Searching related word forms...</div>}
+                                                {!dupCheck.morphLoading && dupCheck.morphForms.length > 0 && (
+                                                    <div>
+                                                        <div className="px-3 py-1.5">
+                                                            <span className="text-teal-400 font-black text-[10px] uppercase tracking-widest">🔗 Related word forms found</span>
+                                                        </div>
+                                                        {dupCheck.morphForms.map(w => (
+                                                            <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-2 border-t border-slate-700/30">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <span className="text-white font-semibold">{w.vocabulary}</span>
+                                                                    {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
+                                                                </div>
+                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-teal-300 border border-teal-500/40 px-2 py-0.5 rounded-full hover:bg-teal-900/40">👁 View</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                     
                                     <div className="flex flex-col gap-1">
@@ -4391,7 +4529,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
                                     <div className="col-span-2 flex gap-4 mt-4">
-                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false);}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
+                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [] });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
