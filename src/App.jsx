@@ -3726,7 +3726,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.88</span>
+                                        English Booster <span className="version-text">v11.89</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3864,7 +3864,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <th className="p-5 w-32">Difficulty</th>
                                         <th className="p-5 w-64 text-indigo-400">Vocabulary</th>
                                         <th className="p-5 w-40">Family</th>
-                                        <th className="p-5 w-64">Synonyms</th>
+                                        <th className={`p-5 w-64 ${searchMode === 1 ? 'text-blue-400' : ''}`}>Synonyms</th>
                                         <th className="p-5">Context</th>
                                         <th className="p-5 text-right pr-10 w-48 font-black">Actions</th>
                                     </tr>
@@ -3878,9 +3878,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
                                                 onClick={() => speakText(w.vocabulary, 1.0)}
                                                 title="Click to hear pronunciation"
-                                            >{w.vocabulary}</td>
+                                            >{search && (searchMode === 0 || searchMode === 1) ? highlightMatch(w.vocabulary, search) : w.vocabulary}</td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || '—'}</span></td>
-                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{w.synonyms || '—'}</td>
+                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{search && searchMode === 1 ? (w.synonyms ? highlightMatch(w.synonyms, search) : '—') : (w.synonyms || '—')}</td>
                                             <td 
                                                 className="p-5 text-sm text-slate-400 italic leading-relaxed cursor-pointer hover:text-slate-200 transition-colors"
                                                 onClick={() => w.context && speakText(w.context, 1.0)}
@@ -3974,13 +3974,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             onClick={() => speakText(w.vocabulary, 1.0)}
                                             title="Click to hear pronunciation"
                                         >
-                                            {w.vocabulary}
+                                            {search && (searchMode === 0 || searchMode === 1) ? highlightMatch(w.vocabulary, search) : w.vocabulary}
                                         </div>
                                         
                                         {w.synonyms && (
                                             <div className="mb-4">
                                                 <div className="text-[10px] uppercase font-black text-slate-500 mb-1">Synonyms</div>
-                                                <div className="text-sm font-bold text-slate-100 italic">{w.synonyms}</div>
+                                                <div className="text-sm font-bold text-slate-100 italic">{search && searchMode === 1 ? highlightMatch(w.synonyms, search) : w.synonyms}</div>
                                             </div>
                                         )}
                                         
@@ -4313,8 +4313,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                     {showAddModal && (
                         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-md">
-                            <div className="glass-card rounded-[2.5rem] w-full max-w-2xl flex flex-col max-h-[90vh]">
-                                <div className="flex justify-between items-center px-10 pt-10 pb-4 shrink-0">
+                            <div className="glass-card rounded-[2.5rem] w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden">
+                                <div className="flex justify-between items-center px-8 pt-8 pb-5 shrink-0 border-b border-white/5">
                                     <h2 className="text-2xl font-black italic main-gradient uppercase tracking-widest">{editingWord ? 'Edit Word' : 'New Word'}</h2>
                                     <div className="flex items-center gap-2">
                                         {/* 🆕 V11.56: Dictionary button updated to use modal */}
@@ -4378,7 +4378,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {editingWord && <span className="text-slate-500 text-xs font-mono">ID: {editingWord.id}</span>}
                                     </div>
                                 </div>
-                                <form onSubmit={handleSave} className="grid grid-cols-2 gap-6">
+                                <form onSubmit={handleSave} className="grid grid-cols-2 gap-5 overflow-y-auto custom-scroll px-8 py-6 flex-1">
                                     <div className="col-span-2 flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Vocabulary</label>
                                         <div className="relative">
@@ -4456,8 +4456,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             </div>
                                                             {dupCheck.exact.map(w => (
                                                                 <div key={w.id} className="px-3 py-1.5 border-t border-red-900/40">
-                                                                    <span className="text-white font-bold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</span>}
+                                                                    <div className="text-white font-bold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -4469,8 +4469,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             </div>
                                                             {dupCheck.partial.map(w => (
                                                                 <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30">
-                                                                    <span className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</span>}
+                                                                    <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -4483,8 +4483,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             </div>
                                                             {dupCheck.morphForms.map(w => (
                                                                 <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30">
-                                                                    <span className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</span>
-                                                                    {w.synonyms && <span className="text-slate-400 ml-2">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</span>}
+                                                                    <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
                                                                 </div>
                                                             ))}
                                                         </div>
