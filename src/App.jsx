@@ -4440,7 +4440,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                     <span className="text-white font-bold">{w.vocabulary}</span>
                                                                     {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full hover:bg-red-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full hover:bg-red-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4456,7 +4456,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                     <span className="text-white font-semibold">{w.vocabulary}</span>
                                                                     {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-yellow-300 border border-yellow-500/40 px-2 py-0.5 rounded-full hover:bg-yellow-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-yellow-300 border border-yellow-500/40 px-2 py-0.5 rounded-full hover:bg-yellow-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4473,7 +4473,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                     <span className="text-white font-semibold">{w.vocabulary}</span>
                                                                     {w.synonyms && <span className="text-slate-400 ml-2 truncate">{w.synonyms.slice(0,50)}</span>}
                                                                 </div>
-                                                                <button type="button" onClick={() => { setEditingWord(w); setOriginalEditData({...w}); }} className="shrink-0 text-[9px] uppercase font-black text-teal-300 border border-teal-500/40 px-2 py-0.5 rounded-full hover:bg-teal-900/40">👁 View</button>
+                                                                <button type="button" onClick={() => { setSelectedWordForDict(w.vocabulary); setShowDictionaryModal(true); }} className="shrink-0 text-[9px] uppercase font-black text-teal-300 border border-teal-500/40 px-2 py-0.5 rounded-full hover:bg-teal-900/40">👁 View</button>
                                                             </div>
                                                         ))}
                                                     </div>
