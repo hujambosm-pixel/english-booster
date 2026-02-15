@@ -3726,7 +3726,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.89</span>
+                                        English Booster <span className="version-text">v11.90</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4455,9 +4455,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 <span className="text-red-400 font-black text-[9px] uppercase tracking-widest">⚠️ Exact match already exists</span>
                                                             </div>
                                                             {dupCheck.exact.map(w => (
-                                                                <div key={w.id} className="px-3 py-1.5 border-t border-red-900/40">
-                                                                    <div className="text-white font-bold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
-                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                <div key={w.id} className="px-3 py-1.5 border-t border-red-900/40 flex items-start justify-between gap-2">
+                                                                    <div>
+                                                                        <div className="text-white font-bold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                        {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                    </div>
+                                                                                                                                    <button type="button" onClick={() => {
+                                                                    setShowAddModal(false);
+                                                                    setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
+                                                                    setTimeout(() => {
+                                                                        setEditingWord(w);
+                                                                        setOriginalEditData({...w});
+                                                                        setShowAddModal(true);
+                                                                    }, 50);
+                                                                }} className="mt-1 text-[8px] font-black uppercase border border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-300 px-2 py-0.5 rounded-full transition-colors">→ Open &amp; edit</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -4468,9 +4479,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 <span className="text-yellow-400 font-black text-[9px] uppercase tracking-widest">🔎 Similar words</span>
                                                             </div>
                                                             {dupCheck.partial.map(w => (
-                                                                <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30">
-                                                                    <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
-                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30 flex items-start justify-between gap-2">
+                                                                    <div>
+                                                                        <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                        {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                    </div>
+                                                                                                                                    <button type="button" onClick={() => {
+                                                                    setShowAddModal(false);
+                                                                    setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
+                                                                    setTimeout(() => {
+                                                                        setEditingWord(w);
+                                                                        setOriginalEditData({...w});
+                                                                        setShowAddModal(true);
+                                                                    }, 50);
+                                                                }} className="mt-1 text-[8px] font-black uppercase border border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-300 px-2 py-0.5 rounded-full transition-colors">→ Open &amp; edit</button>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -4482,9 +4504,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 <span className="text-teal-400 font-black text-[9px] uppercase tracking-widest">🔗 Related word forms</span>
                                                             </div>
                                                             {dupCheck.morphForms.map(w => (
-                                                                <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30">
-                                                                    <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
-                                                                    {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                <div key={w.id} className="px-3 py-1.5 border-t border-slate-700/30 flex items-start justify-between gap-2">
+                                                                    <div>
+                                                                        <div className="text-white font-semibold">{highlightMatch(w.vocabulary, dupCheck.term)}</div>
+                                                                        {w.synonyms && <div className="text-slate-400 text-[10px] mt-0.5 leading-tight">{highlightMatch(w.synonyms.slice(0,100), dupCheck.term)}</div>}
+                                                                    </div>
+                                                                                                                                    <button type="button" onClick={() => {
+                                                                    setShowAddModal(false);
+                                                                    setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
+                                                                    setTimeout(() => {
+                                                                        setEditingWord(w);
+                                                                        setOriginalEditData({...w});
+                                                                        setShowAddModal(true);
+                                                                    }, 50);
+                                                                }} className="mt-1 text-[8px] font-black uppercase border border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-300 px-2 py-0.5 rounded-full transition-colors">→ Open &amp; edit</button>
                                                                 </div>
                                                             ))}
                                                         </div>
