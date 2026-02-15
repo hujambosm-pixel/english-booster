@@ -1489,15 +1489,23 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     return;
                 }
                 
-                const selectedWords = drillDownWords.filter(w => 
-                    selectedDrillDownWords.includes(w.id)
-                );
+                // Fetch FULL word data from DB so exercises get all fields (vocabulary, context, family, etc.)
+                const { data: fullWords, error } = await supabase
+                    .from('vocabulary_v4')
+                    .select('*')
+                    .in('id', selectedDrillDownWords)
+                    .is('deleted_at', null);
                 
-                // Close drill-down modal
+                if (error || !fullWords || fullWords.length === 0) {
+                    alert('Error loading word data. Please try again.');
+                    return;
+                }
+                
+                // Close drill-down modal and go back to Stats
                 setShowExerciseDrillDown(false);
                 
                 // Sort by exercise mode
-                let sortedWords = [...selectedWords];
+                let sortedWords = [...fullWords];
                 if (exerciseMode === 'memory') {
                     const difficultyOrder = { 'Passive': 0, 'Emerging': 1, 'Active': 2 };
                     sortedWords.sort((a, b) => {
@@ -1533,7 +1541,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     case 'selection':
                         // Filter to only include words with enough same level+family options
                         const validWords = sortedWords.filter(word => {
-                            const sameLevelFamily = selectedWords.filter(w => 
+                            const sameLevelFamily = sortedWords.filter(w => 
                                 w.vocabulary !== word.vocabulary && w.family === word.family
                             );
                             return sameLevelFamily.length >= 1;
@@ -3635,7 +3643,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.77</span>
+                                        English Booster <span className="version-text">v11.78</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5964,7 +5972,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...guessworkWords[guessworkIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n✅ CLASSIFIES vocabulary (Active / Emerging / Passive)\n\n📊 HOW IT CLASSIFIES:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn\'t fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Exact match → Easy (accepted immediately)\n• Non-exact → AI validates and scores Easy/Medium/Hard\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
+                                    onInfo={() => alert('🤔 GUESSWORK EXERCISE\n✅ CLASSIFIES vocabulary (Active / Emerging / Passive)\n\n📊 HOW IT CLASSIFIES:\n✅ Exact match = Active\n🤖 AI evaluates quality when not exact match:\n  • Active = Exact match or perfect synonym\n  • Emerging = Valid synonym with subtle difference\n  • Passive = Different meaning or doesn\'t fit context\n\n🎯 HOW TO PLAY:\n• Read the sentence with the blank\n• Write the correct word\n• Click 💡 Hint button (top-right of sentence) for help\n• Non-exact → AI evaluates and scores Active/Emerging/Passive\n\n🎮 BUTTONS:\n• 🧠/🎲 = Toggle Memory/Random mode\n• 💡 = Show hint (in sentence panel)\n• 📖 = Open in dictionary\n• ℹ️ = Show this help\n• ✏️ = Edit current word\n• × = Close exercise\n• Check Answer = Verify your answer (uses AI if not exact match)\n• Next Word/Finish = Continue or complete')}
                                 />
 
                                 {/* Context with blank - 🆕 V11.21: Hint button in top-right corner */}
@@ -6409,7 +6417,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setOriginalEditData({...translationWords[translationIndex]});
                                         setShowAddModal(true);
                                     }}
-                                    onInfo={() => alert('🌐 TRANSLATION EXERCISE\n⛔ PRACTICE ONLY — does NOT classify vocabulary\n\n📊 CAMBRIDGE GRADING (V11.38):\n🟢 C1/C2 (Easy): 0 errors - Perfect! 90-100%\n  • C2 = Very sophisticated grammar\n  • C1 = Advanced grammar\n🟡 B2 (Medium): 1 error - Good, minor mistake, 70-85%\n🔴 B1 (Hard): 2+ errors - Needs practice, 40-65%\n\n⚡ IMPORTANT:\n  Easy/Medium/Passive = Your memorization difficulty\n  Cambridge level = English proficiency grade\n\n✅ Exact match = AI evaluates C1 or C2\n\n🎯 HOW TO PLAY:\n• Read Spanish translation\n• Translate to English\n• Type OR use 🎤 voice\n• Press ENTER to check\n• Get Cambridge evaluation\n• Detailed feedback on ENGLISH errors only\n\n🎤 VOICE TO TEXT:\n• Click microphone 🎤\n• Speak English translation\n• Text appears automatically\n• 📱 Mobile: Enable mic in browser settings\n\n🎮 BUTTONS:\n• 🧠/🎲 = Memory/Random\n• 🎤 = Voice input\n• 📖 = Dictionary\n• ✏️ = Edit word\n• × = Close\n• Check Translation = Evaluate\n• Next/Finish = Continue')}
+                                    onInfo={() => alert('🌐 TRANSLATION EXERCISE\n⛔ PRACTICE ONLY — does NOT classify vocabulary\n\n📊 CAMBRIDGE GRADING (V11.38):\n🟢 C1/C2: 0 errors - Perfect! 90-100%\n  • C2 = Very sophisticated grammar\n  • C1 = Advanced grammar\n🟡 B2: 1 error - Good, minor mistake, 70-85%\n🔴 B1: 2+ errors - Needs practice, 40-65%\n\n✅ Exact match = AI evaluates C1 or C2\n\n🎯 HOW TO PLAY:\n• Read Spanish translation\n• Translate to English\n• Type OR use 🎤 voice\n• Press ENTER to check\n• Get Cambridge evaluation\n• Detailed feedback on ENGLISH errors only\n\n🎤 VOICE TO TEXT:\n• Click microphone 🎤\n• Speak English translation\n• Text appears automatically\n• 📱 Mobile: Enable mic in browser settings\n\n🎮 BUTTONS:\n• 🧠/🎲 = Memory/Random\n• 🎤 = Voice input\n• 📖 = Dictionary\n• ✏️ = Edit word\n• × = Close\n• Check Translation = Evaluate\n• Next/Finish = Continue')}
                                 />
 
                                 {/* Spanish translation panel */}
@@ -6869,7 +6877,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {drillDownExercise === 'translation' && 'All practiced words — ordered by grade (lowest first)'}
                                         </p>
                                     </div>
-                                    <button onClick={() => setShowExerciseDrillDown(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                    <button onClick={() => { setShowExerciseDrillDown(false); setShowStats(true); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                 </div>
                                 
                                 {drillDownWords.length === 0 ? (
@@ -6924,15 +6932,30 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <div className="flex-1">
                                                             <div className="flex flex-wrap items-center gap-2 mb-1">
                                                                 <p className="text-white font-bold text-lg">{word.word}</p>
-                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork') && (
+                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork' || drillDownExercise === 'selection') && word.difficulty && (
                                                                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                                                                         word.difficulty === 'Active' ? 'bg-green-600/30 text-green-400' :
                                                                         word.difficulty === 'Emerging' ? 'bg-yellow-600/30 text-yellow-400' :
-                                                                        word.difficulty === 'Passive' ? 'bg-red-600/30 text-red-400' :
-                                                                        'bg-slate-700 text-slate-400'
-                                                                    }`}>{word.difficulty || 'Not rated'}</span>
+                                                                        'bg-red-600/30 text-red-400'
+                                                                    }`}>{word.difficulty}</span>
                                                                 )}
                                                                 <span className={`text-sm font-bold ${metricColor}`}>{metricText}</span>
+                                                                {(drillDownExercise === 'flashcard' || drillDownExercise === 'guesswork' || drillDownExercise === 'selection') && word.difficulty && word.difficulty !== 'Active' && (
+                                                                    <button
+                                                                        onClick={async (e) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            try {
+                                                                                await supabase.from('vocabulary_v4').update({ difficulty: null }).eq('id', word.id);
+                                                                                setDrillDownWords(prev => prev.map(w => w.id === word.id ? {...w, difficulty: null} : w));
+                                                                            } catch(e) { alert('Error resetting'); }
+                                                                        }}
+                                                                        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 hover:bg-red-900/40 text-slate-400 hover:text-red-400 border border-slate-600 hover:border-red-500/50 transition-colors"
+                                                                        title="Reset classification"
+                                                                    >
+                                                                        ↺ Reset
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </label>
