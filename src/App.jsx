@@ -3173,7 +3173,7 @@ For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggesti
 2. CONTEXT: A natural sentence (12-15 words) in British English that HELPS UNDERSTAND THE MEANING of "${word}"
    ⛔️ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
    ⛔️ DO NOT use synonyms instead of "${word}"
-   ✅ REQUIRED: ${contextExamples[currentFamily] || \`Use "\${word}" correctly\`}
+   ✅ REQUIRED: ${contextExamples[currentFamily] || ('Use "' + word + '" correctly')}
    ✅ The sentence should clearly illustrate what "${word}" means — a reader unfamiliar with the word should be able to infer its meaning from the context
 
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
