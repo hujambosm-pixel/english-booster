@@ -81,6 +81,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 deleteSynonyms: []
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
+            const [mergeAIMode, setMergeAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Find & Merge
+            const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
             const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
             
             // 🆕 V11.2: New states
@@ -1149,7 +1151,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -1681,7 +1683,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -1785,7 +1787,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -1853,7 +1855,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -2028,7 +2030,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -2095,7 +2097,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
-                                    `vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`
+                                    `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
                             } else {
@@ -3314,8 +3316,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 }
             };
 
-            // 🆕 V11.92: Rewritten to use same logic as modal "+" (DB search + AI morphological)
-            const handleFindSimilar = async (currentWord) => {
+            // 🆕 V11.93: Unified search with independent AI toggle
+            const handleFindSimilar = async (currentWord, useAI = false) => {
                 setFindingSimilar(currentWord.id);
                 try {
                     const term = currentWord.vocabulary.trim().toLowerCase();
@@ -3323,60 +3325,49 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         ? currentWord.synonyms.split(',').map(s => s.trim().toLowerCase()).filter(s => s) 
                         : [];
                     
-                    // Step 1: Basic search — same as searchDuplicates (ilike vocabulary + synonyms)
-                    const searchTerms = [term, ...currentSyns];
-                    const orClauses = searchTerms.map(t => `vocabulary.ilike.%${t}%,synonyms.ilike.%${t}%`).join(',');
+                    let allResults = [];
                     
-                    const { data: basicResults } = await supabase
-                        .from('vocabulary_v4')
-                        .select('*')
-                        .or(orClauses)
-                        .neq('id', currentWord.id)
-                        .is('deleted_at', null)
-                        .limit(20);
-                    
-                    const foundIds = new Set((basicResults || []).map(w => w.id));
-                    let allResults = [...(basicResults || [])];
-                    
-                    // Step 2: AI morphological search (if Groq key configured)
-                    const apiKey = groqApiKey.trim();
-                    if (apiKey) {
-                        try {
-                            const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                                body: JSON.stringify({
-                                    model: 'llama-3.1-8b-instant',
-                                    messages: [{ role: 'user', content: `List all common English word forms of "${term}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${term}"` }],
-                                    temperature: 0.1, max_tokens: 200
-                                })
-                            });
-                            const data = await resp.json();
-                            let raw = data.choices?.[0]?.message?.content || '[]';
-                            raw = raw.replace(/```json|```/g, '').trim();
-                            const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== term).slice(0, 10);
-                            
-                            if (forms.length > 0) {
-                                const morphOrClauses = forms.map(f => `vocabulary.ilike.%${f}%,synonyms.ilike.%${f}%`).join(',');
-                                const { data: morphResults } = await supabase
-                                    .from('vocabulary_v4')
-                                    .select('*')
-                                    .or(morphOrClauses)
-                                    .neq('id', currentWord.id)
-                                    .is('deleted_at', null)
-                                    .limit(15);
-                                
-                                // Deduplicate
-                                for (const w of (morphResults || [])) {
-                                    if (!foundIds.has(w.id)) {
-                                        foundIds.add(w.id);
-                                        allResults.push(w);
-                                    }
-                                }
-                            }
-                        } catch (aiErr) {
-                            console.warn('AI morphological search failed, using basic results only:', aiErr.message);
-                        }
+                    if (!useAI) {
+                        // 🔍 Lupa mode: ilike on vocabulary + synonyms
+                        const searchTerms = [term, ...currentSyns];
+                        const orClauses = searchTerms.map(t => `vocabulary.ilike.%${t}%,synonyms.ilike.%${t}%`).join(',');
+                        const { data } = await supabase
+                            .from('vocabulary_v4')
+                            .select('*')
+                            .or(orClauses)
+                            .neq('id', currentWord.id)
+                            .is('deleted_at', null)
+                            .limit(20);
+                        allResults = data || [];
+                    } else {
+                        // 🧠 Brain mode: AI generates forms → search ONLY vocabulary
+                        const apiKey = groqApiKey.trim();
+                        if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); setFindingSimilar(null); return; }
+                        
+                        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.1-8b-instant',
+                                messages: [{ role: 'user', content: `List all common English word forms of "${term}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${term}"` }],
+                                temperature: 0.1, max_tokens: 200
+                            })
+                        });
+                        const data = await resp.json();
+                        let raw = data.choices?.[0]?.message?.content || '[]';
+                        raw = raw.replace(/```json|```/g, '').trim();
+                        const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== term).slice(0, 10);
+                        
+                        const allTerms = [term, ...forms];
+                        const orClauses = allTerms.map(f => `vocabulary.ilike.%${f}%`).join(',');
+                        const { data: results } = await supabase
+                            .from('vocabulary_v4')
+                            .select('*')
+                            .or(orClauses)
+                            .neq('id', currentWord.id)
+                            .is('deleted_at', null)
+                            .limit(20);
+                        allResults = results || [];
                     }
 
                     if (allResults.length === 0) {
@@ -3681,7 +3672,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.92</span>
+                                        English Booster <span className="version-text">v11.93</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3690,7 +3681,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -4375,18 +4366,30 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     ✨
                                                 </span>
                                             </button>
-                                            {/* V11.85: Duplicate check button */}
+                                            {/* 🆕 V11.93: Unified lupa/brain toggle for add modal */}
                                             {!editingWord && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => searchMorphological(document.getElementById('modalVocabInput').value)}
+                                                    onClick={() => {
+                                                        const newMode = !addModalAIMode;
+                                                        setAddModalAIMode(newMode);
+                                                        const val = document.getElementById('modalVocabInput')?.value;
+                                                        if (newMode && val && val.trim().length >= 2) {
+                                                            searchMorphological(val);
+                                                        } else if (!newMode) {
+                                                            setDupCheck(prev => ({ ...prev, morphForms: [], morphLoading: false }));
+                                                            if (val && val.trim().length >= 2) searchDuplicates(val);
+                                                        }
+                                                    }}
                                                     disabled={dupCheck.morphLoading}
-                                                    className="absolute right-2 top-2 p-2 rounded-lg tooltip bg-teal-600/20 text-teal-400 border border-teal-500/30 hover:bg-teal-600/40 transition-colors"
-                                                    data-tip="Search for similar and related word forms"
+                                                    className={`absolute right-2 top-2 p-2 rounded-lg tooltip border transition-colors ${
+                                                        addModalAIMode 
+                                                            ? 'bg-purple-500/20 border-purple-500 text-purple-400' 
+                                                            : 'border-slate-600 text-slate-500 hover:text-slate-300'
+                                                    }`}
+                                                    data-tip={addModalAIMode ? 'AI search active (vocabulary only)' : 'Toggle AI search'}
                                                 >
-                                                    <span className={`text-xl ${dupCheck.morphLoading ? 'animate-spin' : ''}`}>
-                                                        🔍
-                                                    </span>
+                                                    <i className={`fas ${addModalAIMode ? 'fa-brain' : 'fa-search'} ${dupCheck.morphLoading ? 'animate-pulse' : ''}`}></i>
                                                 </button>
                                             )}
                                         </div>
@@ -4526,7 +4529,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
                                     <div className="col-span-2 flex gap-4 mt-4">
-                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
+                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
@@ -4880,13 +4883,34 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     {/* 🔀 MERGE SIMILAR MODAL (keeping same as V11.1) */}
                     {showMergeModal && mergeData && (
                         !selectedSimilar ? (
-                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null);}}>
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setMergeAIMode(false);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-4xl w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
                                         <h2 className="text-3xl font-black text-white">🔀 Find & Merge Similar</h2>
-                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                        <div className="flex items-center gap-3">
+                                            {/* 🆕 V11.93: Lupa/Brain toggle for merge modal */}
+                                            <button 
+                                                onClick={() => {
+                                                    const newMode = !mergeAIMode;
+                                                    setMergeAIMode(newMode);
+                                                    if (mergeData?.current) {
+                                                        handleFindSimilar(mergeData.current, newMode);
+                                                    }
+                                                }}
+                                                disabled={!!findingSimilar}
+                                                className={`p-2.5 rounded-xl border transition-colors ${
+                                                    mergeAIMode 
+                                                        ? 'bg-purple-500/20 border-purple-500 text-purple-400' 
+                                                        : 'border-slate-600 text-slate-500 hover:text-slate-300'
+                                                }`}
+                                                title={mergeAIMode ? 'AI search active (vocabulary only)' : 'Toggle AI search'}
+                                            >
+                                                <i className={`fas ${mergeAIMode ? 'fa-brain' : 'fa-search'} ${findingSimilar ? 'animate-pulse' : ''}`}></i>
+                                            </button>
+                                            <button onClick={() => {setShowMergeModal(false); setMergeData(null); setMergeAIMode(false);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                        </div>
                                     </div>
-                                    <p className="text-slate-400 mb-4">Found {mergeData?.similar?.length || 0} similar words. Select one to merge:</p>
+                                    <p className="text-slate-400 mb-4">{findingSimilar ? '🔄 Searching...' : `Found ${mergeData?.similar?.length || 0} similar words. Select one to merge:`}</p>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {mergeData?.similar?.map(word => (
                                             <button
@@ -4916,14 +4940,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 </div>
                             </div>
                         ) : (
-                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}}>
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
                                             <h2 className="text-3xl font-black text-white">🔀 Drag & Drop Merge</h2>
                                             <p className="text-slate-400 text-sm mt-1">📱 MOBILE: Tap items to move | 🖥️ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
                                         </div>
-                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-6 mb-6">
@@ -5117,7 +5141,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             🔀 Merge & Delete Red Panel
                                         </button>
                                         <button 
-                                            onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}}
+                                            onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}}
                                             className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
                                             ❌ Cancel
