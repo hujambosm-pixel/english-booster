@@ -1142,12 +1142,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.24: Search modes (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
                     if (search) {
                         if (searchMode === 0) {
-                            // Mode 0: Search only in vocabulary column
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
-                            // Mode 1: Search in vocabulary + synonyms
+                            // Mode 0: Search in vocabulary + synonyms
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             // Mode 2: AI Deep Search
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
@@ -1679,10 +1676,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
@@ -1785,10 +1780,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
@@ -1855,10 +1848,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
@@ -2032,10 +2023,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
@@ -2101,10 +2090,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     // 🆕 V11.38: Respect searchMode like fetchWords
                     if (search) {
                         if (searchMode === 0) {
-                            query = query.ilike('vocabulary', `%${search}%`);
-                        } else if (searchMode === 1) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        } else if (searchMode === 2) {
+                        } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
                                 const searchTerms = [search, ...synonyms].map(term => 
@@ -3327,93 +3314,79 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 }
             };
 
+            // 🆕 V11.92: Rewritten to use same logic as modal "+" (DB search + AI morphological)
             const handleFindSimilar = async (currentWord) => {
                 setFindingSimilar(currentWord.id);
                 try {
-                    const { data: allWords } = await supabase
+                    const term = currentWord.vocabulary.trim().toLowerCase();
+                    const currentSyns = currentWord.synonyms 
+                        ? currentWord.synonyms.split(',').map(s => s.trim().toLowerCase()).filter(s => s) 
+                        : [];
+                    
+                    // Step 1: Basic search — same as searchDuplicates (ilike vocabulary + synonyms)
+                    const searchTerms = [term, ...currentSyns];
+                    const orClauses = searchTerms.map(t => `vocabulary.ilike.%${t}%,synonyms.ilike.%${t}%`).join(',');
+                    
+                    const { data: basicResults } = await supabase
                         .from('vocabulary_v4')
                         .select('*')
+                        .or(orClauses)
                         .neq('id', currentWord.id)
-                        .is('deleted_at', null) // 🆕 V11.2: Exclude deleted
-                        .order('vocabulary');
+                        .is('deleted_at', null)
+                        .limit(20);
                     
-                    if (!allWords || allWords.length === 0) {
-                        alert('No other vocabulary found');
-                        return;
-                    }
-
-                    const similar = [];
-                    const searchWord = currentWord.vocabulary.toLowerCase().trim();
-                    const searchSynonyms = currentWord.synonyms ? 
-                        currentWord.synonyms.split(',').map(s => s.toLowerCase().trim()).filter(s => s) : [];
-
-                    const levenshtein = (a, b) => {
-                        const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-                        for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-                        for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-                        for (let j = 1; j <= b.length; j++) {
-                            for (let i = 1; i <= a.length; i++) {
-                                const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-                                matrix[j][i] = Math.min(
-                                    matrix[j][i - 1] + 1,
-                                    matrix[j - 1][i] + 1,
-                                    matrix[j - 1][i - 1] + indicator
-                                );
-                            }
-                        }
-                        return matrix[b.length][a.length];
-                    };
-
-                    for (const word of allWords) {
-                        let isMatch = false;
-                        
-                        const compareWord = word.vocabulary.toLowerCase().trim();
-                        const distance = levenshtein(searchWord, compareWord);
-                        const maxLen = Math.max(searchWord.length, compareWord.length);
-                        const threshold = maxLen <= 4 ? 1 : Math.ceil(maxLen * 0.25);
-                        
-                        if (distance <= threshold) {
-                            isMatch = true;
-                        }
-                        
-                        if (!isMatch && word.synonyms) {
-                            const compareSynonyms = word.synonyms.split(',').map(s => s.toLowerCase().trim()).filter(s => s);
-                            for (const syn of compareSynonyms) {
-                                const synDistance = levenshtein(searchWord, syn);
-                                const synMaxLen = Math.max(searchWord.length, syn.length);
-                                const synThreshold = synMaxLen <= 4 ? 1 : Math.ceil(synMaxLen * 0.25);
-                                if (synDistance <= synThreshold) {
-                                    isMatch = true;
-                                    break;
+                    const foundIds = new Set((basicResults || []).map(w => w.id));
+                    let allResults = [...(basicResults || [])];
+                    
+                    // Step 2: AI morphological search (if Groq key configured)
+                    const apiKey = groqApiKey.trim();
+                    if (apiKey) {
+                        try {
+                            const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                                body: JSON.stringify({
+                                    model: 'llama-3.1-8b-instant',
+                                    messages: [{ role: 'user', content: `List all common English word forms of "${term}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${term}"` }],
+                                    temperature: 0.1, max_tokens: 200
+                                })
+                            });
+                            const data = await resp.json();
+                            let raw = data.choices?.[0]?.message?.content || '[]';
+                            raw = raw.replace(/```json|```/g, '').trim();
+                            const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== term).slice(0, 10);
+                            
+                            if (forms.length > 0) {
+                                const morphOrClauses = forms.map(f => `vocabulary.ilike.%${f}%,synonyms.ilike.%${f}%`).join(',');
+                                const { data: morphResults } = await supabase
+                                    .from('vocabulary_v4')
+                                    .select('*')
+                                    .or(morphOrClauses)
+                                    .neq('id', currentWord.id)
+                                    .is('deleted_at', null)
+                                    .limit(15);
+                                
+                                // Deduplicate
+                                for (const w of (morphResults || [])) {
+                                    if (!foundIds.has(w.id)) {
+                                        foundIds.add(w.id);
+                                        allResults.push(w);
+                                    }
                                 }
                             }
-                        }
-                        
-                        if (!isMatch && searchSynonyms.length > 0) {
-                            for (const searchSyn of searchSynonyms) {
-                                const synDistance = levenshtein(searchSyn, compareWord);
-                                const synMaxLen = Math.max(searchSyn.length, compareWord.length);
-                                const synThreshold = synMaxLen <= 4 ? 1 : Math.ceil(synMaxLen * 0.25);
-                                if (synDistance <= synThreshold) {
-                                    isMatch = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if (isMatch) {
-                            similar.push(word);
+                        } catch (aiErr) {
+                            console.warn('AI morphological search failed, using basic results only:', aiErr.message);
                         }
                     }
 
-                    if (similar.length === 0) {
+                    if (allResults.length === 0) {
                         alert('✅ No similar words found!');
                         return;
                     }
 
                     setMergeData({
                         current: currentWord,
-                        similar: similar
+                        similar: allResults
                     });
                     setShowMergeModal(true);
 
@@ -3708,7 +3681,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.91</span>
+                                        English Booster <span className="version-text">v11.92</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3781,21 +3754,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 
                                 {/* 🆕 V11.58: Search mode toggle AFTER input */}
                                 <button 
-                                    onClick={() => setSearchMode((searchMode + 1) % 3)} 
+                                    onClick={() => setSearchMode((searchMode + 1) % 2)} 
                                     className={`p-2 lg:p-3 rounded-xl border transition-colors flex-shrink-0 ${
                                         searchMode === 0 ? 'border-slate-700 text-slate-500' :
-                                        searchMode === 1 ? 'bg-blue-500/20 border-blue-500 text-blue-400' :
                                         'bg-purple-500/20 border-purple-500 text-purple-400'
                                     } ${deepSearchLoading ? 'animate-pulse' : ''}`}
                                     title={
-                                        searchMode === 0 ? 'Search: Vocabulary only' :
-                                        searchMode === 1 ? 'Search: Vocabulary + Synonyms' :
-                                        'Search: AI Deep Search - AI generates 5-8 synonyms of your search term and searches all vocabulary and synonym fields for matches'
+                                        searchMode === 0 ? 'Search: Vocabulary + Synonyms' :
+                                        'Search: AI Deep Search - AI generates synonyms and searches all fields'
                                     }
                                 >
                                     <i className={`fas ${
                                         searchMode === 0 ? 'fa-search' :
-                                        searchMode === 1 ? 'fa-search-plus' :
                                         'fa-brain'
                                     } text-sm`}></i>
                                 </button>
@@ -3846,7 +3816,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <th className="p-5 w-32">Difficulty</th>
                                         <th className="p-5 w-64 text-indigo-400">Vocabulary</th>
                                         <th className="p-5 w-40">Family</th>
-                                        <th className={`p-5 w-64 ${searchMode === 1 ? 'text-blue-400' : ''}`}>Synonyms</th>
+                                        <th className={`p-5 w-64 ${search ? 'text-blue-400' : ''}`}>Synonyms</th>
                                         <th className="p-5">Context</th>
                                         <th className="p-5 text-right pr-10 w-48 font-black">Actions</th>
                                     </tr>
@@ -3860,9 +3830,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
                                                 onClick={() => speakText(w.vocabulary, 1.0)}
                                                 title="Click to hear pronunciation"
-                                            >{search && (searchMode === 0 || searchMode === 1) ? highlightMatch(w.vocabulary, search) : w.vocabulary}</td>
+                                            >{search ? highlightMatch(w.vocabulary, search) : w.vocabulary}</td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || '—'}</span></td>
-                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{search && searchMode === 1 ? (w.synonyms ? highlightMatch(w.synonyms, search) : '—') : (w.synonyms || '—')}</td>
+                                            <td className="p-5 font-bold text-slate-100 text-sm italic">{search ? (w.synonyms ? highlightMatch(w.synonyms, search) : '—') : (w.synonyms || '—')}</td>
                                             <td 
                                                 className="p-5 text-sm text-slate-400 italic leading-relaxed cursor-pointer hover:text-slate-200 transition-colors"
                                                 onClick={() => w.context && speakText(w.context, 1.0)}
@@ -3956,13 +3926,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             onClick={() => speakText(w.vocabulary, 1.0)}
                                             title="Click to hear pronunciation"
                                         >
-                                            {search && (searchMode === 0 || searchMode === 1) ? highlightMatch(w.vocabulary, search) : w.vocabulary}
+                                            {search ? highlightMatch(w.vocabulary, search) : w.vocabulary}
                                         </div>
                                         
                                         {w.synonyms && (
                                             <div className="mb-4">
                                                 <div className="text-[10px] uppercase font-black text-slate-500 mb-1">Synonyms</div>
-                                                <div className="text-sm font-bold text-slate-100 italic">{search && searchMode === 1 ? highlightMatch(w.synonyms, search) : w.synonyms}</div>
+                                                <div className="text-sm font-bold text-slate-100 italic">{search ? highlightMatch(w.synonyms, search) : w.synonyms}</div>
                                             </div>
                                         )}
                                         
