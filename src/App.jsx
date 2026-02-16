@@ -1150,7 +1150,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             // Mode 2: AI Deep Search
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -1682,7 +1682,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -1786,7 +1786,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -1854,7 +1854,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -2029,7 +2029,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -2096,7 +2096,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         } else if (searchMode === 1) {
                             const synonyms = await getAISynonyms(search);
                             if (synonyms.length > 0) {
-                                const searchTerms = [search, ...synonyms].map(term => 
+                                const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
                                 ).join(',');
                                 query = query.or(searchTerms);
@@ -2835,8 +2835,8 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     let raw = data.choices?.[0]?.message?.content || '[]';
                     raw = raw.replace(/```json|```/g, '').trim();
                     const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== t.toLowerCase()).slice(0, 10);
-                    // Search each form in DB
-                    const searchTerms = forms.map(f => `vocabulary.ilike.%${f}%,synonyms.ilike.%${f}%`).join(',');
+                    // Search each form in DB — AI mode: only vocabulary column
+                    const searchTerms = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
                     if (searchTerms) {
                         const { data: morphData } = await supabase
                             .from('vocabulary_v4')
@@ -2897,6 +2897,8 @@ Respond ONLY in this JSON format (no markdown, no backticks):
 ${prompt}
 
 MANDATORY RULES FOR "${word}" (${currentFamily}):
+- Synonyms MUST be EXACT synonyms: truly interchangeable with "${word}", same core meaning, same grammatical family (${currentFamily})
+- DO NOT include loosely related or tangential words — only true synonyms that could directly replace "${word}"
 - If ${currentFamily} = "Noun": Synonyms MUST be nouns. Context MUST use "${word}" as a noun.
 - If ${currentFamily} = "Verb": Synonyms MUST be verbs. Context MUST use "${word}" as a verb (conjugate if needed: ${word}, ${word}s, ${word}ed, ${word}ing).
 - If ${currentFamily} = "Adjective": Synonyms MUST be adjectives. Context MUST use "${word}" as an adjective describing a noun.
@@ -2904,6 +2906,7 @@ MANDATORY RULES FOR "${word}" (${currentFamily}):
 - If ${currentFamily} = "Phrasal Verb": Synonyms MUST be phrasal verbs. Context MUST use "${word}" as a phrasal verb.
 - If ${currentFamily} = "Idiom": Synonyms MUST be idioms/expressions. Context MUST use "${word}" as an idiomatic expression.
 - If ${currentFamily} = "Preposition": Synonyms MUST be prepositions. Context MUST use "${word}" as a preposition.
+- Context sentence MUST help understand the meaning of "${word}" — a reader should be able to infer what it means from context.
 
 RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
@@ -2924,7 +2927,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                         content: prompt
                                     }
                                 ],
-                                temperature: 0.7,
+                                temperature: 0.4,
                                 max_tokens: 500
                             })
                         }
@@ -3161,21 +3164,23 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
 
 For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggestions:
 
-1. SYNONYMS: 2-4 DIFFERENT/BETTER British English synonyms (comma-separated)
-   - MANDATORY: All synonyms MUST be ${currentFamily}s (same as "${word}")
+1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)
+   - MANDATORY: All synonyms MUST be ${currentFamily}s (same grammatical family as "${word}")
+   - MANDATORY: Synonyms must be INTERCHANGEABLE with "${word}" in most contexts — they must share the same core meaning
+   - DO NOT include loosely related words — only true synonyms that could replace "${word}" directly
    - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
-2. CONTEXT: An ALTERNATIVE natural sentence (12-15 words) in British English
+2. CONTEXT: A natural sentence (12-15 words) in British English that HELPS UNDERSTAND THE MEANING of "${word}"
    ⛔️ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
    ⛔️ DO NOT use synonyms instead of "${word}"
-   ✅ REQUIRED: ${contextExamples[currentFamily] || `Use "${word}" correctly`}
-
+   ✅ REQUIRED: ${contextExamples[currentFamily] || \`Use "\${word}" correctly\`}
+   ✅ The sentence should clearly illustrate what "${word}" means — a reader unfamiliar with the word should be able to infer its meaning from the context
 
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
 
 FINAL MANDATORY RULES:
-- Synonyms = ${currentFamily}s only (NOT other grammatical types)
-- Context = use "${word}" as a ${currentFamily} (NOT as different grammatical function)
+- Synonyms = EXACT ${currentFamily} synonyms only (interchangeable, same meaning)
+- Context = use "${word}" as a ${currentFamily}, and the sentence must help understand the meaning
 - Family field in JSON = "${currentFamily}" (DO NOT modify)
 
 Respond ONLY in this exact JSON format (no markdown, no backticks):
@@ -3195,7 +3200,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         body: JSON.stringify({
                             model: 'llama-3.1-8b-instant',
                             messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.7,
+                            temperature: 0.4,
                             max_tokens: 500
                         })
                     });
@@ -3358,7 +3363,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         raw = raw.replace(/```json|```/g, '').trim();
                         const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== term).slice(0, 10);
                         
-                        const allTerms = [term, ...forms];
+                        const allTerms = [...forms];
                         const orClauses = allTerms.map(f => `vocabulary.ilike.%${f}%`).join(',');
                         const { data: results } = await supabase
                             .from('vocabulary_v4')
@@ -3672,7 +3677,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.93</span>
+                                        English Booster <span className="version-text">v11.94</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
