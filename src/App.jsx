@@ -3536,11 +3536,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         modified_at: new Date().toISOString()
                     };
                     
-                        id: editingWord.id,
-                        hasHistory: !!updateDataWithHistory.previous_version,
-                        modified_at: updateDataWithHistory.modified_at
-                    });
-                    
                     await supabase.from('vocabulary_v4').update(updateDataWithHistory).eq('id', editingWord.id);
                     
                     // ðŸ†• V11.38: Properly preserve all fields when updating
