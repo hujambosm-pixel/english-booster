@@ -1150,7 +1150,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
                             // Mode 2: AI Deep Search
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1209,6 +1214,30 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
             // 🆕 V11.2: Get AI synonyms for deep search
+            // 🆕 V11.99: Translate Spanish to English before AI search
+            async function translateIfSpanish(word) {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey) return word;
+                try {
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: `Is "${word}" a Spanish word? If YES, translate it to the most common single English equivalent. If NO (it's already English), return it unchanged. Reply with ONLY the English word, nothing else.` }],
+                            temperature: 0.0,
+                            max_tokens: 30
+                        })
+                    });
+                    if (!response.ok) return word;
+                    const data = await response.json();
+                    const result = (data.choices?.[0]?.message?.content || word).trim().toLowerCase();
+                    return result || word;
+                } catch(e) {
+                    return word;
+                }
+            }
+
             // 🆕 V11.96: Unified AI search — exact synonyms + morphological forms (deterministic)
             async function getAIRelatedWords(word, { setLoading = null } = {}) {
                 const apiKey = groqApiKey.trim();
@@ -1226,27 +1255,23 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             model: 'llama-3.1-8b-instant',
                             messages: [{
                                 role: 'user',
-                                content: `You are a precise English vocabulary assistant. For the word/expression "${word}", provide two categories:
+                                content: `You are a precise English vocabulary assistant. For the English word/expression "${word}", provide two categories:
 
-IMPORTANT: If "${word}" is a Spanish word, first translate it to English, then provide synonyms and forms for the ENGLISH translation(s).
-
-CATEGORY A — EXACT SYNONYMS (5-8 English words that are truly interchangeable with "${word}" and share the same core meaning):
+CATEGORY A — EXACT SYNONYMS (5-8 words that are truly interchangeable with "${word}" and share the same core meaning):
 - Only words that could DIRECTLY REPLACE "${word}" in most sentences
 - Must be the same grammatical type (noun for noun, verb for verb, etc.)
 - NO loosely related words, NO compounds containing "${word}", NO words that merely share a theme
-- If "${word}" is Spanish, provide English synonyms of its English translation
 
-CATEGORY B — GRAMMATICAL FORMS (all inflected/derived English forms):
+CATEGORY B — GRAMMATICAL FORMS (all inflected/derived forms of "${word}" itself):
 - Past tense, past participle, gerund/present participle, third person singular
-- Noun forms, adjective forms, adverb forms
-- Related phrasal verbs if applicable
+- Noun forms, adjective forms, adverb forms derived from "${word}"
+- Related phrasal verbs if "${word}" is a verb
 
 Combine both categories into ONE flat JSON array. No duplicates. Do NOT include "${word}" itself.
 
 Return ONLY the JSON array, nothing else.
 Example for "sturdy": ["robust","solid","strong","durable","tough","stout","hardy","sturdily","sturdier","sturdiest","sturdiness"]
-Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]
-Example for "correr" (Spanish): ["run","sprint","dash","jog","race","ran","running","runs","runner"]`
+Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]`
                             }],
                             temperature: 0.0,
                             max_tokens: 300
@@ -1331,80 +1356,62 @@ Return ONLY valid JSON, no explanation.` }],
             };
 
             // 🆕 V11.97: Bulk spell check for filtered Vocabulary table
-            const [bulkSpellResult, setBulkSpellResult] = useState(null);
-            const [bulkSpellLoading, setBulkSpellLoading] = useState(false);
+            const [globalDupResult, setGlobalDupResult] = useState(null); // 🆕 V11.99: Global find duplicates
+            const [globalDupLoading, setGlobalDupLoading] = useState(false);
             
-            const checkSpellingBulk = async () => {
-                const apiKey = groqApiKey.trim();
-                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
+            // 🆕 V11.99: Global find duplicates across all filtered words
+            const findGlobalDuplicates = async () => {
                 if (!words || words.length === 0) { alert('No words to check.'); return; }
                 
-                setBulkSpellLoading(true);
-                setBulkSpellResult(null);
+                setGlobalDupLoading(true);
+                setGlobalDupResult(null);
                 
                 try {
-                    // 🆕 V11.98: Batch in groups of 25 to avoid truncated responses
-                    const BATCH_SIZE = 25;
-                    const allErrors = [];
+                    const duplicateGroups = [];
+                    const checkedPairs = new Set();
                     
-                    for (let batchStart = 0; batchStart < words.length; batchStart += BATCH_SIZE) {
-                        const batch = words.slice(batchStart, batchStart + BATCH_SIZE);
-                        const entries = batch.map((w, i) => {
-                            const globalIdx = batchStart + i;
-                            // Keep entries compact: truncate synonyms and context
-                            const syns = (w.synonyms || '').slice(0, 120);
-                            const ctx = (w.context || '').slice(0, 120);
-                            return `${globalIdx}|${w.vocabulary}|${syns}|${ctx}`;
-                        }).join('\n');
+                    for (const word of words) {
+                        const term = word.vocabulary.trim().toLowerCase();
+                        if (term.length < 2) continue;
                         
-                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning). Use British English spelling (colour not color, organise not organize, etc.).
-
-Each line: index|vocabulary|synonyms|context
-
-${entries}
-
-If ALL correctly spelled, respond: {"ok": true}
-If errors found, respond: {"ok": false, "errors": [{"index": 0, "field": "vocabulary", "wrong": "misspeled", "correct": "misspelled"}]}
-ONLY valid JSON, nothing else.` }],
-                                temperature: 0.0,
-                                max_tokens: 1000
-                            })
-                        });
+                        // Search for similar words using same logic as Find & Merge (lupa mode)
+                        const { data } = await supabase
+                            .from('vocabulary_v4')
+                            .select('id, vocabulary, synonyms, family')
+                            .or(`vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`)
+                            .neq('id', word.id)
+                            .is('deleted_at', null)
+                            .limit(10);
                         
-                        const data = await response.json();
-                        let raw = data.choices?.[0]?.message?.content || '{}';
-                        raw = raw.replace(/```json|```/g, '').trim();
-                        
-                        try {
-                            const result = JSON.parse(raw);
-                            if (!result.ok && result.errors) {
-                                allErrors.push(...result.errors.map(err => ({
-                                    ...err,
-                                    vocabulary: words[err.index]?.vocabulary || '?'
-                                })));
+                        if (data && data.length > 0) {
+                            for (const match of data) {
+                                // Create a unique pair key to avoid duplicates
+                                const pairKey = [word.id, match.id].sort().join('-');
+                                if (!checkedPairs.has(pairKey)) {
+                                    checkedPairs.add(pairKey);
+                                    duplicateGroups.push({
+                                        source: { id: word.id, vocabulary: word.vocabulary, synonyms: word.synonyms, family: word.family },
+                                        match: { id: match.id, vocabulary: match.vocabulary, synonyms: match.synonyms, family: match.family }
+                                    });
+                                }
                             }
-                        } catch(parseErr) {
-                            console.warn('Batch parse error, skipping batch:', parseErr.message);
                         }
                     }
                     
-                    if (allErrors.length === 0) {
-                        setBulkSpellResult({ ok: true });
-                        setTimeout(() => setBulkSpellResult(null), 5000);
+                    if (duplicateGroups.length === 0) {
+                        setGlobalDupResult({ ok: true });
+                        setTimeout(() => setGlobalDupResult(null), 5000);
                     } else {
-                        setBulkSpellResult({ ok: false, errors: allErrors });
+                        setGlobalDupResult({ ok: false, groups: duplicateGroups });
                     }
                 } catch(e) {
-                    console.error('Bulk spell check error:', e);
-                    setBulkSpellResult({ ok: false, errors: [{ index: 0, field: 'all', wrong: 'Error', correct: 'Spell check failed: ' + e.message, vocabulary: '—' }] });
+                    console.error('Global find duplicates error:', e);
+                    alert('❌ Error: ' + e.message);
                 } finally {
-                    setBulkSpellLoading(false);
+                    setGlobalDupLoading(false);
                 }
+            };
+
             };
 
             // 🆕 V11.2: Load recycle bin
@@ -1843,7 +1850,12 @@ ONLY valid JSON, nothing else.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1947,7 +1959,12 @@ ONLY valid JSON, nothing else.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2015,7 +2032,12 @@ ONLY valid JSON, nothing else.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2190,7 +2212,12 @@ ONLY valid JSON, nothing else.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2257,7 +2284,12 @@ ONLY valid JSON, nothing else.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
+                            const translatedSearch = await translateIfSpanish(search);
+                            if (translatedSearch !== search.toLowerCase()) {
+                                setSearch(translatedSearch);
+                            }
+                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2800,7 +2832,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             }
 
             const resetFilters = () => {
-                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setBulkSpellResult(null);
+                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setGlobalDupResult(null);
                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
@@ -3810,7 +3842,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.98</span>
+                                        English Booster <span className="version-text">v11.99</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3844,17 +3876,17 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <i className="fas fa-history text-xl lg:text-base"></i>
                                             </button>
                                             
-                                            {/* 🆕 V11.98: Bulk spell check */}
+                                            {/* 🆕 V11.99: Global find & merge duplicates */}
                                             <button 
-                                                onClick={checkSpellingBulk}
-                                                disabled={bulkSpellLoading || words.length === 0}
+                                                onClick={findGlobalDuplicates}
+                                                disabled={globalDupLoading || words.length === 0}
                                                 className={`p-2 lg:p-2 rounded-lg border transition-colors ${
-                                                    bulkSpellLoading ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 animate-pulse' 
-                                                    : 'border-slate-700/30 text-slate-500 hover:text-teal-400 hover:border-teal-500/30'
+                                                    globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
+                                                    : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
                                                 }`}
-                                                title={`Spell check ${words.length} filtered words (British English)`}
+                                                title={`Find duplicates in ${words.length} filtered words`}
                                             >
-                                                <i className="fas fa-spell-check text-xl lg:text-base"></i>
+                                                <span className="text-xl lg:text-base">🔀</span>
                                             </button>
                                         </div>
                                         
@@ -3906,7 +3938,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     title={
                                         searchMode === 0 
                                             ? '🔍 Standard Search: finds text matches in Vocabulary + Synonyms columns' 
-                                            : '🧠 AI Search: generates exact synonyms & grammatical forms, then searches only Vocabulary column. Supports Spanish words.'
+                                            : '🧠 AI Search: translates Spanish words to English, then generates exact synonyms & grammatical forms. Searches only the Vocabulary column.'
                                     }
                                 >
                                     <i className={`fas ${
@@ -3955,25 +3987,35 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     </header>
 
                     <main className="w-full mx-auto px-6 flex-1 overflow-hidden py-6">
-                        {/* 🆕 V11.97: Bulk spell check results */}
-                        {bulkSpellResult && (
-                            <div className={`mb-3 rounded-2xl p-4 text-sm ${bulkSpellResult.ok ? 'bg-green-900/20 border border-green-500/30' : 'bg-red-900/20 border border-red-500/30'}`}>
-                                {bulkSpellResult.ok ? (
-                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> All {words.length} filtered words are correctly spelled!</div>
+                        {/* 🆕 V11.99: Global find duplicates results */}
+                        {globalDupResult && (
+                            <div className={`mb-3 rounded-2xl p-4 text-sm ${globalDupResult.ok ? 'bg-green-900/20 border border-green-500/30' : 'bg-orange-900/20 border border-orange-500/30'}`}>
+                                {globalDupResult.ok ? (
+                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> No duplicates found in {words.length} filtered words!</div>
                                 ) : (
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
-                                            <span className="text-red-400 font-bold text-xs uppercase flex items-center gap-2"><i className="fas fa-exclamation-triangle"></i> Spelling errors found in {bulkSpellResult.errors?.length || 0} field(s)</span>
-                                            <button onClick={() => setBulkSpellResult(null)} className="text-slate-400 hover:text-white text-lg">&times;</button>
+                                            <span className="text-orange-400 font-bold text-xs uppercase flex items-center gap-2"><span>🔀</span> Found {globalDupResult.groups?.length || 0} potential duplicate pair(s)</span>
+                                            <button onClick={() => setGlobalDupResult(null)} className="text-slate-400 hover:text-white text-lg">&times;</button>
                                         </div>
-                                        <div className="grid gap-1.5 max-h-48 overflow-y-auto custom-scroll">
-                                            {(bulkSpellResult.errors || []).map((err, i) => (
-                                                <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/50 rounded-lg px-3 py-2">
-                                                    <span className="text-white font-bold min-w-[100px] truncate">{err.vocabulary}</span>
-                                                    <span className="text-slate-500 uppercase font-bold text-[9px] min-w-[60px]">{err.field}</span>
-                                                    <span className="text-red-400 line-through">{err.wrong}</span>
-                                                    <i className="fas fa-arrow-right text-slate-600 text-[8px]"></i>
-                                                    <span className="text-green-400 font-bold">{err.correct}</span>
+                                        <div className="grid gap-1.5 max-h-64 overflow-y-auto custom-scroll">
+                                            {(globalDupResult.groups || []).map((g, i) => (
+                                                <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/50 rounded-xl px-3 py-2.5 hover:bg-slate-700/50 transition-colors">
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-white font-bold">{g.source.vocabulary}</span>
+                                                        <span className="text-slate-600 mx-1.5">↔</span>
+                                                        <span className="text-orange-300 font-bold">{g.match.vocabulary}</span>
+                                                        {g.source.family && <span className="text-slate-600 ml-2 text-[9px] uppercase">{g.source.family}</span>}
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => {
+                                                            const fullWord = words.find(w => w.id === g.source.id);
+                                                            if (fullWord) handleFindSimilar(fullWord);
+                                                        }}
+                                                        className="text-[9px] font-black uppercase border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 px-2.5 py-1 rounded-full transition-colors whitespace-nowrap"
+                                                    >
+                                                        Merge
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
