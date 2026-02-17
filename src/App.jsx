@@ -1148,7 +1148,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
                             // Mode 2: AI Deep Search
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1207,11 +1207,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
             // 🆕 V11.2: Get AI synonyms for deep search
-            async function getAISynonyms(word) {
+            // 🆕 V11.95: Unified AI search — synonyms + morphological forms
+            async function getAIRelatedWords(word, { setLoading = null } = {}) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) return [];
 
-                setDeepSearchLoading(true);
+                if (setLoading) setLoading(true);
                 try {
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
@@ -1223,24 +1224,38 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             model: 'llama-3.1-8b-instant',
                             messages: [{
                                 role: 'user',
-                                content: `List 5-8 synonyms for "${word}" in British English. Respond ONLY with comma-separated words, no explanations: synonym1, synonym2, synonym3`
+                                content: `For the English word/expression "${word}", list ALL related words in two categories:
+1. SYNONYMS: 4-6 words with the same or very similar meaning (interchangeable)
+2. WORD FORMS: all common grammatical forms (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs)
+
+Return ONLY a JSON array of unique strings combining both categories, no duplicates, no explanation.
+Example for "write": ["compose","draft","pen","author","wrote","written","writing","writer","write off","write up"]
+Example for "happy": ["joyful","cheerful","glad","content","pleased","happily","happiness","happier","happiest"]
+Word: "${word}"`
                             }],
-                            temperature: 0.5,
-                            max_tokens: 100
+                            temperature: 0.2,
+                            max_tokens: 250
                         })
                     });
 
                     if (!response.ok) return [];
 
                     const data = await response.json();
-                    const synonymsText = data.choices?.[0]?.message?.content || '';
-                    const synonyms = synonymsText.split(',').map(s => s.trim()).filter(s => s);
-                    return synonyms;
+                    let raw = data.choices?.[0]?.message?.content || '[]';
+                    raw = raw.replace(/```json|```/g, '').trim();
+                    
+                    try {
+                        const results = JSON.parse(raw);
+                        return results.filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 15);
+                    } catch(e) {
+                        // Fallback: try comma-separated
+                        return raw.split(',').map(s => s.trim().replace(/[\[\]"]/g, '')).filter(s => s && s.toLowerCase() !== word.toLowerCase());
+                    }
                 } catch (error) {
-                    console.error('Deep Search error:', error);
+                    console.error('AI Related Words error:', error);
                     return [];
                 } finally {
-                    setDeepSearchLoading(false);
+                    if (setLoading) setLoading(false);
                 }
             }
 
@@ -1680,7 +1695,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1784,7 +1799,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1852,7 +1867,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2027,7 +2042,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2094,7 +2109,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            const synonyms = await getAISynonyms(search);
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2814,28 +2829,14 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                 }
             };
 
-            // V11.85: Morphological search via Groq
+            // 🆕 V11.95: Unified AI search for add modal — uses getAIRelatedWords
             const searchMorphological = async (term) => {
-                const apiKey = groqApiKey.trim();
-                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
+                if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); return; }
                 if (!term || term.trim().length < 2) return;
                 const t = term.trim();
                 setDupCheck(prev => ({ ...prev, morphLoading: true, morphForms: [] }));
                 try {
-                    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: `List all common English word forms of "${t}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${t}"` }],
-                            temperature: 0.1, max_tokens: 200
-                        })
-                    });
-                    const data = await resp.json();
-                    let raw = data.choices?.[0]?.message?.content || '[]';
-                    raw = raw.replace(/```json|```/g, '').trim();
-                    const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== t.toLowerCase()).slice(0, 10);
-                    // Search each form in DB — AI mode: only vocabulary column
+                    const forms = await getAIRelatedWords(t);
                     const searchTerms = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
                     if (searchTerms) {
                         const { data: morphData } = await supabase
@@ -2843,8 +2844,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                             .select('id, vocabulary, synonyms, context')
                             .or(searchTerms)
                             .is('deleted_at', null)
-                            .limit(10);
-                        // Deduplicate: remove any morphForms already shown in exact/partial
+                            .limit(15);
                         setDupCheck(prev => {
                             const existingIds = new Set([...prev.exact, ...prev.partial].map(w => w.id));
                             const deduped = (morphData || []).filter(w => !existingIds.has(w.id));
@@ -3345,34 +3345,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             .limit(20);
                         allResults = data || [];
                     } else {
-                        // 🧠 Brain mode: AI generates forms → search ONLY vocabulary
-                        const apiKey = groqApiKey.trim();
-                        if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); setFindingSimilar(null); return; }
+                        // 🧠 Brain mode: AI generates synonyms + forms → search ONLY vocabulary
+                        if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); setFindingSimilar(null); return; }
                         
-                        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'user', content: `List all common English word forms of "${term}" (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs). Return ONLY a JSON array of strings, no explanation. Example: ["write","wrote","written","writing","writer","write off","write up"]. Word: "${term}"` }],
-                                temperature: 0.1, max_tokens: 200
-                            })
-                        });
-                        const data = await resp.json();
-                        let raw = data.choices?.[0]?.message?.content || '[]';
-                        raw = raw.replace(/```json|```/g, '').trim();
-                        const forms = JSON.parse(raw).filter(f => f.toLowerCase() !== term).slice(0, 10);
-                        
-                        const allTerms = [...forms];
-                        const orClauses = allTerms.map(f => `vocabulary.ilike.%${f}%`).join(',');
-                        const { data: results } = await supabase
-                            .from('vocabulary_v4')
-                            .select('*')
-                            .or(orClauses)
-                            .neq('id', currentWord.id)
-                            .is('deleted_at', null)
-                            .limit(20);
-                        allResults = results || [];
+                        const forms = await getAIRelatedWords(term);
+                        if (forms.length > 0) {
+                            const orClauses = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
+                            const { data: results } = await supabase
+                                .from('vocabulary_v4')
+                                .select('*')
+                                .or(orClauses)
+                                .neq('id', currentWord.id)
+                                .is('deleted_at', null)
+                                .limit(20);
+                            allResults = results || [];
+                        }
                     }
 
                     if (allResults.length === 0) {
@@ -3677,7 +3664,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.94</span>
+                                        English Booster <span className="version-text">v11.95</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
