@@ -1327,6 +1327,69 @@ Return ONLY valid JSON, no explanation.` }],
                 }
             };
 
+            // 🆕 V11.97: Bulk spell check for filtered Vocabulary table
+            const [bulkSpellResult, setBulkSpellResult] = useState(null);
+            const [bulkSpellLoading, setBulkSpellLoading] = useState(false);
+            
+            const checkSpellingBulk = async () => {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
+                if (!words || words.length === 0) { alert('No words to check.'); return; }
+                
+                setBulkSpellLoading(true);
+                setBulkSpellResult(null);
+                
+                try {
+                    // Build compact text of all filtered words
+                    const entries = words.map((w, i) => 
+                        `${i}|${w.vocabulary}|${w.synonyms || ''}|${w.context || ''}`
+                    ).join('\n');
+                    
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning). Use British English spelling (colour not color, organise not organize, etc.).
+
+Each line has format: index|vocabulary|synonyms|context
+Check ALL fields for spelling errors.
+
+${entries}
+
+If ALL entries are correctly spelled, respond EXACTLY: {"ok": true}
+If there are errors, respond: {"ok": false, "errors": [{"index": 0, "field": "vocabulary|synonyms|context", "wrong": "misspelled", "correct": "correct spelling"}]}
+Return ONLY valid JSON, nothing else.` }],
+                            temperature: 0.0,
+                            max_tokens: 2000
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    let raw = data.choices?.[0]?.message?.content || '{}';
+                    raw = raw.replace(/```json|```/g, '').trim();
+                    const result = JSON.parse(raw);
+                    
+                    // Enrich errors with word data
+                    if (!result.ok && result.errors) {
+                        result.errors = result.errors.map(err => ({
+                            ...err,
+                            vocabulary: words[err.index]?.vocabulary || '?'
+                        }));
+                    }
+                    
+                    setBulkSpellResult(result);
+                    if (result.ok) {
+                        setTimeout(() => setBulkSpellResult(null), 5000);
+                    }
+                } catch(e) {
+                    console.error('Bulk spell check error:', e);
+                    setBulkSpellResult({ ok: false, errors: [{ index: 0, field: 'all', wrong: 'Error', correct: 'Spell check failed: ' + e.message, vocabulary: '—' }] });
+                } finally {
+                    setBulkSpellLoading(false);
+                }
+            };
+
             // 🆕 V11.2: Load recycle bin
             async function loadRecycleBin() {
                 const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
@@ -2720,7 +2783,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             }
 
             const resetFilters = () => {
-                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setShowSearchInfo(false);
+                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setShowSearchInfo(false); setBulkSpellResult(null);
                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
@@ -3401,13 +3464,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     let allResults = [];
                     
                     if (!useAI) {
-                        // 🔍 Lupa mode: ilike on vocabulary + synonyms
-                        const searchTerms = [term, ...currentSyns];
-                        const orClauses = searchTerms.map(t => `vocabulary.ilike.%${t}%,synonyms.ilike.%${t}%`).join(',');
+                        // 🔍 Lupa mode: ilike on vocabulary + synonyms (same logic as main search & modal +)
                         const { data } = await supabase
                             .from('vocabulary_v4')
                             .select('*')
-                            .or(orClauses)
+                            .or(`vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`)
                             .neq('id', currentWord.id)
                             .is('deleted_at', null)
                             .limit(20);
@@ -3732,7 +3793,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.96</span>
+                                        English Booster <span className="version-text">v11.97</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3799,6 +3860,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-wrap items-center gap-2 lg:gap-3 justify-center lg:justify-start relative">
                                 {/* Reset button */}
                                 <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white flex-shrink-0"><i className="fas fa-broom text-sm"></i></button>
+                                
+                                {/* 🆕 V11.97: Bulk spell check button */}
+                                <button 
+                                    onClick={checkSpellingBulk}
+                                    disabled={bulkSpellLoading || words.length === 0}
+                                    className={`p-2 lg:p-3 rounded-xl border flex-shrink-0 transition-colors ${
+                                        bulkSpellLoading ? 'border-teal-500 text-teal-400 animate-pulse' :
+                                        'border-slate-700 text-slate-600 hover:text-teal-400 hover:border-teal-500/50'
+                                    }`}
+                                    title={`Spell check ${words.length} filtered words (British English)`}
+                                >
+                                    <i className={`fas fa-spell-check text-sm`}></i>
+                                </button>
                                 
                                 {/* 🆕 V11.58: Search input FIRST */}
                                 <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="px-2 lg:px-4 py-2 lg:py-2.5 rounded-xl text-sm w-24 sm:w-40 lg:w-56 shadow-inner" />
@@ -3886,6 +3960,32 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     </header>
 
                     <main className="w-full mx-auto px-6 flex-1 overflow-hidden py-6">
+                        {/* 🆕 V11.97: Bulk spell check results */}
+                        {bulkSpellResult && (
+                            <div className={`mb-3 rounded-2xl p-4 text-sm ${bulkSpellResult.ok ? 'bg-green-900/20 border border-green-500/30' : 'bg-red-900/20 border border-red-500/30'}`}>
+                                {bulkSpellResult.ok ? (
+                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> All {words.length} filtered words are correctly spelled!</div>
+                                ) : (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <span className="text-red-400 font-bold text-xs uppercase flex items-center gap-2"><i className="fas fa-exclamation-triangle"></i> Spelling errors found in {bulkSpellResult.errors?.length || 0} field(s)</span>
+                                            <button onClick={() => setBulkSpellResult(null)} className="text-slate-400 hover:text-white text-lg">&times;</button>
+                                        </div>
+                                        <div className="grid gap-1.5 max-h-48 overflow-y-auto custom-scroll">
+                                            {(bulkSpellResult.errors || []).map((err, i) => (
+                                                <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/50 rounded-lg px-3 py-2">
+                                                    <span className="text-white font-bold min-w-[100px] truncate">{err.vocabulary}</span>
+                                                    <span className="text-slate-500 uppercase font-bold text-[9px] min-w-[60px]">{err.field}</span>
+                                                    <span className="text-red-400 line-through">{err.wrong}</span>
+                                                    <i className="fas fa-arrow-right text-slate-600 text-[8px]"></i>
+                                                    <span className="text-green-400 font-bold">{err.correct}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div onScroll={(e) => {if(e.target.scrollHeight - e.target.scrollTop <= e.target.clientHeight + 100 && hasMore && !loading) fetchWords(page)}} className="glass-card rounded-2xl h-full overflow-y-auto custom-scroll shadow-2xl">
                             <table className="desktop-table w-full text-left border-collapse">
                                 <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-md text-[10px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5 z-20">
