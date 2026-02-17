@@ -81,7 +81,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 deleteSynonyms: []
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
-            const [mergeAIMode, setMergeAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Find & Merge
+            const [mergeAIMode, setMergeAIMode] = useState(false);
+            const [showSearchInfo, setShowSearchInfo] = useState(false); // 🆕 V11.96
+            const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
+            const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
             const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
             
@@ -1207,7 +1210,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
             // 🆕 V11.2: Get AI synonyms for deep search
-            // 🆕 V11.95: Unified AI search — synonyms + morphological forms
+            // 🆕 V11.96: Unified AI search — exact synonyms + morphological forms (deterministic)
             async function getAIRelatedWords(word, { setLoading = null } = {}) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) return [];
@@ -1224,17 +1227,26 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             model: 'llama-3.1-8b-instant',
                             messages: [{
                                 role: 'user',
-                                content: `For the English word/expression "${word}", list ALL related words in two categories:
-1. SYNONYMS: 4-6 words with the same or very similar meaning (interchangeable)
-2. WORD FORMS: all common grammatical forms (infinitive, past, past participle, gerund, noun forms, adjective forms, common phrasal verbs)
+                                content: `You are a precise English vocabulary assistant. For the word/expression "${word}", provide two categories:
 
-Return ONLY a JSON array of unique strings combining both categories, no duplicates, no explanation.
-Example for "write": ["compose","draft","pen","author","wrote","written","writing","writer","write off","write up"]
-Example for "happy": ["joyful","cheerful","glad","content","pleased","happily","happiness","happier","happiest"]
-Word: "${word}"`
+CATEGORY A — EXACT SYNONYMS (5-8 words that are truly interchangeable with "${word}" and share the same core meaning):
+- Only words that could DIRECTLY REPLACE "${word}" in most sentences
+- Must be the same grammatical type (noun for noun, verb for verb, etc.)
+- NO loosely related words, NO compounds containing "${word}", NO words that merely share a theme
+
+CATEGORY B — GRAMMATICAL FORMS (all inflected/derived forms of "${word}" itself):
+- Past tense, past participle, gerund/present participle, third person singular
+- Noun forms, adjective forms, adverb forms derived from "${word}"
+- Related phrasal verbs if "${word}" is a verb
+
+Combine both categories into ONE flat JSON array. No duplicates. Do NOT include "${word}" itself.
+
+Return ONLY the JSON array, nothing else.
+Example for "sturdy": ["robust","solid","strong","durable","tough","stout","hardy","sturdily","sturdier","sturdiest","sturdiness"]
+Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]`
                             }],
-                            temperature: 0.2,
-                            max_tokens: 250
+                            temperature: 0.0,
+                            max_tokens: 300
                         })
                     });
 
@@ -1246,7 +1258,7 @@ Word: "${word}"`
                     
                     try {
                         const results = JSON.parse(raw);
-                        return results.filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 15);
+                        return results.filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 20);
                     } catch(e) {
                         // Fallback: try comma-separated
                         return raw.split(',').map(s => s.trim().replace(/[\[\]"]/g, '')).filter(s => s && s.toLowerCase() !== word.toLowerCase());
@@ -1258,6 +1270,62 @@ Word: "${word}"`
                     if (setLoading) setLoading(false);
                 }
             }
+
+            // 🆕 V11.96: British English spell checker via Groq
+            const checkSpelling = async () => {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
+                
+                const vocabEl = document.querySelector('[name="vocabulary"]');
+                const synsEl = document.querySelector('[name="synonyms"]');
+                const ctxEl = document.querySelector('[name="context"]');
+                
+                const vocab = vocabEl?.value?.trim() || '';
+                const syns = synsEl?.value?.trim() || '';
+                const ctx = ctxEl?.value?.trim() || '';
+                
+                if (!vocab && !syns && !ctx) { alert('No text to check.'); return; }
+                
+                setSpellCheckLoading(true);
+                setSpellCheckResult(null);
+                
+                try {
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning) in these three fields. Use British English spelling (colour not color, organise not organize, etc.).
+
+VOCABULARY: "${vocab}"
+SYNONYMS: "${syns}"
+CONTEXT: "${ctx}"
+
+If ALL fields are correctly spelled, respond EXACTLY: {"ok": true}
+If there are spelling errors, respond with: {"ok": false, "errors": [{"field": "vocabulary|synonyms|context", "wrong": "misspelled word", "correct": "correct spelling"}]}
+
+Return ONLY valid JSON, no explanation.` }],
+                            temperature: 0.0,
+                            max_tokens: 300
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    let raw = data.choices?.[0]?.message?.content || '{}';
+                    raw = raw.replace(/```json|```/g, '').trim();
+                    const result = JSON.parse(raw);
+                    setSpellCheckResult(result);
+                    
+                    if (result.ok) {
+                        setTimeout(() => setSpellCheckResult(null), 3000);
+                    }
+                } catch(e) {
+                    console.error('Spell check error:', e);
+                    setSpellCheckResult({ ok: false, errors: [{ field: 'all', wrong: 'Error', correct: 'Spell check failed' }] });
+                } finally {
+                    setSpellCheckLoading(false);
+                }
+            };
 
             // 🆕 V11.2: Load recycle bin
             async function loadRecycleBin() {
@@ -2652,7 +2720,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             }
 
             const resetFilters = () => {
-                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0);
+                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setShowSearchInfo(false);
                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
@@ -3664,7 +3732,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.95</span>
+                                        English Booster <span className="version-text">v11.96</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3673,7 +3741,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -3728,7 +3796,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 lg:gap-3 justify-center lg:justify-start">
+                            <div className="flex flex-wrap items-center gap-2 lg:gap-3 justify-center lg:justify-start relative">
                                 {/* Reset button */}
                                 <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white flex-shrink-0"><i className="fas fa-broom text-sm"></i></button>
                                 
@@ -3752,6 +3820,33 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         'fa-brain'
                                     } text-sm`}></i>
                                 </button>
+                                
+                                {/* 🆕 V11.96: Search info icon */}
+                                <button 
+                                    onClick={() => setShowSearchInfo(!showSearchInfo)}
+                                    className="p-2 lg:p-3 rounded-xl border border-slate-700 text-slate-600 hover:text-slate-300 flex-shrink-0 relative"
+                                    title="How search works"
+                                >
+                                    <i className="fas fa-info-circle text-sm"></i>
+                                </button>
+                                {showSearchInfo && (
+                                    <div className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-600 rounded-2xl p-5 z-50 shadow-2xl w-96 text-sm" style={{maxWidth: 'calc(100vw - 2rem)'}}>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <span className="text-white font-black text-xs uppercase tracking-widest">How Search Works</span>
+                                            <button onClick={() => setShowSearchInfo(false)} className="text-slate-400 hover:text-white">&times;</button>
+                                        </div>
+                                        <div className="space-y-3 text-slate-300">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1"><i className="fas fa-search text-slate-400"></i><span className="font-bold text-white">Standard Search</span></div>
+                                                <p className="text-slate-400 text-xs leading-relaxed">Searches for text matches in both <span className="text-indigo-400">Vocabulary</span> and <span className="text-blue-400">Synonyms</span> columns. Finds any word containing your search text.</p>
+                                            </div>
+                                            <div className="border-t border-slate-700 pt-3">
+                                                <div className="flex items-center gap-2 mb-1"><i className="fas fa-brain text-purple-400"></i><span className="font-bold text-white">AI Search</span></div>
+                                                <p className="text-slate-400 text-xs leading-relaxed">AI generates <span className="text-purple-300">exact synonyms</span> and <span className="text-purple-300">grammatical forms</span> of your word, then searches only the <span className="text-indigo-400">Vocabulary</span> column for matches. Does NOT search Synonyms column. Does NOT include the original word.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 
                                 {/* 🆕 V11.58: Favourite filter AFTER search mode */}
                                 <button 
@@ -3857,7 +3952,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <span className="text-xl">{findingSimilar === w.id ? '⏳' : '🔀'}</span>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Undo button */}
                                                     <button 
                                                         onClick={() => handleUndo(w.id)}
@@ -3962,7 +4057,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -4520,8 +4615,40 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
+                                    {/* 🆕 V11.96: Spell check results */}
+                                    {spellCheckResult && (
+                                        <div className={`col-span-2 rounded-xl p-3 text-sm ${spellCheckResult.ok ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
+                                            {spellCheckResult.ok ? (
+                                                <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> All spelling correct!</div>
+                                            ) : (
+                                                <div>
+                                                    <div className="text-red-400 font-bold text-xs uppercase mb-2 flex items-center gap-2">
+                                                        <i className="fas fa-exclamation-triangle"></i> Spelling errors found
+                                                        <button type="button" onClick={() => setSpellCheckResult(null)} className="ml-auto text-slate-400 hover:text-white">&times;</button>
+                                                    </div>
+                                                    {(spellCheckResult.errors || []).map((err, i) => (
+                                                        <div key={i} className="flex items-center gap-2 text-xs py-1">
+                                                            <span className="text-slate-500 uppercase font-bold w-20">{err.field}</span>
+                                                            <span className="text-red-400 line-through">{err.wrong}</span>
+                                                            <i className="fas fa-arrow-right text-slate-600 text-[8px]"></i>
+                                                            <span className="text-green-400 font-bold">{err.correct}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="col-span-2 flex gap-4 mt-4">
-                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
+                                        <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setSpellCheckResult(null);}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
+                                        <button 
+                                            type="button"
+                                            onClick={checkSpelling}
+                                            disabled={spellCheckLoading}
+                                            className="px-4 py-3 rounded-2xl border border-teal-500/30 text-teal-400 hover:bg-teal-500/10 font-black uppercase text-[10px] transition-colors flex items-center gap-2"
+                                        >
+                                            <i className={`fas fa-spell-check ${spellCheckLoading ? 'animate-pulse' : ''}`}></i>
+                                            {spellCheckLoading ? 'Checking...' : 'Spell Check'}
+                                        </button>
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
