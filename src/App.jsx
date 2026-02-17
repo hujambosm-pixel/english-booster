@@ -82,7 +82,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
             const [mergeAIMode, setMergeAIMode] = useState(false);
-            const [showSearchInfo, setShowSearchInfo] = useState(false); // 🆕 V11.96
             const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
             const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
@@ -1229,21 +1228,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                 role: 'user',
                                 content: `You are a precise English vocabulary assistant. For the word/expression "${word}", provide two categories:
 
-CATEGORY A — EXACT SYNONYMS (5-8 words that are truly interchangeable with "${word}" and share the same core meaning):
+IMPORTANT: If "${word}" is a Spanish word, first translate it to English, then provide synonyms and forms for the ENGLISH translation(s).
+
+CATEGORY A — EXACT SYNONYMS (5-8 English words that are truly interchangeable with "${word}" and share the same core meaning):
 - Only words that could DIRECTLY REPLACE "${word}" in most sentences
 - Must be the same grammatical type (noun for noun, verb for verb, etc.)
 - NO loosely related words, NO compounds containing "${word}", NO words that merely share a theme
+- If "${word}" is Spanish, provide English synonyms of its English translation
 
-CATEGORY B — GRAMMATICAL FORMS (all inflected/derived forms of "${word}" itself):
+CATEGORY B — GRAMMATICAL FORMS (all inflected/derived English forms):
 - Past tense, past participle, gerund/present participle, third person singular
-- Noun forms, adjective forms, adverb forms derived from "${word}"
-- Related phrasal verbs if "${word}" is a verb
+- Noun forms, adjective forms, adverb forms
+- Related phrasal verbs if applicable
 
 Combine both categories into ONE flat JSON array. No duplicates. Do NOT include "${word}" itself.
 
 Return ONLY the JSON array, nothing else.
 Example for "sturdy": ["robust","solid","strong","durable","tough","stout","hardy","sturdily","sturdier","sturdiest","sturdiness"]
-Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]`
+Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]
+Example for "correr" (Spanish): ["run","sprint","dash","jog","race","ran","running","runs","runner"]`
                             }],
                             temperature: 0.0,
                             max_tokens: 300
@@ -1340,47 +1343,61 @@ Return ONLY valid JSON, no explanation.` }],
                 setBulkSpellResult(null);
                 
                 try {
-                    // Build compact text of all filtered words
-                    const entries = words.map((w, i) => 
-                        `${i}|${w.vocabulary}|${w.synonyms || ''}|${w.context || ''}`
-                    ).join('\n');
+                    // 🆕 V11.98: Batch in groups of 25 to avoid truncated responses
+                    const BATCH_SIZE = 25;
+                    const allErrors = [];
                     
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning). Use British English spelling (colour not color, organise not organize, etc.).
+                    for (let batchStart = 0; batchStart < words.length; batchStart += BATCH_SIZE) {
+                        const batch = words.slice(batchStart, batchStart + BATCH_SIZE);
+                        const entries = batch.map((w, i) => {
+                            const globalIdx = batchStart + i;
+                            // Keep entries compact: truncate synonyms and context
+                            const syns = (w.synonyms || '').slice(0, 120);
+                            const ctx = (w.context || '').slice(0, 120);
+                            return `${globalIdx}|${w.vocabulary}|${syns}|${ctx}`;
+                        }).join('\n');
+                        
+                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.1-8b-instant',
+                                messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning). Use British English spelling (colour not color, organise not organize, etc.).
 
-Each line has format: index|vocabulary|synonyms|context
-Check ALL fields for spelling errors.
+Each line: index|vocabulary|synonyms|context
 
 ${entries}
 
-If ALL entries are correctly spelled, respond EXACTLY: {"ok": true}
-If there are errors, respond: {"ok": false, "errors": [{"index": 0, "field": "vocabulary|synonyms|context", "wrong": "misspelled", "correct": "correct spelling"}]}
-Return ONLY valid JSON, nothing else.` }],
-                            temperature: 0.0,
-                            max_tokens: 2000
-                        })
-                    });
-                    
-                    const data = await response.json();
-                    let raw = data.choices?.[0]?.message?.content || '{}';
-                    raw = raw.replace(/```json|```/g, '').trim();
-                    const result = JSON.parse(raw);
-                    
-                    // Enrich errors with word data
-                    if (!result.ok && result.errors) {
-                        result.errors = result.errors.map(err => ({
-                            ...err,
-                            vocabulary: words[err.index]?.vocabulary || '?'
-                        }));
+If ALL correctly spelled, respond: {"ok": true}
+If errors found, respond: {"ok": false, "errors": [{"index": 0, "field": "vocabulary", "wrong": "misspeled", "correct": "misspelled"}]}
+ONLY valid JSON, nothing else.` }],
+                                temperature: 0.0,
+                                max_tokens: 1000
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        let raw = data.choices?.[0]?.message?.content || '{}';
+                        raw = raw.replace(/```json|```/g, '').trim();
+                        
+                        try {
+                            const result = JSON.parse(raw);
+                            if (!result.ok && result.errors) {
+                                allErrors.push(...result.errors.map(err => ({
+                                    ...err,
+                                    vocabulary: words[err.index]?.vocabulary || '?'
+                                })));
+                            }
+                        } catch(parseErr) {
+                            console.warn('Batch parse error, skipping batch:', parseErr.message);
+                        }
                     }
                     
-                    setBulkSpellResult(result);
-                    if (result.ok) {
+                    if (allErrors.length === 0) {
+                        setBulkSpellResult({ ok: true });
                         setTimeout(() => setBulkSpellResult(null), 5000);
+                    } else {
+                        setBulkSpellResult({ ok: false, errors: allErrors });
                     }
                 } catch(e) {
                     console.error('Bulk spell check error:', e);
@@ -2783,7 +2800,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             }
 
             const resetFilters = () => {
-                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setShowSearchInfo(false); setBulkSpellResult(null);
+                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setBulkSpellResult(null);
                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
@@ -3793,7 +3810,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.97</span>
+                                        English Booster <span className="version-text">v11.98</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3825,6 +3842,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 title={`Change History${changeHistoryCount > 0 ? ` (${changeHistoryCount})` : ''}`}
                                             >
                                                 <i className="fas fa-history text-xl lg:text-base"></i>
+                                            </button>
+                                            
+                                            {/* 🆕 V11.98: Bulk spell check */}
+                                            <button 
+                                                onClick={checkSpellingBulk}
+                                                disabled={bulkSpellLoading || words.length === 0}
+                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${
+                                                    bulkSpellLoading ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 animate-pulse' 
+                                                    : 'border-slate-700/30 text-slate-500 hover:text-teal-400 hover:border-teal-500/30'
+                                                }`}
+                                                title={`Spell check ${words.length} filtered words (British English)`}
+                                            >
+                                                <i className="fas fa-spell-check text-xl lg:text-base"></i>
                                             </button>
                                         </div>
                                         
@@ -3861,18 +3891,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 {/* Reset button */}
                                 <button onClick={resetFilters} className="p-2 lg:p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white flex-shrink-0"><i className="fas fa-broom text-sm"></i></button>
                                 
-                                {/* 🆕 V11.97: Bulk spell check button */}
-                                <button 
-                                    onClick={checkSpellingBulk}
-                                    disabled={bulkSpellLoading || words.length === 0}
-                                    className={`p-2 lg:p-3 rounded-xl border flex-shrink-0 transition-colors ${
-                                        bulkSpellLoading ? 'border-teal-500 text-teal-400 animate-pulse' :
-                                        'border-slate-700 text-slate-600 hover:text-teal-400 hover:border-teal-500/50'
-                                    }`}
-                                    title={`Spell check ${words.length} filtered words (British English)`}
-                                >
-                                    <i className={`fas fa-spell-check text-sm`}></i>
-                                </button>
+
                                 
                                 {/* 🆕 V11.58: Search input FIRST */}
                                 <input ref={searchInputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="px-2 lg:px-4 py-2 lg:py-2.5 rounded-xl text-sm w-24 sm:w-40 lg:w-56 shadow-inner" />
@@ -3885,8 +3904,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         'bg-purple-500/20 border-purple-500 text-purple-400'
                                     } ${deepSearchLoading ? 'animate-pulse' : ''}`}
                                     title={
-                                        searchMode === 0 ? 'Search: Vocabulary + Synonyms' :
-                                        'Search: AI Deep Search - AI generates synonyms and searches all fields'
+                                        searchMode === 0 
+                                            ? '🔍 Standard Search: finds text matches in Vocabulary + Synonyms columns' 
+                                            : '🧠 AI Search: generates exact synonyms & grammatical forms, then searches only Vocabulary column. Supports Spanish words.'
                                     }
                                 >
                                     <i className={`fas ${
@@ -3895,32 +3915,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     } text-sm`}></i>
                                 </button>
                                 
-                                {/* 🆕 V11.96: Search info icon */}
-                                <button 
-                                    onClick={() => setShowSearchInfo(!showSearchInfo)}
-                                    className="p-2 lg:p-3 rounded-xl border border-slate-700 text-slate-600 hover:text-slate-300 flex-shrink-0 relative"
-                                    title="How search works"
-                                >
-                                    <i className="fas fa-info-circle text-sm"></i>
-                                </button>
-                                {showSearchInfo && (
-                                    <div className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-600 rounded-2xl p-5 z-50 shadow-2xl w-96 text-sm" style={{maxWidth: 'calc(100vw - 2rem)'}}>
-                                        <div className="flex justify-between items-center mb-3">
-                                            <span className="text-white font-black text-xs uppercase tracking-widest">How Search Works</span>
-                                            <button onClick={() => setShowSearchInfo(false)} className="text-slate-400 hover:text-white">&times;</button>
-                                        </div>
-                                        <div className="space-y-3 text-slate-300">
-                                            <div>
-                                                <div className="flex items-center gap-2 mb-1"><i className="fas fa-search text-slate-400"></i><span className="font-bold text-white">Standard Search</span></div>
-                                                <p className="text-slate-400 text-xs leading-relaxed">Searches for text matches in both <span className="text-indigo-400">Vocabulary</span> and <span className="text-blue-400">Synonyms</span> columns. Finds any word containing your search text.</p>
-                                            </div>
-                                            <div className="border-t border-slate-700 pt-3">
-                                                <div className="flex items-center gap-2 mb-1"><i className="fas fa-brain text-purple-400"></i><span className="font-bold text-white">AI Search</span></div>
-                                                <p className="text-slate-400 text-xs leading-relaxed">AI generates <span className="text-purple-300">exact synonyms</span> and <span className="text-purple-300">grammatical forms</span> of your word, then searches only the <span className="text-indigo-400">Vocabulary</span> column for matches. Does NOT search Synonyms column. Does NOT include the original word.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+
                                 
                                 {/* 🆕 V11.58: Favourite filter AFTER search mode */}
                                 <button 
