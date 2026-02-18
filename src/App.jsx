@@ -1228,18 +1228,37 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // 🆕 V11.2: Get AI synonyms for deep search
-            // 🆕 V11.99: Translate Spanish to English before AI search
+            // 🆕 V12.2: Translate Spanish to English — with client-side detection first
+            function looksSpanish(word) {
+                const w = word.toLowerCase().trim();
+                // Spanish-specific characters
+                if (/[ñáéíóúü]/.test(w)) return true;
+                // Common Spanish endings (verbs, nouns, adjectives)
+                const spanishEndings = [
+                    'ción', 'sión', 'mente', 'ando', 'iendo', 'ado', 'ido',
+                    'arse', 'erse', 'irse', 'ando', 'iendo',
+                    'ería', 'ería', 'anza', 'aje',
+                    'dad', 'tad', 'ura', 'eza',
+                    'oso', 'osa', 'izo', 'iza',
+                    'ero', 'era', 'ista',
+                    'illo', 'illa', 'ito', 'ita'
+                ];
+                if (spanishEndings.some(e => w.endsWith(e))) return true;
+                return false;
+            }
+            
             async function translateIfSpanish(word) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) return word;
+                // 🆕 V12.2: Skip API call entirely if word doesn't look Spanish
+                if (!looksSpanish(word)) return word;
                 try {
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
                             model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: `Is "${word}" a Spanish word? If YES, translate it to the most common single English equivalent. If NO (it's already English), return it unchanged. Reply with ONLY the English word, nothing else.` }],
+                            messages: [{ role: 'user', content: `"${word}" is a Spanish word. Translate it to the single most common English equivalent. Reply with ONLY the English word, nothing else.` }],
                             temperature: 0.0,
                             max_tokens: 30
                         })
@@ -1374,50 +1393,91 @@ Return ONLY valid JSON, no explanation.` }],
             const [globalDupResult, setGlobalDupResult] = useState(null); // 🆕 V11.99: Global find duplicates
             const [globalDupLoading, setGlobalDupLoading] = useState(false);
             
-            // 🆕 V12.1: Global find duplicates — checks if vocabulary appears as synonym in other records
+            // 🆕 V12.2: Global find duplicates — AI detects exact synonyms + exact duplicates in Vocabulary column
             const findGlobalDuplicates = async () => {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
                 if (!words || words.length === 0) { alert('No words to check.'); return; }
                 
                 setGlobalDupLoading(true);
                 setGlobalDupResult(null);
                 
                 try {
-                    const duplicateGroups = [];
-                    const checkedPairs = new Set();
+                    const allPairs = [];
+                    const vocabList = words.map(w => w.vocabulary.trim());
                     
-                    for (const word of words) {
-                        const term = word.vocabulary.trim().toLowerCase();
-                        if (term.length < 2) continue;
-                        
-                        // Search: does this vocabulary word appear in another record's synonyms?
-                        const { data } = await supabase
-                            .from('vocabulary_v4')
-                            .select('id, vocabulary, synonyms, family')
-                            .ilike('synonyms', `%${term}%`)
-                            .neq('id', word.id)
-                            .is('deleted_at', null)
-                            .limit(10);
-                        
-                        if (data && data.length > 0) {
-                            for (const match of data) {
-                                const pairKey = [word.id, match.id].sort().join('-');
-                                if (!checkedPairs.has(pairKey)) {
-                                    checkedPairs.add(pairKey);
-                                    duplicateGroups.push({
-                                        source: { id: word.id, vocabulary: word.vocabulary, synonyms: word.synonyms, family: word.family },
-                                        match: { id: match.id, vocabulary: match.vocabulary, synonyms: match.synonyms, family: match.family },
-                                        reason: `"${word.vocabulary}" found in synonyms of "${match.vocabulary}"`
-                                    });
-                                }
-                            }
+                    // Step 1: Find exact duplicates locally (case-insensitive)
+                    const seen = {};
+                    for (const w of words) {
+                        const key = w.vocabulary.trim().toLowerCase();
+                        if (seen[key]) {
+                            allPairs.push({
+                                source: { id: seen[key].id, vocabulary: seen[key].vocabulary, synonyms: seen[key].synonyms, family: seen[key].family },
+                                match: { id: w.id, vocabulary: w.vocabulary, synonyms: w.synonyms, family: w.family },
+                                reason: 'Exact duplicate'
+                            });
+                        } else {
+                            seen[key] = w;
                         }
                     }
                     
-                    if (duplicateGroups.length === 0) {
+                    // Step 2: Ask AI to find exact synonym pairs (batches of 50)
+                    const BATCH_SIZE = 50;
+                    for (let i = 0; i < vocabList.length; i += BATCH_SIZE) {
+                        const batch = vocabList.slice(i, i + BATCH_SIZE);
+                        
+                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.1-8b-instant',
+                                messages: [{ role: 'user', content: `From this list of English words, find pairs that are EXACT SYNONYMS (truly interchangeable, same core meaning) or EXACT DUPLICATES (same word).
+
+Words: ${JSON.stringify(batch)}
+
+Rules:
+- ONLY pairs where word A could DIRECTLY REPLACE word B in most sentences
+- Same grammatical type (noun-noun, verb-verb, adjective-adjective)
+- NO partial matches, NO loosely related words, NO compounds
+- If no synonym pairs exist, return empty array
+
+Return ONLY a JSON array: [{"a": "word1", "b": "word2"}]
+Return [] if no pairs found.` }],
+                                temperature: 0.0,
+                                max_tokens: 500
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        let raw = data.choices?.[0]?.message?.content || '[]';
+                        raw = raw.replace(/```json|```/g, '').trim();
+                        
+                        try {
+                            const pairs = JSON.parse(raw);
+                            for (const pair of pairs) {
+                                const wordA = words.find(w => w.vocabulary.trim().toLowerCase() === pair.a?.toLowerCase());
+                                const wordB = words.find(w => w.vocabulary.trim().toLowerCase() === pair.b?.toLowerCase());
+                                if (wordA && wordB && wordA.id !== wordB.id) {
+                                    const pairKey = [wordA.id, wordB.id].sort().join('-');
+                                    if (!allPairs.some(p => [p.source.id, p.match.id].sort().join('-') === pairKey)) {
+                                        allPairs.push({
+                                            source: { id: wordA.id, vocabulary: wordA.vocabulary, synonyms: wordA.synonyms, family: wordA.family },
+                                            match: { id: wordB.id, vocabulary: wordB.vocabulary, synonyms: wordB.synonyms, family: wordB.family },
+                                            reason: 'Exact synonym'
+                                        });
+                                    }
+                                }
+                            }
+                        } catch(parseErr) {
+                            console.warn('AI batch parse error:', parseErr.message);
+                        }
+                    }
+                    
+                    if (allPairs.length === 0) {
                         setGlobalDupResult({ ok: true });
                         setTimeout(() => setGlobalDupResult(null), 5000);
                     } else {
-                        setGlobalDupResult({ ok: false, groups: duplicateGroups });
+                        setGlobalDupResult({ ok: false, groups: allPairs });
                     }
                 } catch(e) {
                     console.error('Global find duplicates error:', e);
@@ -3830,7 +3890,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.1</span>
+                                        English Booster <span className="version-text">v12.2</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3872,7 +3932,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
                                                     : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
                                                 }`}
-                                                title={`Find duplicates & synonyms in ${words.length} filtered words`}
+                                                title={`Find exact duplicates and exact synonyms in ${words.length} filtered Vocabulary words (AI-powered)`}
                                             >
                                                 <i className="fas fa-link text-xl lg:text-base"></i>
                                             </button>
