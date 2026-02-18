@@ -447,31 +447,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V11.91: Debounced search to avoid excessive DB calls
             const searchDebounceRef = useRef(null);
-            // 🆕 V12.1: Translation with skip-flag to prevent loops
-            const wasTranslatedRef = React.useRef(false);
-            
             useEffect(() => { 
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-                
-                // If this search change came from a translation, skip translation and just fetch
-                if (wasTranslatedRef.current) {
-                    wasTranslatedRef.current = false;
-                    searchDebounceRef.current = setTimeout(() => { fetchWords(0, true); }, 150);
-                    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
-                }
-                
-                searchDebounceRef.current = setTimeout(async () => {
-                    // If brain mode active, try translating Spanish → English (longer debounce: 800ms)
-                    if (searchMode === 1 && search && search.trim().length >= 3) {
-                        const translated = await translateIfSpanish(search);
-                        if (translated !== search.toLowerCase() && translated !== search) {
-                            wasTranslatedRef.current = true; // Flag: next re-trigger should NOT translate again
-                            setSearch(translated);
-                            return;
-                        }
-                    }
+                searchDebounceRef.current = setTimeout(() => {
                     fetchWords(0, true); 
-                }, (search && searchMode === 1) ? 800 : (search ? 150 : 0));
+                }, search ? 150 : 0);
                 return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
 
@@ -1228,50 +1208,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
             }
 
-            // 🆕 V12.2: Translate Spanish to English — with client-side detection first
-            function looksSpanish(word) {
-                const w = word.toLowerCase().trim();
-                // Spanish-specific characters
-                if (/[ñáéíóúü]/.test(w)) return true;
-                // Common Spanish endings (verbs, nouns, adjectives)
-                const spanishEndings = [
-                    'ción', 'sión', 'mente', 'ando', 'iendo', 'ado', 'ido',
-                    'arse', 'erse', 'irse', 'ando', 'iendo',
-                    'ería', 'ería', 'anza', 'aje',
-                    'dad', 'tad', 'ura', 'eza',
-                    'oso', 'osa', 'izo', 'iza',
-                    'ero', 'era', 'ista',
-                    'illo', 'illa', 'ito', 'ita'
-                ];
-                if (spanishEndings.some(e => w.endsWith(e))) return true;
-                return false;
-            }
-            
-            async function translateIfSpanish(word) {
-                const apiKey = groqApiKey.trim();
-                if (!apiKey) return word;
-                // 🆕 V12.2: Skip API call entirely if word doesn't look Spanish
-                if (!looksSpanish(word)) return word;
-                try {
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: `"${word}" is a Spanish word. Translate it to the single most common English equivalent. Reply with ONLY the English word, nothing else.` }],
-                            temperature: 0.0,
-                            max_tokens: 30
-                        })
-                    });
-                    if (!response.ok) return word;
-                    const data = await response.json();
-                    const result = (data.choices?.[0]?.message?.content || word).trim().toLowerCase();
-                    return result || word;
-                } catch(e) {
-                    return word;
-                }
-            }
-
             // 🆕 V11.96: Unified AI search — exact synonyms + morphological forms (deterministic)
             async function getAIRelatedWords(word, { setLoading = null } = {}) {
                 const apiKey = groqApiKey.trim();
@@ -1289,7 +1225,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             model: 'llama-3.1-8b-instant',
                             messages: [{
                                 role: 'user',
-                                content: `You are a precise English vocabulary assistant. For the English word/expression "${word}", provide two categories:
+                                content: `You are a precise English vocabulary assistant. For the word/expression "${word}" (if it is in Spanish or another language, treat it as if you were given its English equivalent), provide two categories:
 
 CATEGORY A — EXACT SYNONYMS (5-8 words that are truly interchangeable with "${word}" and share the same core meaning):
 - Only words that could DIRECTLY REPLACE "${word}" in most sentences
@@ -1393,58 +1329,91 @@ Return ONLY valid JSON, no explanation.` }],
             const [globalDupResult, setGlobalDupResult] = useState(null); // 🆕 V11.99: Global find duplicates
             const [globalDupLoading, setGlobalDupLoading] = useState(false);
             
-            // 🆕 V12.2: Global find duplicates — AI detects exact synonyms + exact duplicates in Vocabulary column
+            // 🆕 V12.4: Global find — exact duplicates + exact synonyms, ONLY Vocabulary column
+            // If filters active → among filtered words. If no filters → entire DB.
             const findGlobalDuplicates = async () => {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
-                if (!words || words.length === 0) { alert('No words to check.'); return; }
                 
                 setGlobalDupLoading(true);
                 setGlobalDupResult(null);
                 
                 try {
-                    const allPairs = [];
-                    const vocabList = words.map(w => w.vocabulary.trim());
+                    // Step 0: Load ALL vocabulary entries matching current filters
+                    const hasFilters = search || familyFilter !== 'All' || emptyFilter !== 'None' || difficultyFilter !== 'All' || favouriteLevel > 0;
                     
-                    // Step 1: Find exact duplicates locally (case-insensitive)
+                    let allWords = [];
+                    if (hasFilters) {
+                        // Use the currently filtered words from state
+                        allWords = [...words];
+                        // But words may be paginated, so load ALL matching the filters
+                        let query = supabase.from('vocabulary_v4').select('id, vocabulary, synonyms, family').is('deleted_at', null);
+                        if (search) query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
+                        if (familyFilter !== 'All') query = query.eq('family', familyFilter);
+                        if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
+                        if (favouriteLevel === 1) query = query.eq('favourite', 1);
+                        else if (favouriteLevel === 2) query = query.eq('favourite', 2);
+                        else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
+                        const { data } = await query.order('vocabulary').limit(2000);
+                        if (data) allWords = data;
+                    } else {
+                        // No filters: load entire DB
+                        const { data } = await supabase
+                            .from('vocabulary_v4')
+                            .select('id, vocabulary, synonyms, family')
+                            .is('deleted_at', null)
+                            .order('vocabulary')
+                            .limit(2000);
+                        if (data) allWords = data;
+                    }
+                    
+                    if (allWords.length === 0) { alert('No words found.'); setGlobalDupLoading(false); return; }
+                    
+                    const allPairs = [];
+                    const checkedPairs = new Set();
+                    const vocabList = allWords.map(w => w.vocabulary.trim());
+                    
+                    // Step 1: Local exact duplicates (case-insensitive) in Vocabulary column
                     const seen = {};
-                    for (const w of words) {
+                    for (const w of allWords) {
                         const key = w.vocabulary.trim().toLowerCase();
                         if (seen[key]) {
-                            allPairs.push({
-                                source: { id: seen[key].id, vocabulary: seen[key].vocabulary, synonyms: seen[key].synonyms, family: seen[key].family },
-                                match: { id: w.id, vocabulary: w.vocabulary, synonyms: w.synonyms, family: w.family },
-                                reason: 'Exact duplicate'
-                            });
+                            const pairKey = [seen[key].id, w.id].sort().join('-');
+                            if (!checkedPairs.has(pairKey)) {
+                                checkedPairs.add(pairKey);
+                                allPairs.push({
+                                    source: { id: seen[key].id, vocabulary: seen[key].vocabulary, synonyms: seen[key].synonyms, family: seen[key].family },
+                                    match: { id: w.id, vocabulary: w.vocabulary, synonyms: w.synonyms, family: w.family },
+                                    reason: 'Exact duplicate'
+                                });
+                            }
                         } else {
                             seen[key] = w;
                         }
                     }
                     
-                    // Step 2: Ask AI to find exact synonym pairs (batches of 50)
-                    const BATCH_SIZE = 50;
-                    for (let i = 0; i < vocabList.length; i += BATCH_SIZE) {
-                        const batch = vocabList.slice(i, i + BATCH_SIZE);
+                    // Step 2: AI finds exact synonym pairs within the Vocabulary list
+                    const BATCH = 30;
+                    for (let i = 0; i < vocabList.length; i += BATCH) {
+                        const batch = vocabList.slice(i, i + BATCH);
                         
                         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                             body: JSON.stringify({
                                 model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'user', content: `From this list of English words, find pairs that are EXACT SYNONYMS (truly interchangeable, same core meaning) or EXACT DUPLICATES (same word).
+                                messages: [{ role: 'system', content: 'You find exact synonym pairs. Two words are exact synonyms ONLY if they can replace each other in most sentences with the same meaning. Be thorough - check every pair.' }, { role: 'user', content: `Here are ${batch.length} English vocabulary words:
 
-Words: ${JSON.stringify(batch)}
+${batch.map((w, j) => j + ': ' + w).join('\n')}
 
-Rules:
-- ONLY pairs where word A could DIRECTLY REPLACE word B in most sentences
-- Same grammatical type (noun-noun, verb-verb, adjective-adjective)
-- NO partial matches, NO loosely related words, NO compounds
-- If no synonym pairs exist, return empty array
+Find ALL pairs that are EXACT SYNONYMS (truly interchangeable, identical meaning).
+Examples of exact synonyms: "happy"/"glad", "big"/"large", "begin"/"start", "fast"/"quick"
+NOT synonyms: "happy"/"happiness" (different form), "big"/"huge" (different degree)
 
-Return ONLY a JSON array: [{"a": "word1", "b": "word2"}]
-Return [] if no pairs found.` }],
+Return a JSON array of pairs: [{"a":"word1","b":"word2"}]
+If no synonym pairs exist, return exactly: []` }],
                                 temperature: 0.0,
-                                max_tokens: 500
+                                max_tokens: 800
                             })
                         });
                         
@@ -1455,11 +1424,13 @@ Return [] if no pairs found.` }],
                         try {
                             const pairs = JSON.parse(raw);
                             for (const pair of pairs) {
-                                const wordA = words.find(w => w.vocabulary.trim().toLowerCase() === pair.a?.toLowerCase());
-                                const wordB = words.find(w => w.vocabulary.trim().toLowerCase() === pair.b?.toLowerCase());
+                                if (!pair.a || !pair.b) continue;
+                                const wordA = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.a.trim().toLowerCase());
+                                const wordB = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.b.trim().toLowerCase());
                                 if (wordA && wordB && wordA.id !== wordB.id) {
                                     const pairKey = [wordA.id, wordB.id].sort().join('-');
-                                    if (!allPairs.some(p => [p.source.id, p.match.id].sort().join('-') === pairKey)) {
+                                    if (!checkedPairs.has(pairKey)) {
+                                        checkedPairs.add(pairKey);
                                         allPairs.push({
                                             source: { id: wordA.id, vocabulary: wordA.vocabulary, synonyms: wordA.synonyms, family: wordA.family },
                                             match: { id: wordB.id, vocabulary: wordB.vocabulary, synonyms: wordB.synonyms, family: wordB.family },
@@ -1468,8 +1439,55 @@ Return [] if no pairs found.` }],
                                     }
                                 }
                             }
-                        } catch(parseErr) {
-                            console.warn('AI batch parse error:', parseErr.message);
+                        } catch(e) {
+                            console.warn('AI batch parse error:', e.message);
+                        }
+                    }
+                    
+                    // Step 3: Also cross-check between batches (AI only sees words within its batch)
+                    // Send full vocab list summary for cross-batch detection if > 1 batch
+                    if (vocabList.length > BATCH) {
+                        const summary = vocabList.join(', ');
+                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.1-8b-instant',
+                                messages: [{ role: 'system', content: 'Find exact synonym pairs. Be thorough.' }, { role: 'user', content: `From this vocabulary list, find ALL pairs of EXACT SYNONYMS (interchangeable, same meaning):
+
+${summary}
+
+Return JSON: [{"a":"word1","b":"word2"}]
+Return [] if none found.` }],
+                                temperature: 0.0,
+                                max_tokens: 1500
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        let raw = data.choices?.[0]?.message?.content || '[]';
+                        raw = raw.replace(/```json|```/g, '').trim();
+                        
+                        try {
+                            const pairs = JSON.parse(raw);
+                            for (const pair of pairs) {
+                                if (!pair.a || !pair.b) continue;
+                                const wordA = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.a.trim().toLowerCase());
+                                const wordB = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.b.trim().toLowerCase());
+                                if (wordA && wordB && wordA.id !== wordB.id) {
+                                    const pairKey = [wordA.id, wordB.id].sort().join('-');
+                                    if (!checkedPairs.has(pairKey)) {
+                                        checkedPairs.add(pairKey);
+                                        allPairs.push({
+                                            source: { id: wordA.id, vocabulary: wordA.vocabulary, synonyms: wordA.synonyms, family: wordA.family },
+                                            match: { id: wordB.id, vocabulary: wordB.vocabulary, synonyms: wordB.synonyms, family: wordB.family },
+                                            reason: 'Exact synonym'
+                                        });
+                                    }
+                                }
+                            }
+                        } catch(e) {
+                            console.warn('Cross-batch parse error:', e.message);
                         }
                     }
                     
@@ -3890,7 +3908,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.2</span>
+                                        English Booster <span className="version-text">v12.4</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3932,7 +3950,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
                                                     : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
                                                 }`}
-                                                title={`Find exact duplicates and exact synonyms in ${words.length} filtered Vocabulary words (AI-powered)`}
+                                                title={`Find exact duplicates and exact synonyms in the Vocabulary column. ${search || familyFilter !== 'All' || difficultyFilter !== 'All' || favouriteLevel > 0 ? 'Searches filtered words' : 'Searches entire database'} (AI-powered)`}
                                             >
                                                 <i className="fas fa-link text-xl lg:text-base"></i>
                                             </button>
@@ -3986,7 +4004,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     title={
                                         searchMode === 0 
                                             ? '🔍 Standard Search: finds text matches in Vocabulary + Synonyms columns' 
-                                            : '🧠 AI Search: if you type in Spanish, translates to English first. Then generates exact synonyms & grammatical forms. Searches only the Vocabulary column.'
+                                            : '🧠 AI Search: generates exact synonyms & grammatical forms, then searches the Vocabulary column. Also works with Spanish words.'
                                     }
                                 >
                                     <i className={`fas ${
@@ -4039,7 +4057,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         {globalDupResult && (
                             <div className={`mb-3 rounded-2xl p-4 text-sm ${globalDupResult.ok ? 'bg-green-900/20 border border-green-500/30' : 'bg-orange-900/20 border border-orange-500/30'}`}>
                                 {globalDupResult.ok ? (
-                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> No duplicates found in {words.length} filtered words!</div>
+                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> No duplicates or exact synonyms found!</div>
                                 ) : (
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
