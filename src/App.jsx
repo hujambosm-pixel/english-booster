@@ -447,25 +447,31 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V11.91: Debounced search to avoid excessive DB calls
             const searchDebounceRef = useRef(null);
-            // 🆕 V12.0: Translation happens BEFORE fetchWords to avoid flickering
-            const isTranslatingRef = React.useRef(false);
+            // 🆕 V12.1: Translation with skip-flag to prevent loops
+            const wasTranslatedRef = React.useRef(false);
             
             useEffect(() => { 
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                
+                // If this search change came from a translation, skip translation and just fetch
+                if (wasTranslatedRef.current) {
+                    wasTranslatedRef.current = false;
+                    searchDebounceRef.current = setTimeout(() => { fetchWords(0, true); }, 150);
+                    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+                }
+                
                 searchDebounceRef.current = setTimeout(async () => {
-                    // If brain mode active and search looks non-English, translate first
-                    if (searchMode === 1 && search && search.trim().length >= 2 && !isTranslatingRef.current) {
-                        isTranslatingRef.current = true;
+                    // If brain mode active, try translating Spanish → English (longer debounce: 800ms)
+                    if (searchMode === 1 && search && search.trim().length >= 3) {
                         const translated = await translateIfSpanish(search);
-                        isTranslatingRef.current = false;
                         if (translated !== search.toLowerCase() && translated !== search) {
-                            // Update search field — this will re-trigger useEffect with English word
+                            wasTranslatedRef.current = true; // Flag: next re-trigger should NOT translate again
                             setSearch(translated);
-                            return; // Don't fetch yet, let re-trigger handle it
+                            return;
                         }
                     }
                     fetchWords(0, true); 
-                }, search ? 300 : 0);
+                }, (search && searchMode === 1) ? 800 : (search ? 150 : 0));
                 return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
 
@@ -1368,7 +1374,7 @@ Return ONLY valid JSON, no explanation.` }],
             const [globalDupResult, setGlobalDupResult] = useState(null); // 🆕 V11.99: Global find duplicates
             const [globalDupLoading, setGlobalDupLoading] = useState(false);
             
-            // 🆕 V11.99: Global find duplicates across all filtered words
+            // 🆕 V12.1: Global find duplicates — checks if vocabulary appears as synonym in other records
             const findGlobalDuplicates = async () => {
                 if (!words || words.length === 0) { alert('No words to check.'); return; }
                 
@@ -1383,24 +1389,24 @@ Return ONLY valid JSON, no explanation.` }],
                         const term = word.vocabulary.trim().toLowerCase();
                         if (term.length < 2) continue;
                         
-                        // Search for similar words using same logic as Find & Merge (lupa mode)
+                        // Search: does this vocabulary word appear in another record's synonyms?
                         const { data } = await supabase
                             .from('vocabulary_v4')
                             .select('id, vocabulary, synonyms, family')
-                            .ilike('vocabulary', `%${term}%`)
+                            .ilike('synonyms', `%${term}%`)
                             .neq('id', word.id)
                             .is('deleted_at', null)
                             .limit(10);
                         
                         if (data && data.length > 0) {
                             for (const match of data) {
-                                // Create a unique pair key to avoid duplicates
                                 const pairKey = [word.id, match.id].sort().join('-');
                                 if (!checkedPairs.has(pairKey)) {
                                     checkedPairs.add(pairKey);
                                     duplicateGroups.push({
                                         source: { id: word.id, vocabulary: word.vocabulary, synonyms: word.synonyms, family: word.family },
-                                        match: { id: match.id, vocabulary: match.vocabulary, synonyms: match.synonyms, family: match.family }
+                                        match: { id: match.id, vocabulary: match.vocabulary, synonyms: match.synonyms, family: match.family },
+                                        reason: `"${word.vocabulary}" found in synonyms of "${match.vocabulary}"`
                                     });
                                 }
                             }
@@ -3824,7 +3830,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.0</span>
+                                        English Booster <span className="version-text">v12.1</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3858,7 +3864,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <i className="fas fa-history text-xl lg:text-base"></i>
                                             </button>
                                             
-                                            {/* 🆕 V11.99: Global find & merge duplicates */}
+                                            {/* 🆕 V12.1: Global find & merge duplicates */}
                                             <button 
                                                 onClick={findGlobalDuplicates}
                                                 disabled={globalDupLoading || words.length === 0}
@@ -3866,9 +3872,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
                                                     : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
                                                 }`}
-                                                title={`Find duplicates in ${words.length} filtered words`}
+                                                title={`Find duplicates & synonyms in ${words.length} filtered words`}
                                             >
-                                                <span className="text-xl lg:text-base">🔀</span>
+                                                <i className="fas fa-link text-xl lg:text-base"></i>
                                             </button>
                                         </div>
                                         
@@ -3977,17 +3983,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 ) : (
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
-                                            <span className="text-orange-400 font-bold text-xs uppercase flex items-center gap-2"><span>🔀</span> Found {globalDupResult.groups?.length || 0} potential duplicate pair(s)</span>
+                                            <span className="text-orange-400 font-bold text-xs uppercase flex items-center gap-2"><i className="fas fa-link mr-1"></i> Found {globalDupResult.groups?.length || 0} potential duplicate pair(s)</span>
                                             <button onClick={() => setGlobalDupResult(null)} className="text-slate-400 hover:text-white text-lg">&times;</button>
                                         </div>
                                         <div className="grid gap-1.5 max-h-64 overflow-y-auto custom-scroll">
                                             {(globalDupResult.groups || []).map((g, i) => (
                                                 <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/50 rounded-xl px-3 py-2.5 hover:bg-slate-700/50 transition-colors">
                                                     <div className="flex-1 min-w-0">
-                                                        <span className="text-white font-bold">{g.source.vocabulary}</span>
-                                                        <span className="text-slate-600 mx-1.5">↔</span>
-                                                        <span className="text-orange-300 font-bold">{g.match.vocabulary}</span>
-                                                        {g.source.family && <span className="text-slate-600 ml-2 text-[9px] uppercase">{g.source.family}</span>}
+                                                        <div>
+                                                            <span className="text-white font-bold">{g.source.vocabulary}</span>
+                                                            <span className="text-slate-600 mx-1.5"><i className="fas fa-link text-[8px]"></i></span>
+                                                            <span className="text-orange-300 font-bold">{g.match.vocabulary}</span>
+                                                            {g.source.family && <span className="text-slate-600 ml-2 text-[9px] uppercase">{g.source.family}</span>}
+                                                        </div>
+                                                        {g.reason && <div className="text-slate-500 text-[9px] mt-0.5">{g.reason}</div>}
                                                     </div>
                                                     <button 
                                                         onClick={() => {
