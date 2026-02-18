@@ -447,11 +447,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V11.91: Debounced search to avoid excessive DB calls
             const searchDebounceRef = useRef(null);
+            // 🆕 V12.0: Translation happens BEFORE fetchWords to avoid flickering
+            const isTranslatingRef = React.useRef(false);
+            
             useEffect(() => { 
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-                searchDebounceRef.current = setTimeout(() => {
+                searchDebounceRef.current = setTimeout(async () => {
+                    // If brain mode active and search looks non-English, translate first
+                    if (searchMode === 1 && search && search.trim().length >= 2 && !isTranslatingRef.current) {
+                        isTranslatingRef.current = true;
+                        const translated = await translateIfSpanish(search);
+                        isTranslatingRef.current = false;
+                        if (translated !== search.toLowerCase() && translated !== search) {
+                            // Update search field — this will re-trigger useEffect with English word
+                            setSearch(translated);
+                            return; // Don't fetch yet, let re-trigger handle it
+                        }
+                    }
                     fetchWords(0, true); 
-                }, search ? 150 : 0);
+                }, search ? 300 : 0);
                 return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
 
@@ -1150,12 +1164,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
                             // Mode 2: AI Deep Search
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1378,7 +1387,7 @@ Return ONLY valid JSON, no explanation.` }],
                         const { data } = await supabase
                             .from('vocabulary_v4')
                             .select('id, vocabulary, synonyms, family')
-                            .or(`vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`)
+                            .ilike('vocabulary', `%${term}%`)
                             .neq('id', word.id)
                             .is('deleted_at', null)
                             .limit(10);
@@ -1848,12 +1857,7 @@ Return ONLY valid JSON, no explanation.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -1957,12 +1961,7 @@ Return ONLY valid JSON, no explanation.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2030,12 +2029,7 @@ Return ONLY valid JSON, no explanation.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2210,12 +2204,7 @@ Return ONLY valid JSON, no explanation.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -2282,12 +2271,7 @@ Return ONLY valid JSON, no explanation.` }],
                         if (searchMode === 0) {
                             query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
                         } else if (searchMode === 1) {
-                            // 🆕 V11.99: Translate Spanish → English, overwrite search input
-                            const translatedSearch = await translateIfSpanish(search);
-                            if (translatedSearch !== search.toLowerCase()) {
-                                setSearch(translatedSearch);
-                            }
-                            const synonyms = await getAIRelatedWords(translatedSearch, { setLoading: setDeepSearchLoading });
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
                             if (synonyms.length > 0) {
                                 const searchTerms = synonyms.map(term => 
                                     `vocabulary.ilike.%${term}%`
@@ -3840,7 +3824,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v11.99</span>
+                                        English Booster <span className="version-text">v12.0</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3936,7 +3920,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     title={
                                         searchMode === 0 
                                             ? '🔍 Standard Search: finds text matches in Vocabulary + Synonyms columns' 
-                                            : '🧠 AI Search: translates Spanish words to English, then generates exact synonyms & grammatical forms. Searches only the Vocabulary column.'
+                                            : '🧠 AI Search: if you type in Spanish, translates to English first. Then generates exact synonyms & grammatical forms. Searches only the Vocabulary column.'
                                     }
                                 >
                                     <i className={`fas ${
