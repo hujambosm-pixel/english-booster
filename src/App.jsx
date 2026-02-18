@@ -1412,8 +1412,6 @@ Return ONLY valid JSON, no explanation.` }],
                 }
             };
 
-            };
-
             // 🆕 V11.2: Load recycle bin
             async function loadRecycleBin() {
                 const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
