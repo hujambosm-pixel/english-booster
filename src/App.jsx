@@ -1392,103 +1392,44 @@ Return ONLY valid JSON, no explanation.` }],
                         }
                     }
                     
-                    // Step 2: AI finds exact synonym pairs within the Vocabulary list
-                    const BATCH = 30;
-                    for (let i = 0; i < vocabList.length; i += BATCH) {
-                        const batch = vocabList.slice(i, i + BATCH);
-                        
-                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'system', content: 'You find exact synonym pairs. Two words are exact synonyms ONLY if they can replace each other in most sentences with the same meaning. Be thorough - check every pair.' }, { role: 'user', content: `Here are ${batch.length} English vocabulary words:
-
-${batch.map((w, j) => j + ': ' + w).join('\n')}
-
-Find ALL pairs that are EXACT SYNONYMS (truly interchangeable, identical meaning).
-Examples of exact synonyms: "happy"/"glad", "big"/"large", "begin"/"start", "fast"/"quick"
-NOT synonyms: "happy"/"happiness" (different form), "big"/"huge" (different degree)
-
-Return a JSON array of pairs: [{"a":"word1","b":"word2"}]
-If no synonym pairs exist, return exactly: []` }],
-                                temperature: 0.0,
-                                max_tokens: 800
-                            })
-                        });
-                        
-                        const data = await response.json();
-                        let raw = data.choices?.[0]?.message?.content || '[]';
-                        raw = raw.replace(/```json|```/g, '').trim();
-                        
-                        try {
-                            const pairs = JSON.parse(raw);
-                            for (const pair of pairs) {
-                                if (!pair.a || !pair.b) continue;
-                                const wordA = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.a.trim().toLowerCase());
-                                const wordB = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.b.trim().toLowerCase());
-                                if (wordA && wordB && wordA.id !== wordB.id) {
-                                    const pairKey = [wordA.id, wordB.id].sort().join('-');
-                                    if (!checkedPairs.has(pairKey)) {
-                                        checkedPairs.add(pairKey);
-                                        allPairs.push({
-                                            source: { id: wordA.id, vocabulary: wordA.vocabulary, synonyms: wordA.synonyms, family: wordA.family },
-                                            match: { id: wordB.id, vocabulary: wordB.vocabulary, synonyms: wordB.synonyms, family: wordB.family },
-                                            reason: 'Exact synonym'
-                                        });
-                                    }
-                                }
-                            }
-                        } catch(e) {
-                            console.warn('AI batch parse error:', e.message);
-                        }
+                    // Step 2: Use getAIRelatedWords for each word, then cross-check against allWords
+                    // Build a lookup map for fast matching
+                    const vocabLookup = {};
+                    for (const w of allWords) {
+                        const key = w.vocabulary.trim().toLowerCase();
+                        if (!vocabLookup[key]) vocabLookup[key] = [];
+                        vocabLookup[key].push(w);
                     }
                     
-                    // Step 3: Also cross-check between batches (AI only sees words within its batch)
-                    // Send full vocab list summary for cross-batch detection if > 1 batch
-                    if (vocabList.length > BATCH) {
-                        const summary = vocabList.join(', ');
-                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'system', content: 'Find exact synonym pairs. Be thorough.' }, { role: 'user', content: `From this vocabulary list, find ALL pairs of EXACT SYNONYMS (interchangeable, same meaning):
-
-${summary}
-
-Return JSON: [{"a":"word1","b":"word2"}]
-Return [] if none found.` }],
-                                temperature: 0.0,
-                                max_tokens: 1500
-                            })
-                        });
+                    for (let i = 0; i < allWords.length; i++) {
+                        const word = allWords[i];
+                        const term = word.vocabulary.trim();
+                        if (term.length < 2) continue;
                         
-                        const data = await response.json();
-                        let raw = data.choices?.[0]?.message?.content || '[]';
-                        raw = raw.replace(/```json|```/g, '').trim();
+                        // Reuse the proven getAIRelatedWords function
+                        const relatedWords = await getAIRelatedWords(term);
                         
-                        try {
-                            const pairs = JSON.parse(raw);
-                            for (const pair of pairs) {
-                                if (!pair.a || !pair.b) continue;
-                                const wordA = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.a.trim().toLowerCase());
-                                const wordB = allWords.find(w => w.vocabulary.trim().toLowerCase() === pair.b.trim().toLowerCase());
-                                if (wordA && wordB && wordA.id !== wordB.id) {
-                                    const pairKey = [wordA.id, wordB.id].sort().join('-');
+                        // Check if any AI-generated synonym exists as a vocabulary entry
+                        for (const syn of relatedWords) {
+                            const matches = vocabLookup[syn.toLowerCase()];
+                            if (matches) {
+                                for (const matchWord of matches) {
+                                    if (matchWord.id === word.id) continue;
+                                    const pairKey = [word.id, matchWord.id].sort().join('-');
                                     if (!checkedPairs.has(pairKey)) {
                                         checkedPairs.add(pairKey);
                                         allPairs.push({
-                                            source: { id: wordA.id, vocabulary: wordA.vocabulary, synonyms: wordA.synonyms, family: wordA.family },
-                                            match: { id: wordB.id, vocabulary: wordB.vocabulary, synonyms: wordB.synonyms, family: wordB.family },
+                                            source: { id: word.id, vocabulary: word.vocabulary, synonyms: word.synonyms, family: word.family },
+                                            match: { id: matchWord.id, vocabulary: matchWord.vocabulary, synonyms: matchWord.synonyms, family: matchWord.family },
                                             reason: 'Exact synonym'
                                         });
                                     }
                                 }
                             }
-                        } catch(e) {
-                            console.warn('Cross-batch parse error:', e.message);
                         }
+                        
+                        // Small delay every 5 words to avoid rate limiting
+                        if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(r, 200));
                     }
                     
                     if (allPairs.length === 0) {
@@ -3908,7 +3849,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.4</span>
+                                        English Booster <span className="version-text">v12.6</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3950,7 +3891,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
                                                     : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
                                                 }`}
-                                                title={`Find exact duplicates and exact synonyms in the Vocabulary column. ${search || familyFilter !== 'All' || difficultyFilter !== 'All' || favouriteLevel > 0 ? 'Searches filtered words' : 'Searches entire database'} (AI-powered)`}
+                                                title={globalDupLoading ? 'Scanning...' : `Find exact duplicates and exact synonyms in the Vocabulary column. ${search || familyFilter !== 'All' || difficultyFilter !== 'All' || favouriteLevel > 0 ? 'Searches filtered words' : 'Searches entire database'} (AI-powered)`}
                                             >
                                                 <i className="fas fa-link text-xl lg:text-base"></i>
                                             </button>
@@ -5211,7 +5152,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setMergeAIMode(false);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-4xl w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
-                                        <h2 className="text-3xl font-black text-white">🔀 Find & Merge Similar</h2>
+                                        <div>
+                                            <h2 className="text-3xl font-black text-white">🔀 Find & Merge Similar</h2>
+                                            {mergeData?.current && <p className="text-lg mt-1">Searching for: <span className="text-indigo-400 font-black text-xl">"{mergeData.current.vocabulary}"</span></p>}
+                                        </div>
                                         <div className="flex items-center gap-3">
                                             {/* 🆕 V11.93: Lupa/Brain toggle for merge modal */}
                                             <button 
