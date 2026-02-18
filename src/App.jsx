@@ -53,7 +53,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             );
             
             // 🆕 V11.9: Undo history (stores last change for each word)
-            const [undoHistory, setUndoHistory] = useState({});
             
             // 🆕 V11.9: Original data before editing (for restore in modal)
             const [originalEditData, setOriginalEditData] = useState(null);
@@ -81,7 +80,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 deleteSynonyms: []
             });
             const [findingSimilar, setFindingSimilar] = useState(null);
-            const [mergeAIMode, setMergeAIMode] = useState(false);
             const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
             const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
@@ -1325,126 +1323,8 @@ Return ONLY valid JSON, no explanation.` }],
                 }
             };
 
-            // 🆕 V11.97: Bulk spell check for filtered Vocabulary table
-            const [globalDupResult, setGlobalDupResult] = useState(null); // 🆕 V11.99: Global find duplicates
-            const [globalDupLoading, setGlobalDupLoading] = useState(false);
+
             
-            // 🆕 V12.4: Global find — exact duplicates + exact synonyms, ONLY Vocabulary column
-            // If filters active → among filtered words. If no filters → entire DB.
-            const findGlobalDuplicates = async () => {
-                const apiKey = groqApiKey.trim();
-                if (!apiKey) { alert('Please set your Groq API Key in Settings first.'); return; }
-                
-                setGlobalDupLoading(true);
-                setGlobalDupResult(null);
-                
-                try {
-                    // Step 0: Load ALL vocabulary entries matching current filters
-                    const hasFilters = search || familyFilter !== 'All' || emptyFilter !== 'None' || difficultyFilter !== 'All' || favouriteLevel > 0;
-                    
-                    let allWords = [];
-                    if (hasFilters) {
-                        // Use the currently filtered words from state
-                        allWords = [...words];
-                        // But words may be paginated, so load ALL matching the filters
-                        let query = supabase.from('vocabulary_v4').select('id, vocabulary, synonyms, family').is('deleted_at', null);
-                        if (search) query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
-                        if (familyFilter !== 'All') query = query.eq('family', familyFilter);
-                        if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
-                        if (favouriteLevel === 1) query = query.eq('favourite', 1);
-                        else if (favouriteLevel === 2) query = query.eq('favourite', 2);
-                        else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
-                        const { data } = await query.order('vocabulary').limit(2000);
-                        if (data) allWords = data;
-                    } else {
-                        // No filters: load entire DB
-                        const { data } = await supabase
-                            .from('vocabulary_v4')
-                            .select('id, vocabulary, synonyms, family')
-                            .is('deleted_at', null)
-                            .order('vocabulary')
-                            .limit(2000);
-                        if (data) allWords = data;
-                    }
-                    
-                    if (allWords.length === 0) { alert('No words found.'); setGlobalDupLoading(false); return; }
-                    
-                    const allPairs = [];
-                    const checkedPairs = new Set();
-                    const vocabList = allWords.map(w => w.vocabulary.trim());
-                    
-                    // Step 1: Local exact duplicates (case-insensitive) in Vocabulary column
-                    const seen = {};
-                    for (const w of allWords) {
-                        const key = w.vocabulary.trim().toLowerCase();
-                        if (seen[key]) {
-                            const pairKey = [seen[key].id, w.id].sort().join('-');
-                            if (!checkedPairs.has(pairKey)) {
-                                checkedPairs.add(pairKey);
-                                allPairs.push({
-                                    source: { id: seen[key].id, vocabulary: seen[key].vocabulary, synonyms: seen[key].synonyms, family: seen[key].family },
-                                    match: { id: w.id, vocabulary: w.vocabulary, synonyms: w.synonyms, family: w.family },
-                                    reason: 'Exact duplicate'
-                                });
-                            }
-                        } else {
-                            seen[key] = w;
-                        }
-                    }
-                    
-                    // Step 2: Use getAIRelatedWords for each word, then cross-check against allWords
-                    // Build a lookup map for fast matching
-                    const vocabLookup = {};
-                    for (const w of allWords) {
-                        const key = w.vocabulary.trim().toLowerCase();
-                        if (!vocabLookup[key]) vocabLookup[key] = [];
-                        vocabLookup[key].push(w);
-                    }
-                    
-                    for (let i = 0; i < allWords.length; i++) {
-                        const word = allWords[i];
-                        const term = word.vocabulary.trim();
-                        if (term.length < 2) continue;
-                        
-                        // Reuse the proven getAIRelatedWords function
-                        const relatedWords = await getAIRelatedWords(term);
-                        
-                        // Check if any AI-generated synonym exists as a vocabulary entry
-                        for (const syn of relatedWords) {
-                            const matches = vocabLookup[syn.toLowerCase()];
-                            if (matches) {
-                                for (const matchWord of matches) {
-                                    if (matchWord.id === word.id) continue;
-                                    const pairKey = [word.id, matchWord.id].sort().join('-');
-                                    if (!checkedPairs.has(pairKey)) {
-                                        checkedPairs.add(pairKey);
-                                        allPairs.push({
-                                            source: { id: word.id, vocabulary: word.vocabulary, synonyms: word.synonyms, family: word.family },
-                                            match: { id: matchWord.id, vocabulary: matchWord.vocabulary, synonyms: matchWord.synonyms, family: matchWord.family },
-                                            reason: 'Exact synonym'
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Small delay every 5 words to avoid rate limiting
-                        if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(r, 200));
-                    }
-                    
-                    if (allPairs.length === 0) {
-                        setGlobalDupResult({ ok: true });
-                        setTimeout(() => setGlobalDupResult(null), 5000);
-                    } else {
-                        setGlobalDupResult({ ok: false, groups: allPairs });
-                    }
-                } catch(e) {
-                    console.error('Global find duplicates error:', e);
-                    alert('❌ Error: ' + e.message);
-                } finally {
-                    setGlobalDupLoading(false);
-                }
-            };
 
             // 🆕 V11.2: Load recycle bin
             async function loadRecycleBin() {
@@ -2839,8 +2719,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             }
 
             const resetFilters = () => {
-                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0); setGlobalDupResult(null);
-                setTimeout(() => searchInputRef.current?.focus(), 50);
+                setSearch(''); setFamilyFilter('All'); setEmptyFilter('None'); setDifficultyFilter('All'); setFavouriteLevel(0); setSearchMode(0);                 setTimeout(() => searchInputRef.current?.focus(), 50);
             };
 
             const getFormattedDate = () => new Date().toISOString().split('T')[0];
@@ -3509,42 +3388,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
             };
 
             // 🆕 V11.93: Unified search with independent AI toggle
-            const handleFindSimilar = async (currentWord, useAI = false) => {
+            // 🆕 V12.7: Find & Merge always uses AI (same as brain search)
+            const handleFindSimilar = async (currentWord) => {
+                if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); return; }
                 setFindingSimilar(currentWord.id);
                 try {
                     const term = currentWord.vocabulary.trim().toLowerCase();
-                    const currentSyns = currentWord.synonyms 
-                        ? currentWord.synonyms.split(',').map(s => s.trim().toLowerCase()).filter(s => s) 
-                        : [];
                     
+                    // AI generates exact synonyms + grammatical forms → search ONLY vocabulary column
+                    const forms = await getAIRelatedWords(term);
                     let allResults = [];
                     
-                    if (!useAI) {
-                        // 🔍 Lupa mode: ilike on vocabulary + synonyms (same logic as main search & modal +)
+                    if (forms.length > 0) {
+                        const orClauses = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
                         const { data } = await supabase
                             .from('vocabulary_v4')
                             .select('*')
-                            .or(`vocabulary.ilike.%${term}%,synonyms.ilike.%${term}%`)
+                            .or(orClauses)
                             .neq('id', currentWord.id)
                             .is('deleted_at', null)
                             .limit(20);
                         allResults = data || [];
-                    } else {
-                        // 🧠 Brain mode: AI generates synonyms + forms → search ONLY vocabulary
-                        if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); setFindingSimilar(null); return; }
-                        
-                        const forms = await getAIRelatedWords(term);
-                        if (forms.length > 0) {
-                            const orClauses = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
-                            const { data: results } = await supabase
-                                .from('vocabulary_v4')
-                                .select('*')
-                                .or(orClauses)
-                                .neq('id', currentWord.id)
-                                .is('deleted_at', null)
-                                .limit(20);
-                            allResults = results || [];
-                        }
                     }
 
                     if (allResults.length === 0) {
@@ -3612,43 +3476,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 }
             };
 
-            // 🆕 V11.9: Save to undo history before updating
-            function saveToUndoHistory(wordId, originalData) {
-                setUndoHistory(prev => ({
-                    ...prev,
-                    [wordId]: {
-                        ...originalData,
-                        timestamp: new Date().toISOString()
-                    }
-                }));
-            }
-
-            // 🆕 V11.9: Undo last change for a word
-            async function handleUndo(wordId) {
-                const historyEntry = undoHistory[wordId];
-                if (!historyEntry) {
-                    alert('No undo history for this word');
-                    return;
-                }
-                
-                try {
-                    const { timestamp, ...restoreData } = historyEntry;
-                    await supabase.from('vocabulary_v4').update(restoreData).eq('id', wordId);
-                    
-                    // Remove from history after restoring
-                    setUndoHistory(prev => {
-                        const newHistory = { ...prev };
-                        delete newHistory[wordId];
-                        return newHistory;
-                    });
-                    
-                    fetchWords(0, true);
-                    alert('✅ Changes undone successfully!');
-                } catch (error) {
-                    console.error('Undo error:', error);
-                    alert('❌ Error undoing changes');
-                }
-            }
 
             async function handleSave(e) {
                 e.preventDefault();
@@ -3658,8 +3485,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 wordData.favourite = parseInt(formData.get('favourite')) || 0;
                 
                 if (editingWord) {
-                    // 🆕 V11.9: Save current state to undo history before updating
-                    saveToUndoHistory(editingWord.id, editingWord);
                     
                     // 🆕 V11.21: Save previous version for change history
                     const updateDataWithHistory = {
@@ -3849,7 +3674,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.6</span>
+                                        English Booster <span className="version-text">v12.7</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3882,19 +3707,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             >
                                                 <i className="fas fa-history text-xl lg:text-base"></i>
                                             </button>
-                                            
-                                            {/* 🆕 V12.1: Global find & merge duplicates */}
-                                            <button 
-                                                onClick={findGlobalDuplicates}
-                                                disabled={globalDupLoading || words.length === 0}
-                                                className={`p-2 lg:p-2 rounded-lg border transition-colors ${
-                                                    globalDupLoading ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 animate-pulse' 
-                                                    : 'border-slate-700/30 text-slate-500 hover:text-orange-400 hover:border-orange-500/30'
-                                                }`}
-                                                title={globalDupLoading ? 'Scanning...' : `Find exact duplicates and exact synonyms in the Vocabulary column. ${search || familyFilter !== 'All' || difficultyFilter !== 'All' || favouriteLevel > 0 ? 'Searches filtered words' : 'Searches entire database'} (AI-powered)`}
-                                            >
-                                                <i className="fas fa-link text-xl lg:text-base"></i>
-                                            </button>
+
                                         </div>
                                         
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
@@ -3994,45 +3807,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     </header>
 
                     <main className="w-full mx-auto px-6 flex-1 overflow-hidden py-6">
-                        {/* 🆕 V11.99: Global find duplicates results */}
-                        {globalDupResult && (
-                            <div className={`mb-3 rounded-2xl p-4 text-sm ${globalDupResult.ok ? 'bg-green-900/20 border border-green-500/30' : 'bg-orange-900/20 border border-orange-500/30'}`}>
-                                {globalDupResult.ok ? (
-                                    <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> No duplicates or exact synonyms found!</div>
-                                ) : (
-                                    <div>
-                                        <div className="flex items-center justify-between mb-3">
-                                            <span className="text-orange-400 font-bold text-xs uppercase flex items-center gap-2"><i className="fas fa-link mr-1"></i> Found {globalDupResult.groups?.length || 0} potential duplicate pair(s)</span>
-                                            <button onClick={() => setGlobalDupResult(null)} className="text-slate-400 hover:text-white text-lg">&times;</button>
-                                        </div>
-                                        <div className="grid gap-1.5 max-h-64 overflow-y-auto custom-scroll">
-                                            {(globalDupResult.groups || []).map((g, i) => (
-                                                <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/50 rounded-xl px-3 py-2.5 hover:bg-slate-700/50 transition-colors">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div>
-                                                            <span className="text-white font-bold">{g.source.vocabulary}</span>
-                                                            <span className="text-slate-600 mx-1.5"><i className="fas fa-link text-[8px]"></i></span>
-                                                            <span className="text-orange-300 font-bold">{g.match.vocabulary}</span>
-                                                            {g.source.family && <span className="text-slate-600 ml-2 text-[9px] uppercase">{g.source.family}</span>}
-                                                        </div>
-                                                        {g.reason && <div className="text-slate-500 text-[9px] mt-0.5">{g.reason}</div>}
-                                                    </div>
-                                                    <button 
-                                                        onClick={() => {
-                                                            const fullWord = words.find(w => w.id === g.source.id);
-                                                            if (fullWord) handleFindSimilar(fullWord);
-                                                        }}
-                                                        className="text-[9px] font-black uppercase border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 px-2.5 py-1 rounded-full transition-colors whitespace-nowrap"
-                                                    >
-                                                        Merge
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+
                         <div onScroll={(e) => {if(e.target.scrollHeight - e.target.scrollTop <= e.target.clientHeight + 100 && hasMore && !loading) fetchWords(page)}} className="glass-card rounded-2xl h-full overflow-y-auto custom-scroll shadow-2xl">
                             <table className="desktop-table w-full text-left border-collapse">
                                 <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-md text-[10px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5 z-20">
@@ -4096,19 +3871,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         className="text-orange-500 hover:text-orange-400 tooltip p-1" 
                                                         data-tip="Find & Merge Similar"
                                                     >
-                                                        <span className="text-xl">{findingSimilar === w.id ? '⏳' : '🔀'}</span>
+                                                        <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
                                                     <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
-                                                    {/* Undo button */}
-                                                    <button 
-                                                        onClick={() => handleUndo(w.id)}
-                                                        disabled={!undoHistory[w.id]}
-                                                        className={`tooltip p-1 ${undoHistory[w.id] ? 'text-yellow-500 hover:text-yellow-400' : 'text-slate-700 cursor-not-allowed'}`}
-                                                        data-tip={undoHistory[w.id] ? "Undo last change" : "No changes to undo"}
-                                                    >
-                                                        <i className="fas fa-undo text-lg"></i>
-                                                    </button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -4200,7 +3966,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 disabled={findingSimilar === w.id}
                                                 className="p-2 text-orange-500 bg-orange-500/10 rounded-xl flex-1 text-xl" 
                                             >
-                                                {findingSimilar === w.id ? '⏳' : '🔀'}
+                                                <i className={`fas ${findingSimilar === w.id ? "fa-spinner fa-spin" : "fa-link"}`}></i>
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
@@ -4209,15 +3975,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             >
                                                 ✏️
                                             </button>
-                                            {/* 🆕 V11.11: Undo button (4th position) */}
-                                            <button 
-                                                onClick={() => handleUndo(w.id)}
-                                                disabled={!undoHistory[w.id]}
-                                                className={`p-2 rounded-xl flex-1 text-xl ${undoHistory[w.id] ? 'text-yellow-500 bg-yellow-500/10' : 'text-slate-700 bg-slate-800 cursor-not-allowed'}`}
-                                            >
-                                                ↩️
-                                            </button>
-                                            {/* 🆕 V11.11: Delete button (5th position) */}
+                                            {/* Delete button */}
                                             <button 
                                                 onClick={async () => {
                                                     if(confirm('Move to recycle bin?')) {
@@ -5149,35 +4907,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     {/* 🔀 MERGE SIMILAR MODAL (keeping same as V11.1) */}
                     {showMergeModal && mergeData && (
                         !selectedSimilar ? (
-                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setMergeAIMode(false);}}>
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-4xl w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
-                                            <h2 className="text-3xl font-black text-white">🔀 Find & Merge Similar</h2>
+                                            <h2 className="text-3xl font-black text-white"><i className="fas fa-link text-indigo-400"></i> Find & Merge Similar</h2>
                                             {mergeData?.current && <p className="text-lg mt-1">Searching for: <span className="text-indigo-400 font-black text-xl">"{mergeData.current.vocabulary}"</span></p>}
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            {/* 🆕 V11.93: Lupa/Brain toggle for merge modal */}
-                                            <button 
-                                                onClick={() => {
-                                                    const newMode = !mergeAIMode;
-                                                    setMergeAIMode(newMode);
-                                                    if (mergeData?.current) {
-                                                        handleFindSimilar(mergeData.current, newMode);
-                                                    }
-                                                }}
-                                                disabled={!!findingSimilar}
-                                                className={`p-2.5 rounded-xl border transition-colors ${
-                                                    mergeAIMode 
-                                                        ? 'bg-purple-500/20 border-purple-500 text-purple-400' 
-                                                        : 'border-slate-600 text-slate-500 hover:text-slate-300'
-                                                }`}
-                                                title={mergeAIMode ? 'AI search active (vocabulary only)' : 'Toggle AI search'}
-                                            >
-                                                <i className={`fas ${mergeAIMode ? 'fa-brain' : 'fa-search'} ${findingSimilar ? 'animate-pulse' : ''}`}></i>
-                                            </button>
-                                            <button onClick={() => {setShowMergeModal(false); setMergeData(null); setMergeAIMode(false);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
-                                        </div>
+                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
                                     <p className="text-slate-400 mb-4">{findingSimilar ? '🔄 Searching...' : `Found ${mergeData?.similar?.length || 0} similar words. Select one to merge:`}</p>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -5209,14 +4946,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 </div>
                             </div>
                         ) : (
-                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}}>
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}}>
                                 <div className="bg-slate-900 rounded-3xl p-8 max-w-6xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
-                                            <h2 className="text-3xl font-black text-white">🔀 Drag & Drop Merge</h2>
+                                            <h2 className="text-3xl font-black text-white"><i className="fas fa-link text-indigo-400"></i> Drag & Drop Merge</h2>
                                             <p className="text-slate-400 text-sm mt-1">📱 MOBILE: Tap items to move | 🖥️ DESKTOP: Drag items | RED = Delete | GREEN = Keep</p>
                                         </div>
-                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                        <button onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-6 mb-6">
@@ -5410,7 +5147,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             🔀 Merge & Delete Red Panel
                                         </button>
                                         <button 
-                                            onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null); setMergeAIMode(false);}}
+                                            onClick={() => {setShowMergeModal(false); setMergeData(null); setSelectedSimilar(null);}}
                                             className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                         >
                                             ❌ Cancel
