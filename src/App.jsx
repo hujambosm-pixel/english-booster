@@ -49,7 +49,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             // 🆕 V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
             const [aiSearchPrompt, setAiSearchPrompt] = useState(
-                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.'
+                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: How commonly used is "{word}"? (very common / common / uncommon / rare / formal / literary). If there is a more commonly used alternative with the same meaning, indicate it.'
             );
             
             // 🆕 V11.9: Undo history (stores last change for each word)
@@ -59,6 +59,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             const [groqApiKey, setGroqApiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
             const [magicLoading, setMagicLoading] = useState(false);
+            const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
             const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
             const dupDebounceTimer = React.useRef(null);
             const [showImproveModal, setShowImproveModal] = useState(false);
@@ -83,7 +84,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
             const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
-            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun"\n}');
+            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun",\n  "usage": "very common|common|uncommon|rare|formal|informal|literary",\n  "alternative": "more commonly used word/phrase, or empty string if already very common"\n}');
             
             // 🆕 V11.2: New states
             // 🆕 V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
@@ -3095,6 +3096,11 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
 
                     // currentData already obtained at the beginning of function (V11.38)
 
+                    // 🆕 V12.8: Store usage frequency info
+                    if (result.usage || result.alternative) {
+                        setUsageInfo({ word, usage: result.usage || '', alternative: result.alternative || '' });
+                    }
+
                     if (targetFields) {
                         // 🆕 V11.8: Only fill empty fields in modal
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
@@ -3253,7 +3259,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 {
   "synonyms": "synonym1, synonym2, synonym3",
   "context": "Example sentence with exact word ${word} here.",
-  "family": "${currentFamily}"
+  "family": "${currentFamily}",
+  "usage": "very common|common|uncommon|rare|formal|informal|literary",
+  "alternative": "more commonly used word/phrase, or empty string if already very common"
 }`;
 
 
@@ -3356,6 +3364,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     const currentCtx = currentWord.context ? [currentWord.context] : [];
                     const improvedCtx = result.context ? [result.context] : [];
                     
+                    // 🆕 V12.8: Store usage frequency info
+                    if (result.usage || result.alternative) {
+                        setUsageInfo({ word, usage: result.usage || '', alternative: result.alternative || '' });
+                    }
+
                     setImproveData({
                         wordId,
                         vocabulary: word,
@@ -3377,7 +3390,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             improvedContext: improvedCtx
                         }
                     });
-                    setShowImproveModal(true);
+                    setUsageInfo(null); setShowImproveModal(true);
 
                 } catch (error) {
                     console.error('Improve Error:', error);
@@ -3674,7 +3687,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.7</span>
+                                        English Booster <span className="version-text">v12.8</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -3683,7 +3696,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -3874,7 +3887,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -3970,7 +3983,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -4520,6 +4533,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
+                                    {/* 🆕 V12.8: Usage frequency info */}
+                                    {usageInfo && (
+                                        <div className="col-span-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-slate-500 uppercase font-black text-[9px]">Usage:</span>
+                                                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                                                    /very common|common/.test(usageInfo.usage) && !/uncommon/.test(usageInfo.usage) ? 'bg-green-500/20 text-green-400' :
+                                                    /uncommon|formal|literary/.test(usageInfo.usage) ? 'bg-yellow-500/20 text-yellow-400' :
+                                                    /rare/.test(usageInfo.usage) ? 'bg-red-500/20 text-red-400' :
+                                                    'bg-slate-600/30 text-slate-300'
+                                                }`}>{usageInfo.usage || 'unknown'}</span>
+                                                {usageInfo.alternative && usageInfo.alternative.trim() && (
+                                                    <>
+                                                        <span className="text-slate-600">|</span>
+                                                        <span className="text-slate-500 text-[9px]">More common:</span>
+                                                        <span className="text-blue-400 font-bold">{usageInfo.alternative}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     {/* 🆕 V11.96: Spell check results */}
                                     {spellCheckResult && (
                                         <div className={`col-span-2 rounded-xl p-3 text-sm ${spellCheckResult.ok ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
@@ -4581,6 +4615,24 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                                 <div className="bg-indigo-900/20 border border-indigo-500/50 rounded-xl p-2 sm:p-3 mb-3 sm:mb-4 text-center">
                                     <p className="text-indigo-300 text-xs sm:text-sm"><strong>Word:</strong> {improveData.vocabulary}</p>
+                                    {usageInfo && (
+                                        <div className="flex items-center justify-center gap-2 flex-wrap mt-1.5">
+                                            <span className="text-slate-500 uppercase font-black text-[9px]">Usage:</span>
+                                            <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                                                /very common|common/.test(usageInfo.usage) && !/uncommon/.test(usageInfo.usage) ? 'bg-green-500/20 text-green-400' :
+                                                /uncommon|formal|literary/.test(usageInfo.usage) ? 'bg-yellow-500/20 text-yellow-400' :
+                                                /rare/.test(usageInfo.usage) ? 'bg-red-500/20 text-red-400' :
+                                                'bg-slate-600/30 text-slate-300'
+                                            }`}>{usageInfo.usage || 'unknown'}</span>
+                                            {usageInfo.alternative && usageInfo.alternative.trim() && (
+                                                <>
+                                                    <span className="text-slate-600">|</span>
+                                                    <span className="text-slate-500 text-[9px]">More common:</span>
+                                                    <span className="text-blue-400 font-bold text-xs">{usageInfo.alternative}</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 {/* 🆕 V11.21: Responsive grid - vertical on mobile, horizontal on desktop */}
