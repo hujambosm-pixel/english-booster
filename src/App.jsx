@@ -60,6 +60,47 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [groqApiKey, setGroqApiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
             const [magicLoading, setMagicLoading] = useState(false);
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
+            
+            // 🆕 V13.0: Separate API call for usage frequency — always reliable
+            // 🆕 V13.1: Separate API call for usage frequency
+            async function fetchUsageInfo(word) {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey || !word) return;
+                try {
+                    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages: [{ 
+                                role: 'system', 
+                                content: 'You are a lexicography assistant. Reply ONLY with valid JSON, no extra text.' 
+                            }, { 
+                                role: 'user', 
+                                content: 'For the English word/expression "' + word + '": How commonly used is it? (very common / common / uncommon / rare / formal / informal / literary). If there is a more commonly used alternative with the SAME meaning, what is it? Reply JSON: {"usage":"...","alternative":"..."}'
+                            }],
+                            temperature: 0.0,
+                            max_tokens: 100
+                        })
+                    });
+                    if (!resp.ok) { console.warn('Usage API error:', resp.status); return; }
+                    const data = await resp.json();
+                    let raw = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+                    // Strip markdown fences
+                    raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    // Extract first JSON object
+                    const braceStart = raw.indexOf('{');
+                    const braceEnd = raw.lastIndexOf('}');
+                    if (braceStart === -1 || braceEnd === -1) { console.warn('No JSON in usage response:', raw); return; }
+                    const jsonStr = raw.substring(braceStart, braceEnd + 1);
+                    const result = JSON.parse(jsonStr);
+                    if (result.usage) {
+                        setUsageInfo({ word, usage: result.usage, alternative: result.alternative || '' });
+                    }
+                } catch(e) {
+                    console.warn('Usage info fetch error:', e);
+                }
+            }
             const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
             const dupDebounceTimer = React.useRef(null);
             const [showImproveModal, setShowImproveModal] = useState(false);
@@ -1019,22 +1060,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     groqAudioRef.current = null;
                 }
                 
-                // 🆕 V12.9: Use Groq TTS when selected
+                // 🆕 V13.1: Use Groq Orpheus TTS when selected
                 if (preferredVoice.startsWith('groq-')) {
                     const apiKey = groqApiKey.trim();
                     if (!apiKey) {
                         console.warn('Groq API key not set, falling back to browser TTS');
                     } else {
-                        const voiceName = preferredVoice === 'groq-arista' ? 'Arista-PlayAI' :
-                                         preferredVoice === 'groq-fritz' ? 'Fritz-PlayAI' :
-                                         preferredVoice === 'groq-gail' ? 'Gail-PlayAI' :
-                                         preferredVoice === 'groq-indigo' ? 'Indigo-PlayAI' :
-                                         preferredVoice === 'groq-celeste' ? 'Celeste-PlayAI' :
-                                         preferredVoice === 'groq-atlas' ? 'Atlas-PlayAI' :
-                                         'Fritz-PlayAI';
+                        const voiceName = preferredVoice.replace('groq-', '');
                         
                         const doGroqSpeak = async () => {
                             try {
+                                // Orpheus limit: 200 chars. Truncate if needed.
+                                const inputText = text.length > 195 ? text.substring(0, 195) + '...' : text;
+                                
                                 const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
                                     method: 'POST',
                                     headers: {
@@ -1042,16 +1080,23 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                         'Authorization': `Bearer ${apiKey}`
                                     },
                                     body: JSON.stringify({
-                                        model: 'playai-tts',
-                                        input: text,
+                                        model: 'canopylabs/orpheus-v1-english',
+                                        input: inputText,
                                         voice: voiceName,
-                                        response_format: 'wav',
-                                        speed: speed
+                                        response_format: 'wav'
                                     })
                                 });
                                 
                                 if (!response.ok) {
-                                    console.error('Groq TTS error:', response.status);
+                                    const errText = await response.text().catch(() => '');
+                                    console.error('Groq TTS error:', response.status, errText);
+                                    // Fallback to browser TTS
+                                    if ('speechSynthesis' in window) {
+                                        const utter = new SpeechSynthesisUtterance(text);
+                                        utter.lang = 'en-GB';
+                                        utter.rate = speed;
+                                        window.speechSynthesis.speak(utter);
+                                    }
                                     return;
                                 }
                                 
@@ -1060,9 +1105,25 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                 const audio = new Audio(url);
                                 groqAudioRef.current = audio;
                                 audio.onended = () => URL.revokeObjectURL(url);
-                                audio.play();
+                                audio.onerror = () => {
+                                    console.error('Audio playback error');
+                                    URL.revokeObjectURL(url);
+                                    // Fallback
+                                    if ('speechSynthesis' in window) {
+                                        const utter = new SpeechSynthesisUtterance(text);
+                                        utter.lang = 'en-GB';
+                                        window.speechSynthesis.speak(utter);
+                                    }
+                                };
+                                await audio.play();
                             } catch(e) {
                                 console.error('Groq TTS error:', e);
+                                if ('speechSynthesis' in window) {
+                                    const utter = new SpeechSynthesisUtterance(text);
+                                    utter.lang = 'en-GB';
+                                    utter.rate = speed;
+                                    window.speechSynthesis.speak(utter);
+                                }
                             }
                         };
                         
@@ -3041,9 +3102,6 @@ MANDATORY RULES FOR "${word}" (${currentFamily}):
 RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
-                    // 🆕 V12.9: Always append usage request (hardcoded, independent of custom prompt)
-                    prompt += '\n\nADDITIONAL REQUIRED FIELDS in your JSON response:\n- "usage": how commonly used is this word? (very common / common / uncommon / rare / formal / informal / literary)\n- "alternative": if there is a more commonly used word/phrase with the same meaning, provide it. If the word is already very common, use empty string ""';
-
                     const response = await fetch(
                         'https://api.groq.com/openai/v1/chat/completions',
                         {
@@ -3061,7 +3119,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                     }
                                 ],
                                 temperature: 0.4,
-                                max_tokens: 600
+                                max_tokens: 500
                             })
                         }
                     );
@@ -3162,10 +3220,8 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
 
                     // currentData already obtained at the beginning of function (V11.38)
 
-                    // 🆕 V12.8: Store usage frequency info
-                    if (result.usage || result.alternative) {
-                        setUsageInfo({ word, usage: result.usage || '', alternative: result.alternative || '' });
-                    }
+                    // 🆕 V13.0: Fetch usage info separately (reliable, independent call)
+                    fetchUsageInfo(word);
 
                     if (targetFields) {
                         // 🆕 V11.8: Only fill empty fields in modal
@@ -3326,8 +3382,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
   "synonyms": "synonym1, synonym2, synonym3",
   "context": "Example sentence with exact word ${word} here.",
   "family": "${currentFamily}",
-  "usage": "very common|common|uncommon|rare|formal|informal|literary",
-  "alternative": "more commonly used word/phrase, or empty string if already very common"
 }`;
 
 
@@ -3341,7 +3395,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             model: 'llama-3.1-8b-instant',
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.4,
-                            max_tokens: 600
+                            max_tokens: 500
                         })
                     });
 
@@ -3430,11 +3484,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     const currentCtx = currentWord.context ? [currentWord.context] : [];
                     const improvedCtx = result.context ? [result.context] : [];
                     
-                    // 🆕 V12.8: Store usage frequency info
-                    if (result.usage || result.alternative) {
-                        setUsageInfo({ word, usage: result.usage || '', alternative: result.alternative || '' });
-                    }
-
                     setImproveData({
                         wordId,
                         vocabulary: word,
@@ -3456,7 +3505,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             improvedContext: improvedCtx
                         }
                     });
-                    setUsageInfo(null); setShowImproveModal(true);
+                    setUsageInfo(null); setShowImproveModal(true); fetchUsageInfo(word);
 
                 } catch (error) {
                     console.error('Improve Error:', error);
@@ -3753,7 +3802,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.9</span>
+                                        English Booster <span className="version-text">v13.1</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4188,13 +4237,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className="w-full p-4 rounded-xl text-sm font-bold"
                                         >
                                             <option value="auto">🤖 Auto (Best Available)</option>
-                                            <optgroup label="🔊 Groq HD (requires API key)">
-                                                <option value="groq-arista">🎙️ Arista (Female, warm)</option>
-                                                <option value="groq-celeste">🎙️ Celeste (Female, clear)</option>
-                                                <option value="groq-gail">🎙️ Gail (Female, natural)</option>
-                                                <option value="groq-fritz">🎙️ Fritz (Male, professional)</option>
-                                                <option value="groq-atlas">🎙️ Atlas (Male, deep)</option>
-                                                <option value="groq-indigo">🎙️ Indigo (Neutral, smooth)</option>
+                                            <optgroup label="🔊 Groq Orpheus HD (requires API key)">
+                                                <option value="groq-autumn">🎙️ Autumn (Female)</option>
+                                                <option value="groq-diana">🎙️ Diana (Female)</option>
+                                                <option value="groq-hannah">🎙️ Hannah (Female)</option>
+                                                <option value="groq-austin">🎙️ Austin (Male)</option>
+                                                <option value="groq-daniel">🎙️ Daniel (Male)</option>
+                                                <option value="groq-troy">🎙️ Troy (Male)</option>
                                             </optgroup>
                                             <optgroup label="🔈 Browser voices">
                                             {availableVoices.map(voice => (
