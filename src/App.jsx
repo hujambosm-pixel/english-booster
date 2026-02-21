@@ -1008,35 +1008,99 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return context;
             }
 
-            // 🆕 V11.12: Updated speakText with speed control
+            // 🆕 V12.9: Groq TTS audio element ref
+            const groqAudioRef = React.useRef(null);
+            
+            // 🆕 V12.9: speakText with Groq HD TTS support
             function speakText(text, speed = 1.0, useDelay = true) {
+                // Stop any playing Groq audio
+                if (groqAudioRef.current) {
+                    groqAudioRef.current.pause();
+                    groqAudioRef.current = null;
+                }
+                
+                // 🆕 V12.9: Use Groq TTS when selected
+                if (preferredVoice.startsWith('groq-')) {
+                    const apiKey = groqApiKey.trim();
+                    if (!apiKey) {
+                        console.warn('Groq API key not set, falling back to browser TTS');
+                    } else {
+                        const voiceName = preferredVoice === 'groq-arista' ? 'Arista-PlayAI' :
+                                         preferredVoice === 'groq-fritz' ? 'Fritz-PlayAI' :
+                                         preferredVoice === 'groq-gail' ? 'Gail-PlayAI' :
+                                         preferredVoice === 'groq-indigo' ? 'Indigo-PlayAI' :
+                                         preferredVoice === 'groq-celeste' ? 'Celeste-PlayAI' :
+                                         preferredVoice === 'groq-atlas' ? 'Atlas-PlayAI' :
+                                         'Fritz-PlayAI';
+                        
+                        const doGroqSpeak = async () => {
+                            try {
+                                const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${apiKey}`
+                                    },
+                                    body: JSON.stringify({
+                                        model: 'playai-tts',
+                                        input: text,
+                                        voice: voiceName,
+                                        response_format: 'wav',
+                                        speed: speed
+                                    })
+                                });
+                                
+                                if (!response.ok) {
+                                    console.error('Groq TTS error:', response.status);
+                                    return;
+                                }
+                                
+                                const blob = await response.blob();
+                                const url = URL.createObjectURL(blob);
+                                const audio = new Audio(url);
+                                groqAudioRef.current = audio;
+                                audio.onended = () => URL.revokeObjectURL(url);
+                                audio.play();
+                            } catch(e) {
+                                console.error('Groq TTS error:', e);
+                            }
+                        };
+                        
+                        if (useDelay) {
+                            setTimeout(doGroqSpeak, 100);
+                        } else {
+                            doGroqSpeak();
+                        }
+                        return;
+                    }
+                }
+                
+                // Fallback: browser speechSynthesis
                 if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel(); // Cancel any ongoing speech
+                    window.speechSynthesis.cancel();
                     
                     const doSpeak = () => {
                         const voices = window.speechSynthesis.getVoices();
                         
                         const utterance = new SpeechSynthesisUtterance(text);
-                        utterance.lang = 'en-GB'; // British English
-                        utterance.rate = speed; // Use the speed parameter
-                        utterance.pitch = 1.0; // Natural pitch
-                        utterance.volume = 1.0; // Full volume
+                        utterance.lang = 'en-GB';
+                        utterance.rate = speed;
+                        utterance.pitch = 1.0;
+                        utterance.volume = 1.0;
                         
-                        // 🆕 V11.7: Use preferred voice if selected
                         if (preferredVoice !== 'auto') {
                             const selectedVoice = voices.find(v => v.name === preferredVoice);
                             if (selectedVoice) {
                                 utterance.voice = selectedVoice;
                             }
                         } else {
-                            // Auto mode: Try to find a natural-sounding British voice
                             const preferredVoices = [
                                 'Google UK English Female',
                                 'Google UK English Male',
                                 'Microsoft Hazel Desktop - English (Great Britain)',
                                 'Microsoft George - English (United Kingdom)',
-                                'Karen', // macOS British voice
-                                'Daniel' // macOS British voice
+                                'Karen',
+                                'Daniel'
                             ];
                             
                             let selectedVoice = voices.find(voice => 
@@ -1061,7 +1125,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         window.speechSynthesis.speak(utterance);
                     };
                     
-                    // 🆕 V11.8: Apply delay by default (changed from V11.7)
                     if (useDelay) {
                         setTimeout(doSpeak, 150);
                     } else {
@@ -2978,6 +3041,9 @@ MANDATORY RULES FOR "${word}" (${currentFamily}):
 RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
+                    // 🆕 V12.9: Always append usage request (hardcoded, independent of custom prompt)
+                    prompt += '\n\nADDITIONAL REQUIRED FIELDS in your JSON response:\n- "usage": how commonly used is this word? (very common / common / uncommon / rare / formal / informal / literary)\n- "alternative": if there is a more commonly used word/phrase with the same meaning, provide it. If the word is already very common, use empty string ""';
+
                     const response = await fetch(
                         'https://api.groq.com/openai/v1/chat/completions',
                         {
@@ -2995,7 +3061,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                     }
                                 ],
                                 temperature: 0.4,
-                                max_tokens: 500
+                                max_tokens: 600
                             })
                         }
                     );
@@ -3275,7 +3341,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             model: 'llama-3.1-8b-instant',
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.4,
-                            max_tokens: 500
+                            max_tokens: 600
                         })
                     });
 
@@ -3687,7 +3753,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v12.8</span>
+                                        English Booster <span className="version-text">v12.9</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4122,13 +4188,23 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             className="w-full p-4 rounded-xl text-sm font-bold"
                                         >
                                             <option value="auto">🤖 Auto (Best Available)</option>
+                                            <optgroup label="🔊 Groq HD (requires API key)">
+                                                <option value="groq-arista">🎙️ Arista (Female, warm)</option>
+                                                <option value="groq-celeste">🎙️ Celeste (Female, clear)</option>
+                                                <option value="groq-gail">🎙️ Gail (Female, natural)</option>
+                                                <option value="groq-fritz">🎙️ Fritz (Male, professional)</option>
+                                                <option value="groq-atlas">🎙️ Atlas (Male, deep)</option>
+                                                <option value="groq-indigo">🎙️ Indigo (Neutral, smooth)</option>
+                                            </optgroup>
+                                            <optgroup label="🔈 Browser voices">
                                             {availableVoices.map(voice => (
                                                 <option key={voice.name} value={voice.name}>
                                                     {voice.name} ({voice.lang})
                                                 </option>
                                             ))}
+                                            </optgroup>
                                         </select>
-                                        <p className="text-xs text-slate-500 mt-2">Select the voice used for audio playback in exercises and context sentences.</p>
+                                        <p className="text-xs text-slate-500 mt-2">Groq HD voices are hyper-realistic AI voices (uses your Groq API key). Browser voices are free but lower quality.</p>
                                     </div>
                                     
                                     {/* 🆕 V11.16: Selection Exercise Countdown */}
