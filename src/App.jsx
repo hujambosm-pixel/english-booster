@@ -1061,155 +1061,88 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 return context;
             }
 
-            // 🆕 V12.9: Groq TTS audio element ref
+            // 🆕 V13.5: Groq TTS audio ref
             const groqAudioRef = React.useRef(null);
             
-            // 🆕 V12.9: speakText with Groq HD TTS support
+            // 🆕 V13.5: Helper — select best British browser voice (Auto logic)
+            function getBestBrowserVoice(voices) {
+                let v = voices.find(x => x.name === 'Google UK English Female');
+                if (!v) v = voices.find(x => x.lang.includes('GB') && x.name.includes('Google'));
+                if (!v) v = voices.find(x => ['Google UK English Male', 'Microsoft Hazel Desktop - English (Great Britain)', 'Microsoft George - English (United Kingdom)', 'Karen', 'Daniel'].some(pv => x.name.includes(pv)));
+                if (!v) v = voices.find(x => x.lang.includes('en-GB') || x.lang.includes('en_GB'));
+                return v;
+            }
+            
+            // 🆕 V13.5: Browser TTS — uses best British voice when Auto or Groq is selected
+            function speakBrowserTTS(text, speed, useDelay) {
+                if (!('speechSynthesis' in window)) return;
+                window.speechSynthesis.cancel();
+                const doSpeak = () => {
+                    const voices = window.speechSynthesis.getVoices();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'en-GB';
+                    utterance.rate = speed;
+                    utterance.pitch = 1.0;
+                    utterance.volume = 1.0;
+                    if (preferredVoice === 'auto' || preferredVoice.startsWith('groq-')) {
+                        const best = getBestBrowserVoice(voices);
+                        if (best) utterance.voice = best;
+                    } else {
+                        const sel = voices.find(v => v.name === preferredVoice);
+                        if (sel) utterance.voice = sel;
+                    }
+                    window.speechSynthesis.speak(utterance);
+                };
+                if (useDelay) { setTimeout(doSpeak, 150); } else { doSpeak(); }
+            }
+            
+            // 🆕 V13.5: speakText — Groq HD at normal speed, best browser voice at slow speed
             function speakText(text, speed = 1.0, useDelay = true) {
-                // Stop any playing Groq audio
-                if (groqAudioRef.current) {
-                    groqAudioRef.current.pause();
-                    groqAudioRef.current = null;
-                }
+                if (groqAudioRef.current) { groqAudioRef.current.pause(); groqAudioRef.current = null; }
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
                 
-                // 🆕 V13.1: Use Groq Orpheus TTS when selected
-                // 🆕 V13.4: Skip Groq for slow speeds (Orpheus doesn't support speed control)
-                if (preferredVoice.startsWith('groq-') && speed >= 1.0) {
+                const useGroq = preferredVoice.startsWith('groq-') && speed >= 1.0 && groqApiKey.trim();
+                
+                if (useGroq) {
                     const apiKey = groqApiKey.trim();
-                    if (!apiKey) {
-                        console.warn('Groq API key not set, falling back to browser TTS');
-                    } else {
-                        const voiceName = preferredVoice.replace('groq-', '');
-                        
-                        const doGroqSpeak = async () => {
-                            try {
-                                // Orpheus limit: 200 chars. Truncate if needed.
-                                const inputText = text.length > 195 ? text.substring(0, 195) + '...' : text;
-                                
-                                const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${apiKey}`
-                                    },
-                                    body: JSON.stringify({
-                                        model: 'canopylabs/orpheus-v1-english',
-                                        input: inputText,
-                                        voice: voiceName,
-                                        response_format: 'wav'
-                                    })
-                                });
-                                
-                                if (!response.ok) {
-                                    const errText = await response.text().catch(() => '');
-                                    console.error('Groq TTS error:', response.status, errText);
-                                    if (errText.includes('terms acceptance')) {
-                                        alert('⚠️ Accept Orpheus terms first:\nhttps://console.groq.com/playground?model=canopylabs/orpheus-v1-english');
-                                    }
-                                    // Fallback to browser TTS
-                                    if ('speechSynthesis' in window) {
-                                        const utter = new SpeechSynthesisUtterance(text);
-                                        utter.lang = 'en-GB';
-                                        utter.rate = speed;
-                                        window.speechSynthesis.speak(utter);
-                                    }
-                                    return;
+                    const voiceName = preferredVoice.replace('groq-', '');
+                    const doGroqSpeak = async () => {
+                        try {
+                            // Prepend ellipsis to prevent first-word clipping
+                            let inputText = text.length > 190 ? text.substring(0, 190) + '...' : '... ' + text;
+                            
+                            const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: inputText, voice: voiceName, response_format: 'wav' })
+                            });
+                            
+                            if (!response.ok) {
+                                const errText = await response.text().catch(() => '');
+                                if (errText.includes('terms acceptance')) {
+                                    alert('⚠️ Accept Orpheus terms first:\nhttps://console.groq.com/playground?model=canopylabs/orpheus-v1-english');
                                 }
-                                
-                                const blob = await response.blob();
-                                const url = URL.createObjectURL(blob);
-                                const audio = new Audio(url);
-                                groqAudioRef.current = audio;
-                                audio.onended = () => URL.revokeObjectURL(url);
-                                audio.onerror = () => {
-                                    console.error('Audio playback error');
-                                    URL.revokeObjectURL(url);
-                                    // Fallback
-                                    if ('speechSynthesis' in window) {
-                                        const utter = new SpeechSynthesisUtterance(text);
-                                        utter.lang = 'en-GB';
-                                        window.speechSynthesis.speak(utter);
-                                    }
-                                };
-                                await audio.play();
-                            } catch(e) {
-                                console.error('Groq TTS error:', e);
-                                if ('speechSynthesis' in window) {
-                                    const utter = new SpeechSynthesisUtterance(text);
-                                    utter.lang = 'en-GB';
-                                    utter.rate = speed;
-                                    window.speechSynthesis.speak(utter);
-                                }
+                                speakBrowserTTS(text, speed, false);
+                                return;
                             }
-                        };
-                        
-                        if (useDelay) {
-                            setTimeout(doGroqSpeak, 100);
-                        } else {
-                            doGroqSpeak();
+                            
+                            const blob = await response.blob();
+                            const url = URL.createObjectURL(blob);
+                            const audio = new Audio(url);
+                            groqAudioRef.current = audio;
+                            audio.onended = () => URL.revokeObjectURL(url);
+                            audio.onerror = () => { URL.revokeObjectURL(url); speakBrowserTTS(text, speed, false); };
+                            await audio.play();
+                        } catch(e) {
+                            console.error('Groq TTS error:', e);
+                            speakBrowserTTS(text, speed, false);
                         }
-                        return;
-                    }
+                    };
+                    if (useDelay) { setTimeout(doGroqSpeak, 100); } else { doGroqSpeak(); }
+                    return;
                 }
                 
-                // Fallback: browser speechSynthesis
-                if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel();
-                    
-                    const doSpeak = () => {
-                        const voices = window.speechSynthesis.getVoices();
-                        
-                        const utterance = new SpeechSynthesisUtterance(text);
-                        utterance.lang = 'en-GB';
-                        utterance.rate = speed;
-                        utterance.pitch = 1.0;
-                        utterance.volume = 1.0;
-                        
-                        if (preferredVoice !== 'auto') {
-                            const selectedVoice = voices.find(v => v.name === preferredVoice);
-                            if (selectedVoice) {
-                                utterance.voice = selectedVoice;
-                            }
-                        } else {
-                            const preferredVoices = [
-                                'Google UK English Female',
-                                'Google UK English Male',
-                                'Microsoft Hazel Desktop - English (Great Britain)',
-                                'Microsoft George - English (United Kingdom)',
-                                'Karen',
-                                'Daniel'
-                            ];
-                            
-                            let selectedVoice = voices.find(voice => 
-                                voice.lang.includes('GB') && voice.name.includes('Google')
-                            );
-                            
-                            if (!selectedVoice) {
-                                selectedVoice = voices.find(voice => 
-                                    preferredVoices.some(pv => voice.name.includes(pv))
-                                );
-                            }
-                            
-                            if (!selectedVoice) {
-                                selectedVoice = voices.find(voice => voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
-                            }
-                            
-                            if (selectedVoice) {
-                                utterance.voice = selectedVoice;
-                            }
-                        }
-                        
-                        window.speechSynthesis.speak(utterance);
-                    };
-                    
-                    if (useDelay) {
-                        setTimeout(doSpeak, 150);
-                    } else {
-                        doSpeak();
-                    }
-                } else {
-                    alert('❌ Text-to-speech not supported in this browser');
-                }
+                speakBrowserTTS(text, speed, useDelay);
             }
 
             // 🆕 V11.5: Compare user input with correct answer and highlight differences
@@ -3542,27 +3475,53 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
             };
 
             // 🆕 V11.93: Unified search with independent AI toggle
-            // 🆕 V12.7: Find & Merge always uses AI (same as brain search)
+            // 🆕 V13.5: Find & Merge — multi-strategy: AI synonyms + partial words + synonyms column
             const handleFindSimilar = async (currentWord) => {
                 if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); return; }
                 setFindingSimilar(currentWord.id);
                 try {
                     const term = currentWord.vocabulary.trim().toLowerCase();
-                    
-                    // AI generates exact synonyms + grammatical forms → search ONLY vocabulary column
-                    const forms = await getAIRelatedWords(term);
+                    const words = term.split(/\s+/).filter(w => w.length >= 3);
+                    const seen = new Set();
                     let allResults = [];
                     
+                    const addResults = (data) => {
+                        (data || []).forEach(w => { if (!seen.has(w.id)) { seen.add(w.id); allResults.push(w); } });
+                    };
+                    
+                    // Strategy 1: AI synonyms + grammatical forms → search vocabulary column
+                    const forms = await getAIRelatedWords(term);
                     if (forms.length > 0) {
                         const orClauses = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
-                        const { data } = await supabase
-                            .from('vocabulary_v4')
-                            .select('*')
-                            .or(orClauses)
-                            .neq('id', currentWord.id)
-                            .is('deleted_at', null)
-                            .limit(20);
-                        allResults = data || [];
+                        const { data } = await supabase.from('vocabulary_v4').select('*')
+                            .or(orClauses).neq('id', currentWord.id).is('deleted_at', null).limit(20);
+                        addResults(data);
+                    }
+                    
+                    // Strategy 2: Each individual word (3+ chars) from vocabulary → search in other vocabulary entries
+                    if (words.length > 0) {
+                        const wordClauses = words.map(w => `vocabulary.ilike.%${w}%`).join(',');
+                        const { data } = await supabase.from('vocabulary_v4').select('*')
+                            .or(wordClauses).neq('id', currentWord.id).is('deleted_at', null).limit(30);
+                        addResults(data);
+                    }
+                    
+                    // Strategy 3: Search the whole term in synonyms column of other records
+                    {
+                        const { data } = await supabase.from('vocabulary_v4').select('*')
+                            .ilike('synonyms', `%${term}%`).neq('id', currentWord.id).is('deleted_at', null).limit(15);
+                        addResults(data);
+                    }
+                    
+                    // Strategy 4: Current word's synonyms → search as terms in vocabulary column
+                    if (currentWord.synonyms) {
+                        const synTerms = currentWord.synonyms.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length >= 3);
+                        if (synTerms.length > 0) {
+                            const synClauses = synTerms.map(s => `vocabulary.ilike.%${s}%`).join(',');
+                            const { data } = await supabase.from('vocabulary_v4').select('*')
+                                .or(synClauses).neq('id', currentWord.id).is('deleted_at', null).limit(15);
+                            addResults(data);
+                        }
                     }
 
                     if (allResults.length === 0) {
@@ -3828,7 +3787,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.4</span>
+                                        English Booster <span className="version-text">v13.5</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
