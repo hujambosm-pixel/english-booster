@@ -3475,63 +3475,99 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
             };
 
             // 🆕 V11.93: Unified search with independent AI toggle
-            // 🆕 V13.5: Find & Merge — multi-strategy: AI synonyms + partial words + synonyms column
+            // 🆕 V13.6: Find & Merge — AI synonyms + DB search + AI post-filter
             const handleFindSimilar = async (currentWord) => {
                 if (!groqApiKey.trim()) { alert('Please set your Groq API Key in Settings first.'); return; }
                 setFindingSimilar(currentWord.id);
                 try {
                     const term = currentWord.vocabulary.trim().toLowerCase();
-                    const words = term.split(/\s+/).filter(w => w.length >= 3);
                     const seen = new Set();
-                    let allResults = [];
+                    let candidates = [];
                     
                     const addResults = (data) => {
-                        (data || []).forEach(w => { if (!seen.has(w.id)) { seen.add(w.id); allResults.push(w); } });
+                        (data || []).forEach(w => { if (!seen.has(w.id)) { seen.add(w.id); candidates.push(w); } });
                     };
                     
-                    // Strategy 1: AI synonyms + grammatical forms → search vocabulary column
+                    // Step 1: AI generates synonyms + grammatical forms → search vocabulary
                     const forms = await getAIRelatedWords(term);
                     if (forms.length > 0) {
                         const orClauses = forms.map(f => `vocabulary.ilike.%${f}%`).join(',');
                         const { data } = await supabase.from('vocabulary_v4').select('*')
-                            .or(orClauses).neq('id', currentWord.id).is('deleted_at', null).limit(20);
+                            .or(orClauses).neq('id', currentWord.id).is('deleted_at', null).limit(25);
                         addResults(data);
                     }
                     
-                    // Strategy 2: Each individual word (3+ chars) from vocabulary → search in other vocabulary entries
-                    if (words.length > 0) {
-                        const wordClauses = words.map(w => `vocabulary.ilike.%${w}%`).join(',');
-                        const { data } = await supabase.from('vocabulary_v4').select('*')
-                            .or(wordClauses).neq('id', currentWord.id).is('deleted_at', null).limit(30);
-                        addResults(data);
-                    }
-                    
-                    // Strategy 3: Search the whole term in synonyms column of other records
+                    // Step 2: Search the term in synonyms column of other records
                     {
                         const { data } = await supabase.from('vocabulary_v4').select('*')
-                            .ilike('synonyms', `%${term}%`).neq('id', currentWord.id).is('deleted_at', null).limit(15);
+                            .ilike('synonyms', `%${term}%`).neq('id', currentWord.id).is('deleted_at', null).limit(10);
                         addResults(data);
                     }
                     
-                    // Strategy 4: Current word's synonyms → search as terms in vocabulary column
+                    // Step 3: Current word's own synonyms → search as vocabulary in other records
                     if (currentWord.synonyms) {
                         const synTerms = currentWord.synonyms.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length >= 3);
                         if (synTerms.length > 0) {
                             const synClauses = synTerms.map(s => `vocabulary.ilike.%${s}%`).join(',');
                             const { data } = await supabase.from('vocabulary_v4').select('*')
-                                .or(synClauses).neq('id', currentWord.id).is('deleted_at', null).limit(15);
+                                .or(synClauses).neq('id', currentWord.id).is('deleted_at', null).limit(10);
                             addResults(data);
                         }
                     }
-
-                    if (allResults.length === 0) {
+                    
+                    if (candidates.length === 0) {
                         alert('✅ No similar words found!');
+                        return;
+                    }
+                    
+                    // Step 4: AI POST-FILTER — ask AI which candidates are truly related
+                    const candidateList = candidates.map(w => w.vocabulary).join(', ');
+                    try {
+                        const filterResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.3-70b-versatile',
+                                messages: [{ 
+                                    role: 'system', 
+                                    content: 'You are a vocabulary deduplication assistant. Given a reference word and a list of candidates, return ONLY those that should be merged because they are: (a) exact synonyms, (b) near-synonyms with essentially the same meaning, (c) different grammatical forms of the same word (e.g. run/running/ran), or (d) variant expressions of the same concept (e.g. "fed up" / "fed up with"). Exclude words that merely share a word but have different meanings (e.g. "break down" vs "sit down"). Reply ONLY with a JSON array of the matching words, e.g. ["word1","word2"].'
+                                }, {
+                                    role: 'user',
+                                    content: `Reference word: "${currentWord.vocabulary}"${currentWord.synonyms ? ' (synonyms: ' + currentWord.synonyms + ')' : ''}\n\nCandidate list: ${candidateList}\n\nWhich candidates are truly synonyms, near-synonyms, or grammatical variants of "${currentWord.vocabulary}"? Return ONLY the JSON array.`
+                                }],
+                                temperature: 0.0,
+                                max_tokens: 500
+                            })
+                        });
+                        
+                        if (filterResp.ok) {
+                            const filterData = await filterResp.json();
+                            let raw = (filterData.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                            const bracketStart = raw.indexOf('[');
+                            const bracketEnd = raw.lastIndexOf(']');
+                            if (bracketStart !== -1 && bracketEnd !== -1) {
+                                const approved = JSON.parse(raw.substring(bracketStart, bracketEnd + 1))
+                                    .map(w => w.toLowerCase().trim());
+                                candidates = candidates.filter(c => 
+                                    approved.some(a => 
+                                        c.vocabulary.toLowerCase().includes(a) || 
+                                        a.includes(c.vocabulary.toLowerCase())
+                                    )
+                                );
+                            }
+                        }
+                    } catch(filterErr) {
+                        console.warn('AI filter failed, showing all candidates:', filterErr);
+                    }
+                    
+                    if (candidates.length === 0) {
+                        alert('✅ No similar words found after filtering!');
                         return;
                     }
 
                     setMergeData({
                         current: currentWord,
-                        similar: allResults
+                        similar: candidates
                     });
                     setShowMergeModal(true);
 
@@ -3787,7 +3823,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.5</span>
+                                        English Booster <span className="version-text">v13.6</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
