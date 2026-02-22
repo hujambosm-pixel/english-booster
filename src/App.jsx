@@ -1102,6 +1102,9 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                                 if (!response.ok) {
                                     const errText = await response.text().catch(() => '');
                                     console.error('Groq TTS error:', response.status, errText);
+                                    if (errText.includes('terms acceptance')) {
+                                        alert('⚠️ Accept Orpheus terms first:\nhttps://console.groq.com/playground?model=canopylabs/orpheus-v1-english');
+                                    }
                                     // Fallback to browser TTS
                                     if ('speechSynthesis' in window) {
                                         const utter = new SpeechSynthesisUtterance(text);
@@ -3100,8 +3103,10 @@ Respond ONLY in this JSON format (no markdown, no backticks):
 ${prompt}
 
 MANDATORY RULES FOR "${word}" (${currentFamily}):
-- Synonyms MUST be EXACT synonyms: truly interchangeable with "${word}", same core meaning, same grammatical family (${currentFamily})
-- DO NOT include loosely related or tangential words — only true synonyms that could directly replace "${word}"
+- Synonyms MUST be EXACT synonyms: truly interchangeable drop-in replacements for "${word}" in ANY sentence
+- Each synonym must share the SAME core meaning AND same grammatical family (${currentFamily})
+- TEST: Could you swap "${word}" for the synonym in any sentence without changing the meaning? If not, do NOT include it
+- DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
 - If ${currentFamily} = "Noun": Synonyms MUST be nouns. Context MUST use "${word}" as a noun.
 - If ${currentFamily} = "Verb": Synonyms MUST be verbs. Context MUST use "${word}" as a verb (conjugate if needed: ${word}, ${word}s, ${word}ed, ${word}ing).
 - If ${currentFamily} = "Adjective": Synonyms MUST be adjectives. Context MUST use "${word}" as an adjective describing a noun.
@@ -3123,14 +3128,18 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                 'Authorization': `Bearer ${apiKey}`
                             },
                             body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
+                                model: 'llama-3.3-70b-versatile',
                                 messages: [
+                                    {
+                                        role: 'system',
+                                        content: 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.'
+                                    },
                                     {
                                         role: 'user',
                                         content: prompt
                                     }
                                 ],
-                                temperature: 0.4,
+                                temperature: 0.2,
                                 max_tokens: 500
                             })
                         }
@@ -3372,8 +3381,9 @@ For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggesti
 
 1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)
    - MANDATORY: All synonyms MUST be ${currentFamily}s (same grammatical family as "${word}")
-   - MANDATORY: Synonyms must be INTERCHANGEABLE with "${word}" in most contexts — they must share the same core meaning
-   - DO NOT include loosely related words — only true synonyms that could replace "${word}" directly
+   - MANDATORY: Synonyms must be truly INTERCHANGEABLE drop-in replacements for "${word}" in ANY sentence
+   - TEST: Could you swap "${word}" for the synonym without changing the meaning? If not, do NOT include it
+   - DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
    - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
 2. CONTEXT: A natural sentence (12-15 words) in British English that HELPS UNDERSTAND THE MEANING of "${word}"
@@ -3404,9 +3414,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             'Authorization': `Bearer ${apiKey}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.4,
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [
+                                { role: 'system', content: 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.' },
+                                { role: 'user', content: prompt }
+                            ],
+                            temperature: 0.2,
                             max_tokens: 500
                         })
                     });
@@ -3814,7 +3827,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.2</span>
+                                        English Booster <span className="version-text">v13.3</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4283,7 +4296,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             });
                                                             if (!resp.ok) {
                                                                 const errText = await resp.text().catch(() => '');
-                                                                alert('❌ Groq TTS Error ' + resp.status + ':\n' + errText.substring(0, 200));
+                                                                if (errText.includes('terms acceptance')) {
+                                                                    alert('⚠️ You need to accept the Orpheus model terms first.\n\nGo to:\nhttps://console.groq.com/playground?model=canopylabs/orpheus-v1-english\n\nAccept the terms, then try again.');
+                                                                } else {
+                                                                    alert('❌ Groq TTS Error ' + resp.status + ':\n' + errText.substring(0, 200));
+                                                                }
                                                                 return;
                                                             }
                                                             const blob = await resp.blob();
