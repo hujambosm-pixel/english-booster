@@ -49,7 +49,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             
             // 🆕 V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
             const [aiSearchPrompt, setAiSearchPrompt] = useState(
-                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: How commonly used is "{word}"? (very common / common / uncommon / rare / formal / literary). If there is a more commonly used alternative with the same meaning, indicate it.'
+                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: Based on corpus frequency (BNC/COCA), classify "{word}" as: very common (top 3000) / common (top 10000) / uncommon / rare / formal / literary. If there is a more commonly used EXACT synonym (truly interchangeable, same meaning), indicate it. Do NOT suggest near-synonyms.'
             );
             
             // 🆕 V11.9: Undo history (stores last change for each word)
@@ -62,7 +62,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
             
             // 🆕 V13.0: Separate API call for usage frequency — always reliable
-            // 🆕 V13.1: Separate API call for usage frequency
+            // 🆕 V13.2: Usage frequency — precise, using 70b model
             async function fetchUsageInfo(word) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !word) return;
@@ -71,29 +71,41 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: 'You are a lexicography assistant. Reply ONLY with valid JSON, no extra text.' 
+                                content: 'You are an expert corpus linguist. You classify English words by their real-world usage frequency based on major English corpora (BNC, COCA). Reply ONLY with valid JSON, nothing else.' 
                             }, { 
                                 role: 'user', 
-                                content: 'For the English word/expression "' + word + '": How commonly used is it? (very common / common / uncommon / rare / formal / informal / literary). If there is a more commonly used alternative with the SAME meaning, what is it? Reply JSON: {"usage":"...","alternative":"..."}'
+                                content: `Classify the English word/expression "${word}":
+
+1. USAGE: Based on actual corpus frequency data, classify as ONE of:
+   - "very common" = top 3000 words, used daily in speech and writing (e.g. "big", "run", "happy")
+   - "common" = top 10000 words, regularly used in educated conversation, journalism, reviews (e.g. "unsettling", "sturdy", "reluctant")  
+   - "uncommon" = used but not everyday, more typical of formal or academic writing (e.g. "auspicious", "beguile", "pernicious")
+   - "rare" = seldom encountered, highly specialised or archaic (e.g. "defenestrate", "sesquipedalian")
+   - "formal" = common in formal/professional contexts but unusual in casual speech (e.g. "henceforth", "notwithstanding")
+   - "literary" = common in literature but uncommon in everyday speech (e.g. "ethereal", "ephemeral")
+
+2. ALTERNATIVE: If there is a MORE COMMONLY USED word/phrase that is an EXACT synonym (truly interchangeable, same meaning), provide it. 
+   - ONLY exact synonyms that could directly replace "${word}" in any sentence
+   - If "${word}" is already very common or has no more common exact synonym, use empty string ""
+   - Do NOT provide "near-synonyms" or "related words" — only true drop-in replacements
+
+Reply ONLY: {"usage":"...","alternative":"..."}`
                             }],
                             temperature: 0.0,
-                            max_tokens: 100
+                            max_tokens: 80
                         })
                     });
                     if (!resp.ok) { console.warn('Usage API error:', resp.status); return; }
                     const data = await resp.json();
                     let raw = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-                    // Strip markdown fences
                     raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    // Extract first JSON object
                     const braceStart = raw.indexOf('{');
                     const braceEnd = raw.lastIndexOf('}');
-                    if (braceStart === -1 || braceEnd === -1) { console.warn('No JSON in usage response:', raw); return; }
-                    const jsonStr = raw.substring(braceStart, braceEnd + 1);
-                    const result = JSON.parse(jsonStr);
+                    if (braceStart === -1 || braceEnd === -1) return;
+                    const result = JSON.parse(raw.substring(braceStart, braceEnd + 1));
                     if (result.usage) {
                         setUsageInfo({ word, usage: result.usage, alternative: result.alternative || '' });
                     }
@@ -3802,7 +3814,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.1</span>
+                                        English Booster <span className="version-text">v13.2</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4253,7 +4265,45 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             ))}
                                             </optgroup>
                                         </select>
-                                        <p className="text-xs text-slate-500 mt-2">Groq HD voices are hyper-realistic AI voices (uses your Groq API key). Browser voices are free but lower quality.</p>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <p className="text-xs text-slate-500 flex-1">Groq Orpheus voices are hyper-realistic AI (uses your Groq API key, max 200 chars). Browser voices are free.</p>
+                                            <button 
+                                                type="button"
+                                                onClick={async () => {
+                                                    const testText = 'This is a voice test from English Booster.';
+                                                    if (preferredVoice.startsWith('groq-')) {
+                                                        const apiKey = groqApiKey.trim();
+                                                        if (!apiKey) { alert('❌ Please set your Groq API Key first.'); return; }
+                                                        try {
+                                                            const voiceName = preferredVoice.replace('groq-', '');
+                                                            const resp = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                                                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: testText, voice: voiceName, response_format: 'wav' })
+                                                            });
+                                                            if (!resp.ok) {
+                                                                const errText = await resp.text().catch(() => '');
+                                                                alert('❌ Groq TTS Error ' + resp.status + ':\n' + errText.substring(0, 200));
+                                                                return;
+                                                            }
+                                                            const blob = await resp.blob();
+                                                            const url = URL.createObjectURL(blob);
+                                                            const audio = new Audio(url);
+                                                            audio.onended = () => URL.revokeObjectURL(url);
+                                                            audio.onerror = (e) => { alert('❌ Audio playback error: ' + e.type); URL.revokeObjectURL(url); };
+                                                            await audio.play();
+                                                        } catch(e) {
+                                                            alert('❌ Groq TTS failed:\n' + e.message + '\n\nThis may be a CORS issue. Groq TTS may not support browser calls.');
+                                                        }
+                                                    } else {
+                                                        speakText(testText, 1.0, false);
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors whitespace-nowrap"
+                                            >
+                                                🔊 Test
+                                            </button>
+                                        </div>
                                     </div>
                                     
                                     {/* 🆕 V11.16: Selection Exercise Countdown */}
