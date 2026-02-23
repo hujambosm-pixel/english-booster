@@ -2402,10 +2402,9 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                         return;
                     }
                     
-                    // Pick 6-8 random words (or less if not enough)
+                    // Pick 4 random words
                     const shuffled = [...data].sort(() => Math.random() - 0.5);
-                    const count = Math.min(shuffled.length, Math.floor(Math.random() * 3) + 6); // 6-8
-                    const selected = shuffled.slice(0, count);
+                    const selected = shuffled.slice(0, 4);
                     
                     setWritingWords(selected);
                     setWritingText('');
@@ -2435,51 +2434,39 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: `You are an expert British English writing examiner. Evaluate the student's text with extreme precision and detail. Use British English standards (colour, organise, etc.).
+                                content: `You are an expert British English writing examiner. Evaluate the student's text with extreme precision. Use British English standards.
 
 You must return ONLY valid JSON with this structure:
 {
   "grade": "A" or "B" or "C" or "D",
   "percentage": 0-100,
   "summary": "1-2 sentence overall assessment",
-  "words_used": ["list of target words successfully used"],
-  "words_missed": ["list of target words NOT used"],
-  "word_usage_notes": ["feedback on how well each used word was employed, e.g. 'sturdy — used correctly and naturally'"],
-  "corrections": [
+  "words_used": ["target words successfully used"],
+  "words_missed": ["target words NOT used"],
+  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally'"],
+  "annotated_text": "The student's FULL original text with inline corrections using ONLY these HTML tags: <del>wrong word(s)</del><ins>correction</ins>. ONLY mark the minimal wrong part, not the whole sentence. Keep all correct text untouched. Example: 'I use to <del>go</del><ins>going</ins> there' becomes 'I <del>use</del><ins>used</ins> to go there'. If words need inserting, just add <ins>new words</ins> at the right position with no <del>.",
+  "corrections_list": [
     {
-      "original": "exact text with error",
-      "corrected": "corrected version",
-      "type": "grammar" or "spelling" or "punctuation" or "style" or "vocabulary",
-      "explanation": "why this is wrong and how to fix it"
+      "original": "wrong text",
+      "corrected": "fixed text",
+      "type": "grammar/spelling/punctuation/style",
+      "explanation": "brief explanation"
     }
   ],
-  "strengths": ["list of things done well"],
-  "suggestions": ["list of specific improvements"],
-  "improved_version": "the student's full text rewritten with all corrections applied and style improvements"
+  "strengths": ["things done well"],
+  "suggestions": ["specific improvements"]
 }`
                             }, { 
                                 role: 'user', 
-                                content: `TARGET VOCABULARY to use: ${wordList}
+                                content: `TARGET VOCABULARY: ${wordList}
 
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
-Evaluate this writing exhaustively. Check EVERY sentence for:
-- Spelling errors (use British English)
-- Grammar mistakes (articles, prepositions, verb tenses, subject-verb agreement, etc.)
-- Punctuation errors
-- Awkward phrasing or unnatural expressions
-- Vocabulary usage: were the target words used correctly and naturally?
-- Level of detail and descriptiveness
-- Coherence and flow
+Evaluate exhaustively. For annotated_text: mark ONLY the minimal erroneous words with <del>wrong</del><ins>correct</ins>. Do NOT wrap entire phrases — only the specific words that are wrong. If a word is missing, insert <ins>missing word</ins> at the right position. Keep everything else exactly as the student wrote it.
 
-Grade scale:
-A (85-100%): Excellent — few or no errors, rich vocabulary, natural flow
-B (70-84%): Good — minor errors, most target words used well
-C (50-69%): Adequate — several errors, limited vocabulary usage
-D (0-49%): Needs work — many errors, few target words used
-
-Return ONLY the JSON.`
+Grade: A(85-100%) B(70-84%) C(50-69%) D(0-49%)
+Return ONLY JSON.`
                             }],
                             temperature: 0.1,
                             max_tokens: 2000
@@ -3980,7 +3967,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.7</span>
+                                        English Booster <span className="version-text">v13.8</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -7433,43 +7420,58 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            {/* Corrections */}
-                                            {writingFeedback.corrections && writingFeedback.corrections.length > 0 && (
-                                                <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
-                                                    <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                                        <span className="text-2xl">🔍</span>
-                                                        Corrections ({writingFeedback.corrections.length})
-                                                    </h4>
-                                                    <div className="space-y-3">
-                                                        {writingFeedback.corrections.map((c, i) => (
-                                                            <div key={i} className={`border-l-4 rounded-r-lg p-4 ${
+                                            {/* Annotated text — inline corrections */}
+                                            <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
+                                                <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
+                                                    <span className="text-2xl">📝</span> Your Text (with corrections)
+                                                </h4>
+                                                <div 
+                                                    className="text-base text-white leading-loose writing-annotated"
+                                                    dangerouslySetInnerHTML={{ __html: (() => {
+                                                        // Sanitize: only allow <del> and <ins> tags
+                                                        let html = (writingFeedback.annotated_text || writingText);
+                                                        html = html.replace(/<(?!\/?(?:del|ins)(?:\s|>))[^>]*>/g, '');
+                                                        // Style <del> and <ins>
+                                                        html = html.replace(/<del>/g, '<span style="color:#f87171;text-decoration:line-through;opacity:0.8">');
+                                                        html = html.replace(/<\/del>/g, '</span>');
+                                                        html = html.replace(/<ins>/g, '<span style="color:#4ade80;font-weight:bold;text-decoration:none">');
+                                                        html = html.replace(/<\/ins>/g, '</span>');
+                                                        return html;
+                                                    })() }}
+                                                />
+                                            </div>
+
+                                            {/* Corrections detail list — collapsible */}
+                                            {writingFeedback.corrections_list && writingFeedback.corrections_list.length > 0 && (
+                                                <details className="bg-slate-900/30 border border-slate-700/50 rounded-2xl">
+                                                    <summary className="px-6 py-4 cursor-pointer text-slate-300 font-bold uppercase text-sm flex items-center gap-2 hover:text-white">
+                                                        <span className="text-lg">🔍</span> Correction Details ({writingFeedback.corrections_list.length})
+                                                    </summary>
+                                                    <div className="px-6 pb-5 space-y-3">
+                                                        {writingFeedback.corrections_list.map((c, i) => (
+                                                            <div key={i} className={`border-l-4 rounded-r-lg p-3 ${
                                                                 c.type === 'grammar' ? 'bg-red-900/20 border-red-500' :
                                                                 c.type === 'spelling' ? 'bg-red-900/20 border-red-400' :
                                                                 c.type === 'punctuation' ? 'bg-yellow-900/20 border-yellow-500' :
                                                                 'bg-blue-900/20 border-blue-500'
                                                             }`}>
-                                                                <div className="flex items-start gap-3">
-                                                                    <span className="text-lg shrink-0">
-                                                                        {c.type === 'grammar' ? '⚠️' : c.type === 'spelling' ? '🔤' : c.type === 'punctuation' ? '📌' : '💡'}
-                                                                    </span>
-                                                                    <div className="flex-1">
-                                                                        <p className="text-xs uppercase font-black text-slate-400 mb-1">{c.type}</p>
-                                                                        <p className="text-sm">
-                                                                            <span className="text-red-300 line-through">{c.original}</span>
-                                                                            <span className="text-white mx-2">→</span>
-                                                                            <span className="text-green-300 font-bold">{c.corrected}</span>
-                                                                        </p>
-                                                                        <p className="text-slate-400 text-xs mt-1">{c.explanation}</p>
-                                                                    </div>
-                                                                </div>
+                                                                <p className="text-xs uppercase font-black text-slate-400 mb-1">
+                                                                    {c.type === 'grammar' ? '⚠️' : c.type === 'spelling' ? '🔤' : c.type === 'punctuation' ? '📌' : '💡'} {c.type}
+                                                                </p>
+                                                                <p className="text-sm">
+                                                                    <span className="text-red-300 line-through">{c.original}</span>
+                                                                    <span className="text-white mx-2">→</span>
+                                                                    <span className="text-green-300 font-bold">{c.corrected}</span>
+                                                                </p>
+                                                                <p className="text-slate-400 text-xs mt-1">{c.explanation}</p>
                                                             </div>
                                                         ))}
                                                     </div>
-                                                </div>
+                                                </details>
                                             )}
                                             
                                             {/* No corrections — perfect! */}
-                                            {(!writingFeedback.corrections || writingFeedback.corrections.length === 0) && (
+                                            {(!writingFeedback.corrections_list || writingFeedback.corrections_list.length === 0) && (
                                                 <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-6">
                                                     <div className="flex items-center gap-3">
                                                         <span className="text-4xl">🎉</span>
@@ -7511,22 +7513,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         {writingFeedback.suggestions.map((s, i) => (
                                                             <p key={i} className="text-sm text-amber-100/80 mb-1">→ {s}</p>
                                                         ))}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Your text vs Improved version */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
-                                                    <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Text:</h4>
-                                                    <div className="bg-slate-800 p-4 rounded-xl text-sm text-white leading-relaxed">{writingText}</div>
-                                                </div>
-                                                {writingFeedback.improved_version && (
-                                                    <div>
-                                                        <h4 className="text-xs uppercase font-black text-teal-400 mb-2">✨ Improved Version:</h4>
-                                                        <div className="bg-teal-900/20 border border-teal-500/30 p-4 rounded-xl text-sm text-teal-100 leading-relaxed">
-                                                            {writingFeedback.improved_version}
-                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
