@@ -2453,8 +2453,7 @@ You must return ONLY valid JSON with this structure:
       "explanation": "brief explanation"
     }
   ],
-  "strengths": ["things done well"],
-  "suggestions": ["specific improvements"]
+  "improved_version": "the student's full text rewritten with all corrections applied and style improvements, as a polished final version"
 }`
                             }, { 
                                 role: 'user', 
@@ -3967,7 +3966,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.8</span>
+                                        English Booster <span className="version-text">v13.9</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -7300,7 +7299,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <h2 className="text-2xl font-black main-gradient uppercase italic">✍️ Writing</h2>
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a paragraph (50-150 words) using as many of the given vocabulary words as possible.\n\nThe AI examiner will evaluate:\n• Grammar & spelling (British English)\n• Vocabulary usage (were target words used correctly?)\n• Punctuation & style\n• Coherence & detail level\n\nGrade scale:\n🏆 A (85-100%): Excellent\n⭐ B (70-84%): Good\n📝 C (50-69%): Adequate\n🔴 D (0-49%): Needs work\n\nTip: Try to use the words naturally in context, not just list them!')}
+                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a short paragraph (25-75 words) using as many of the given vocabulary words as possible.\n\nThe AI examiner will evaluate:\n• Grammar & spelling (British English)\n• Vocabulary usage (were target words used correctly?)\n• Punctuation & style\n• Coherence & detail level\n\nTip: Try to use the words naturally in context, not just list them!')}
                                             className="text-blue-400 hover:text-blue-300 text-lg"
                                         >ℹ️</button>
                                         <button
@@ -7353,7 +7352,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 setWritingText(e.target.value);
                                                 setWritingWordCount(e.target.value.trim() ? e.target.value.trim().split(/\s+/).length : 0);
                                             }}
-                                            placeholder="Write your paragraph here (50-150 words). Try to use the vocabulary words naturally in context..."
+                                            placeholder="Write your paragraph here (25-75 words). Try to use the vocabulary words naturally in context..."
                                             className="w-full p-6 rounded-xl text-lg min-h-[200px] resize-none mb-2"
                                             autoFocus
                                         />
@@ -7365,15 +7364,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 writingWordCount < 50 ? 'text-yellow-400' : 
                                                 writingWordCount > 200 ? 'text-yellow-400' : 'text-green-400'
                                             }`}>
-                                                {writingWordCount} words {writingWordCount < 30 ? '(too short)' : writingWordCount < 50 ? '(almost there)' : writingWordCount > 200 ? '(quite long)' : '✓'}
+                                                {writingWordCount} words {writingWordCount < 15 ? '(too short)' : writingWordCount < 25 ? '(almost there)' : writingWordCount > 100 ? '(quite long)' : '✓'}
                                             </span>
-                                            <span className="text-slate-500 text-sm">Target: 50-150 words</span>
+                                            <span className="text-slate-500 text-sm">Target: 25-75 words</span>
                                         </div>
                                         
                                         <div className="flex gap-4">
                                             <button
                                                 onClick={evaluateWriting}
-                                                disabled={writingLoading || writingWordCount < 15}
+                                                disabled={writingLoading || writingWordCount < 10}
                                                 className="flex-1 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
                                                 {writingLoading ? '🤖 Evaluating your writing...' : '📝 Submit for Evaluation'}
@@ -7391,35 +7390,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* AI Feedback */}
+                                        {/* AI Feedback — V13.9 */}
                                         <div className="space-y-6">
-                                            {/* Grade badge */}
-                                            <div className="flex justify-center">
-                                                <div className={`inline-flex items-center gap-3 px-8 py-4 rounded-2xl border-2 ${
-                                                    writingFeedback.grade === 'A' ? 'bg-green-900/20 border-green-500' :
-                                                    writingFeedback.grade === 'B' ? 'bg-yellow-900/20 border-yellow-500' :
-                                                    writingFeedback.grade === 'C' ? 'bg-orange-900/20 border-orange-500' :
-                                                    'bg-red-900/20 border-red-500'
-                                                }`}>
-                                                    <span className="text-4xl">
-                                                        {writingFeedback.grade === 'A' ? '🏆' :
-                                                         writingFeedback.grade === 'B' ? '⭐' :
-                                                         writingFeedback.grade === 'C' ? '📝' : '🔴'}
-                                                    </span>
-                                                    <div>
-                                                        <p className={`text-3xl font-black ${
-                                                            writingFeedback.grade === 'A' ? 'text-green-400' :
-                                                            writingFeedback.grade === 'B' ? 'text-yellow-400' :
-                                                            writingFeedback.grade === 'C' ? 'text-orange-400' :
-                                                            'text-red-400'
-                                                        }`}>
-                                                            Grade {writingFeedback.grade}
-                                                        </p>
-                                                        <p className="text-white text-sm">{writingFeedback.percentage}% — {writingFeedback.summary}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
                                             {/* Annotated text — inline corrections */}
                                             <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
                                                 <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
@@ -7428,10 +7400,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div 
                                                     className="text-base text-white leading-loose writing-annotated"
                                                     dangerouslySetInnerHTML={{ __html: (() => {
-                                                        // Sanitize: only allow <del> and <ins> tags
                                                         let html = (writingFeedback.annotated_text || writingText);
                                                         html = html.replace(/<(?!\/?(?:del|ins)(?:\s|>))[^>]*>/g, '');
-                                                        // Style <del> and <ins>
                                                         html = html.replace(/<del>/g, '<span style="color:#f87171;text-decoration:line-through;opacity:0.8">');
                                                         html = html.replace(/<\/del>/g, '</span>');
                                                         html = html.replace(/<ins>/g, '<span style="color:#4ade80;font-weight:bold;text-decoration:none">');
@@ -7440,6 +7410,32 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     })() }}
                                                 />
                                             </div>
+
+                                            {/* Improved version */}
+                                            {writingFeedback.improved_version && (
+                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
+                                                    <h4 className="text-teal-400 font-bold uppercase text-sm mb-4 flex items-center gap-2">
+                                                        <span className="text-2xl">✨</span> Improved Version
+                                                    </h4>
+                                                    <div className="text-base text-teal-100 leading-loose">
+                                                        {writingFeedback.improved_version}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Vocabulary usage notes */}
+                                            {writingFeedback.word_usage_notes && writingFeedback.word_usage_notes.length > 0 && (
+                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
+                                                    <h4 className="text-teal-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
+                                                        <span className="text-2xl">📚</span> Vocabulary Usage
+                                                    </h4>
+                                                    <div className="space-y-2">
+                                                        {writingFeedback.word_usage_notes.map((note, i) => (
+                                                            <p key={i} className="text-sm text-teal-100/80">• {note}</p>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Corrections detail list — collapsible */}
                                             {writingFeedback.corrections_list && writingFeedback.corrections_list.length > 0 && (
@@ -7469,53 +7465,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     </div>
                                                 </details>
                                             )}
-                                            
-                                            {/* No corrections — perfect! */}
-                                            {(!writingFeedback.corrections_list || writingFeedback.corrections_list.length === 0) && (
-                                                <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-4xl">🎉</span>
-                                                        <div>
-                                                            <p className="text-green-300 font-bold text-lg">No errors found!</p>
-                                                            <p className="text-green-200 text-sm">Your grammar, spelling and punctuation are spot on.</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Vocabulary usage notes */}
-                                            {writingFeedback.word_usage_notes && writingFeedback.word_usage_notes.length > 0 && (
-                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
-                                                    <h4 className="text-teal-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
-                                                        <span className="text-2xl">📚</span> Vocabulary Usage
-                                                    </h4>
-                                                    <div className="space-y-2">
-                                                        {writingFeedback.word_usage_notes.map((note, i) => (
-                                                            <p key={i} className="text-sm text-teal-100/80">• {note}</p>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Strengths & Suggestions side by side */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {writingFeedback.strengths && writingFeedback.strengths.length > 0 && (
-                                                    <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-5">
-                                                        <h4 className="text-green-300 font-bold uppercase text-sm mb-3">💪 Strengths</h4>
-                                                        {writingFeedback.strengths.map((s, i) => (
-                                                            <p key={i} className="text-sm text-green-100/80 mb-1">✓ {s}</p>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {writingFeedback.suggestions && writingFeedback.suggestions.length > 0 && (
-                                                    <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-5">
-                                                        <h4 className="text-amber-300 font-bold uppercase text-sm mb-3">💡 Suggestions</h4>
-                                                        {writingFeedback.suggestions.map((s, i) => (
-                                                            <p key={i} className="text-sm text-amber-100/80 mb-1">→ {s}</p>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
 
                                         {/* Action buttons */}
