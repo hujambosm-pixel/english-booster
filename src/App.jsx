@@ -228,6 +228,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingFeedback, setWritingFeedback] = useState(null);
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
+            const [writingPopup, setWritingPopup] = useState(null); // {x, y, correction}
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -2434,37 +2435,43 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: `You are an expert British English writing examiner. Evaluate the student's text with extreme precision. Use British English standards.
+                                content: `You are an expert British English writing examiner. Evaluate grammar, spelling, punctuation, style, AND semantic correctness. Check that every sentence makes logical sense and that words are used with their correct meaning in context.
 
 You must return ONLY valid JSON with this structure:
 {
   "grade": "A" or "B" or "C" or "D",
   "percentage": 0-100,
-  "summary": "1-2 sentence overall assessment",
+  "summary": "1 sentence assessment",
   "words_used": ["target words successfully used"],
   "words_missed": ["target words NOT used"],
-  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally'"],
-  "annotated_text": "The student's FULL original text with inline corrections using ONLY these HTML tags: <del>wrong word(s)</del><ins>correction</ins>. ONLY mark the minimal wrong part, not the whole sentence. Keep all correct text untouched. Example: 'I use to <del>go</del><ins>going</ins> there' becomes 'I <del>use</del><ins>used</ins> to go there'. If words need inserting, just add <ins>new words</ins> at the right position with no <del>.",
+  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally in this context' or 'lean period — semantically incorrect here: a lean period is a time of scarcity, but the sentence describes abundance'"],
+  "annotated_text": "The student's FULL original text with inline markup. Use ONLY these tags: <del>wrong</del><ins>correct</ins> for corrections (mark ONLY the minimal wrong words). Use <note>brief comment</note> for semantic issues or style notes that are not simple corrections. Do NOT include explanations inside the text flow — keep notes very short (3-8 words max). NEVER wrap whole sentences. Keep all correct text exactly as written.",
   "corrections_list": [
     {
+      "id": 1,
       "original": "wrong text",
-      "corrected": "fixed text",
-      "type": "grammar/spelling/punctuation/style",
+      "corrected": "fixed text", 
+      "type": "grammar/spelling/punctuation/style/semantic",
       "explanation": "brief explanation"
     }
   ],
-  "improved_version": "the student's full text rewritten with all corrections applied and style improvements, as a polished final version"
+  "improved_version": "CRITICAL: Rewrite the student's text with all corrections applied. You MUST use the EXACT target vocabulary words given — NEVER replace them with synonyms or alternatives. If the student used 'pop out', keep 'pop out', do NOT change it to 'popped up'. The improved version should sound natural while preserving every target word the student used."
 }`
                             }, { 
                                 role: 'user', 
-                                content: `TARGET VOCABULARY: ${wordList}
+                                content: `TARGET VOCABULARY (must be preserved exactly in improved_version): ${wordList}
 
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
-Evaluate exhaustively. For annotated_text: mark ONLY the minimal erroneous words with <del>wrong</del><ins>correct</ins>. Do NOT wrap entire phrases — only the specific words that are wrong. If a word is missing, insert <ins>missing word</ins> at the right position. Keep everything else exactly as the student wrote it.
+Evaluate exhaustively:
+1. GRAMMAR: articles, prepositions, tenses, agreement, etc.
+2. SPELLING: British English (colour, organise, etc.)
+3. SEMANTICS: Does each sentence make logical sense? Are words used with their correct meaning? E.g. if someone writes "the lean period was full of abundance" — flag the semantic contradiction.
+4. VOCABULARY: Were target words used correctly AND in the right semantic context? Be strict — a word used grammatically correct but semantically wrong should be flagged.
+5. For annotated_text: <del>wrong</del><ins>correct</ins> for fixes. <note>short comment</note> for semantic/style observations. Notes must be VERY short (3-8 words).
+6. IMPROVED VERSION: Must use the EXACT target words — never substitute them.
 
-Grade: A(85-100%) B(70-84%) C(50-69%) D(0-49%)
 Return ONLY JSON.`
                             }],
                             temperature: 0.1,
@@ -3966,7 +3973,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.9</span>
+                                        English Booster <span className="version-text">v14.0</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -7288,18 +7295,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
-                    )}
-
-                    {/* 🆕 V13.7: WRITING EXERCISE */}
+                    {/* 🆕 V14.0: WRITING EXERCISE */}
                     {showWriting && writingWords.length > 0 && (
-                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto" onClick={() => writingPopup && setWritingPopup(null)}>
                             <div className="w-full max-w-4xl my-2 sm:my-8">
-                                {/* Header */}
+                                {/* Header — always visible */}
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-2xl font-black main-gradient uppercase italic">✍️ Writing</h2>
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a short paragraph (25-75 words) using as many of the given vocabulary words as possible.\n\nThe AI examiner will evaluate:\n• Grammar & spelling (British English)\n• Vocabulary usage (were target words used correctly?)\n• Punctuation & style\n• Coherence & detail level\n\nTip: Try to use the words naturally in context, not just list them!')}
+                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a short paragraph (25-75 words) using the given vocabulary words.\n\nThe AI evaluates: grammar, spelling, semantics, vocabulary usage, punctuation & style.\n\nClick on coloured corrections in your text to see details.\n\nTip: Use words naturally in context!')}
                                             className="text-blue-400 hover:text-blue-300 text-lg"
                                         >ℹ️</button>
                                         <button
@@ -7309,6 +7314,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 setWritingText('');
                                                 setWritingFeedback(null);
                                                 setWritingLoading(false);
+                                                setWritingPopup(null);
                                                 setShowExercisesModal(true);
                                             }}
                                             className="text-slate-400 hover:text-white text-3xl leading-none"
@@ -7316,32 +7322,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 </div>
 
-                                {/* Target vocabulary words */}
-                                <div className="bg-gradient-to-br from-teal-600 to-emerald-600 rounded-3xl p-6 mb-6 shadow-2xl">
-                                    <h3 className="text-white/70 text-sm font-bold uppercase mb-4 text-center">Use these words in your paragraph:</h3>
-                                    <div className="flex flex-wrap justify-center gap-3">
-                                        {writingWords.map((w, i) => {
-                                            const used = writingFeedback?.words_used?.some(u => u.toLowerCase() === w.vocabulary.toLowerCase());
-                                            const missed = writingFeedback?.words_missed?.some(m => m.toLowerCase() === w.vocabulary.toLowerCase());
-                                            return (
-                                                <span key={i} className={`px-4 py-2 rounded-full text-base font-bold transition-all ${
-                                                    writingFeedback 
-                                                        ? (used ? 'bg-green-500/30 text-green-200 border-2 border-green-400' : 
-                                                           missed ? 'bg-red-500/30 text-red-200 border-2 border-red-400 line-through opacity-60' : 
-                                                           'bg-white/20 text-white')
-                                                        : 'bg-white/20 text-white'
-                                                }`}>
-                                                    {writingFeedback && used && '✓ '}{writingFeedback && missed && '✗ '}{w.vocabulary}
+                                {/* Target words — only shown when writing, hidden during feedback */}
+                                {!writingFeedback && (
+                                    <div className="bg-gradient-to-br from-teal-600 to-emerald-600 rounded-3xl p-6 mb-6 shadow-2xl">
+                                        <h3 className="text-white/70 text-sm font-bold uppercase mb-4 text-center">Use these words in your paragraph:</h3>
+                                        <div className="flex flex-wrap justify-center gap-3">
+                                            {writingWords.map((w, i) => (
+                                                <span key={i} className="px-4 py-2 rounded-full text-base font-bold bg-white/20 text-white">
+                                                    {w.vocabulary}
                                                 </span>
-                                            );
-                                        })}
+                                            ))}
+                                        </div>
                                     </div>
-                                    {writingFeedback && (
-                                        <p className="text-center text-white/60 text-sm mt-3">
-                                            ✓ {writingFeedback.words_used?.length || 0}/{writingWords.length} words used
-                                        </p>
-                                    )}
-                                </div>
+                                )}
 
                                 {!writingFeedback ? (
                                     <>
@@ -7360,9 +7353,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {/* Word count */}
                                         <div className="flex justify-between items-center mb-4">
                                             <span className={`text-sm font-bold ${
-                                                writingWordCount < 30 ? 'text-red-400' : 
-                                                writingWordCount < 50 ? 'text-yellow-400' : 
-                                                writingWordCount > 200 ? 'text-yellow-400' : 'text-green-400'
+                                                writingWordCount < 15 ? 'text-red-400' : 
+                                                writingWordCount < 25 ? 'text-yellow-400' : 
+                                                writingWordCount > 100 ? 'text-yellow-400' : 'text-green-400'
                                             }`}>
                                                 {writingWordCount} words {writingWordCount < 15 ? '(too short)' : writingWordCount < 25 ? '(almost there)' : writingWordCount > 100 ? '(quite long)' : '✓'}
                                             </span>
@@ -7378,10 +7371,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 {writingLoading ? '🤖 Evaluating your writing...' : '📝 Submit for Evaluation'}
                                             </button>
                                             <button
-                                                onClick={() => {
-                                                    setWritingWords(prev => [...prev].sort(() => Math.random() - 0.5));
-                                                    loadWriting();
-                                                }}
+                                                onClick={() => loadWriting()}
                                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
                                                 🔄 New Words
@@ -7390,100 +7380,146 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* AI Feedback — V13.9 */}
-                                        <div className="space-y-6">
-                                            {/* Annotated text — inline corrections */}
-                                            <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
-                                                <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                                    <span className="text-2xl">📝</span> Your Text (with corrections)
-                                                </h4>
+                                        {/* Compact grade line */}
+                                        <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl mb-6 ${
+                                            writingFeedback.grade === 'A' ? 'bg-green-900/30 border border-green-500/40' :
+                                            writingFeedback.grade === 'B' ? 'bg-yellow-900/30 border border-yellow-500/40' :
+                                            writingFeedback.grade === 'C' ? 'bg-orange-900/30 border border-orange-500/40' :
+                                            'bg-red-900/30 border border-red-500/40'
+                                        }`}>
+                                            <span className="text-2xl">
+                                                {writingFeedback.grade === 'A' ? '🏆' : writingFeedback.grade === 'B' ? '⭐' : writingFeedback.grade === 'C' ? '📝' : '🔴'}
+                                            </span>
+                                            <span className={`text-xl font-black ${
+                                                writingFeedback.grade === 'A' ? 'text-green-400' : writingFeedback.grade === 'B' ? 'text-yellow-400' : writingFeedback.grade === 'C' ? 'text-orange-400' : 'text-red-400'
+                                            }`}>Grade {writingFeedback.grade}</span>
+                                            <span className="text-slate-300 text-sm">({writingFeedback.percentage}%)</span>
+                                            <span className="text-slate-400 text-sm flex-1">{writingFeedback.summary}</span>
+                                        </div>
+
+                                        {/* Annotated text — clickable corrections */}
+                                        <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6 mb-6 relative">
+                                            <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
+                                                <span className="text-2xl">📝</span> Your Text <span className="text-slate-500 font-normal normal-case">(click corrections for details)</span>
+                                            </h4>
+                                            <div 
+                                                className="text-base text-white leading-loose"
+                                                onClick={(e) => {
+                                                    const target = e.target.closest('[data-correction-id]');
+                                                    if (target && writingFeedback.corrections_list) {
+                                                        const id = parseInt(target.dataset.correctionId);
+                                                        const correction = writingFeedback.corrections_list.find(c => c.id === id);
+                                                        if (correction) {
+                                                            const rect = target.getBoundingClientRect();
+                                                            setWritingPopup({
+                                                                x: rect.left + rect.width / 2,
+                                                                y: rect.bottom + 8,
+                                                                correction
+                                                            });
+                                                            e.stopPropagation();
+                                                        }
+                                                    }
+                                                }}
+                                                dangerouslySetInnerHTML={{ __html: (() => {
+                                                    let html = (writingFeedback.annotated_text || writingText);
+                                                    html = html.replace(/<(?!\/?(?:del|ins|note)(?:\s|>))[^>]*>/g, '');
+                                                    let corrId = 0;
+                                                    html = html.replace(/<del>(.*?)<\/del><ins>(.*?)<\/ins>/g, (match, del_text, ins_text) => {
+                                                        corrId++;
+                                                        return '<span data-correction-id="' + corrId + '" style="cursor:pointer;border-bottom:2px dashed #f87171;padding-bottom:1px"><span style="color:#f87171;text-decoration:line-through;opacity:0.8">' + del_text + '</span><span style="color:#4ade80;font-weight:bold">' + ins_text + '</span></span>';
+                                                    });
+                                                    html = html.replace(/<ins>(.*?)<\/ins>/g, (match, ins_text) => {
+                                                        corrId++;
+                                                        return '<span data-correction-id="' + corrId + '" style="cursor:pointer;color:#4ade80;font-weight:bold;border-bottom:2px dashed #4ade80;padding-bottom:1px">' + ins_text + '</span>';
+                                                    });
+                                                    html = html.replace(/<del>(.*?)<\/del>/g, (match, del_text) => {
+                                                        corrId++;
+                                                        return '<span data-correction-id="' + corrId + '" style="cursor:pointer;color:#f87171;text-decoration:line-through;opacity:0.8;border-bottom:2px dashed #f87171;padding-bottom:1px">' + del_text + '</span>';
+                                                    });
+                                                    html = html.replace(/<note>(.*?)<\/note>/g, '<span style="color:#fb923c;font-style:italic;font-size:0.85em"> — $1</span>');
+                                                    return html;
+                                                })() }}
+                                            />
+                                            
+                                            {/* Popup for correction details */}
+                                            {writingPopup && (
                                                 <div 
-                                                    className="text-base text-white leading-loose writing-annotated"
-                                                    dangerouslySetInnerHTML={{ __html: (() => {
-                                                        let html = (writingFeedback.annotated_text || writingText);
-                                                        html = html.replace(/<(?!\/?(?:del|ins)(?:\s|>))[^>]*>/g, '');
-                                                        html = html.replace(/<del>/g, '<span style="color:#f87171;text-decoration:line-through;opacity:0.8">');
-                                                        html = html.replace(/<\/del>/g, '</span>');
-                                                        html = html.replace(/<ins>/g, '<span style="color:#4ade80;font-weight:bold;text-decoration:none">');
-                                                        html = html.replace(/<\/ins>/g, '</span>');
-                                                        return html;
-                                                    })() }}
-                                                />
-                                            </div>
-
-                                            {/* Improved version */}
-                                            {writingFeedback.improved_version && (
-                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
-                                                    <h4 className="text-teal-400 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                                        <span className="text-2xl">✨</span> Improved Version
-                                                    </h4>
-                                                    <div className="text-base text-teal-100 leading-loose">
-                                                        {writingFeedback.improved_version}
+                                                    className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl max-w-sm"
+                                                    style={{ 
+                                                        left: Math.min(writingPopup.x, window.innerWidth - 320) + 'px', 
+                                                        top: Math.min(writingPopup.y, window.innerHeight - 150) + 'px',
+                                                        transform: 'translateX(-50%)'
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <span className={`text-xs uppercase font-black ${
+                                                            writingPopup.correction.type === 'semantic' ? 'text-orange-400' :
+                                                            writingPopup.correction.type === 'grammar' ? 'text-red-400' :
+                                                            writingPopup.correction.type === 'spelling' ? 'text-red-300' :
+                                                            'text-yellow-400'
+                                                        }`}>
+                                                            {writingPopup.correction.type === 'grammar' ? '⚠️' : writingPopup.correction.type === 'spelling' ? '🔤' : writingPopup.correction.type === 'semantic' ? '🧠' : writingPopup.correction.type === 'punctuation' ? '📌' : '💡'} {writingPopup.correction.type}
+                                                        </span>
+                                                        <button onClick={() => setWritingPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
                                                     </div>
+                                                    {writingPopup.correction.original && (
+                                                        <p className="text-sm mb-1">
+                                                            <span className="text-red-300 line-through">{writingPopup.correction.original}</span>
+                                                            <span className="text-white mx-2">→</span>
+                                                            <span className="text-green-300 font-bold">{writingPopup.correction.corrected}</span>
+                                                        </p>
+                                                    )}
+                                                    <p className="text-slate-300 text-sm">{writingPopup.correction.explanation}</p>
                                                 </div>
-                                            )}
-
-                                            {/* Vocabulary usage notes */}
-                                            {writingFeedback.word_usage_notes && writingFeedback.word_usage_notes.length > 0 && (
-                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
-                                                    <h4 className="text-teal-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
-                                                        <span className="text-2xl">📚</span> Vocabulary Usage
-                                                    </h4>
-                                                    <div className="space-y-2">
-                                                        {writingFeedback.word_usage_notes.map((note, i) => (
-                                                            <p key={i} className="text-sm text-teal-100/80">• {note}</p>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Corrections detail list — collapsible */}
-                                            {writingFeedback.corrections_list && writingFeedback.corrections_list.length > 0 && (
-                                                <details className="bg-slate-900/30 border border-slate-700/50 rounded-2xl">
-                                                    <summary className="px-6 py-4 cursor-pointer text-slate-300 font-bold uppercase text-sm flex items-center gap-2 hover:text-white">
-                                                        <span className="text-lg">🔍</span> Correction Details ({writingFeedback.corrections_list.length})
-                                                    </summary>
-                                                    <div className="px-6 pb-5 space-y-3">
-                                                        {writingFeedback.corrections_list.map((c, i) => (
-                                                            <div key={i} className={`border-l-4 rounded-r-lg p-3 ${
-                                                                c.type === 'grammar' ? 'bg-red-900/20 border-red-500' :
-                                                                c.type === 'spelling' ? 'bg-red-900/20 border-red-400' :
-                                                                c.type === 'punctuation' ? 'bg-yellow-900/20 border-yellow-500' :
-                                                                'bg-blue-900/20 border-blue-500'
-                                                            }`}>
-                                                                <p className="text-xs uppercase font-black text-slate-400 mb-1">
-                                                                    {c.type === 'grammar' ? '⚠️' : c.type === 'spelling' ? '🔤' : c.type === 'punctuation' ? '📌' : '💡'} {c.type}
-                                                                </p>
-                                                                <p className="text-sm">
-                                                                    <span className="text-red-300 line-through">{c.original}</span>
-                                                                    <span className="text-white mx-2">→</span>
-                                                                    <span className="text-green-300 font-bold">{c.corrected}</span>
-                                                                </p>
-                                                                <p className="text-slate-400 text-xs mt-1">{c.explanation}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </details>
                                             )}
                                         </div>
 
+                                        {/* Improved version */}
+                                        {writingFeedback.improved_version && (
+                                            <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6 mb-6">
+                                                <h4 className="text-teal-400 font-bold uppercase text-sm mb-4 flex items-center gap-2">
+                                                    <span className="text-2xl">✨</span> Improved Version
+                                                </h4>
+                                                <div className="text-base text-teal-100 leading-loose">
+                                                    {writingFeedback.improved_version}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Vocabulary usage notes */}
+                                        {writingFeedback.word_usage_notes && writingFeedback.word_usage_notes.length > 0 && (
+                                            <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6 mb-6">
+                                                <h4 className="text-teal-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
+                                                    <span className="text-2xl">📚</span> Vocabulary Usage ({writingFeedback.words_used?.length || 0}/{writingWords.length} words)
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {writingFeedback.word_usage_notes.map((note, i) => (
+                                                        <p key={i} className="text-sm text-teal-100/80">• {note}</p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Action buttons */}
-                                        <div className="mt-6 flex gap-4">
+                                        <div className="flex gap-3">
                                             <button
                                                 onClick={() => {
                                                     setWritingText('');
                                                     setWritingFeedback(null);
                                                     setWritingWordCount(0);
+                                                    setWritingPopup(null);
                                                 }}
                                                 className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
                                             >
-                                                ✍️ Try Again (Same Words)
+                                                ✍️ Try Again
                                             </button>
                                             <button
                                                 onClick={() => {
                                                     setWritingFeedback(null);
                                                     setWritingText('');
                                                     setWritingWordCount(0);
+                                                    setWritingPopup(null);
                                                     loadWriting();
                                                 }}
                                                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
