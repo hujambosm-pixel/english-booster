@@ -221,6 +221,14 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [translationLoading, setTranslationLoading] = useState(false);
             const [translationVoiceListening, setTranslationVoiceListening] = useState(false); // 🆕 V11.38: Voice-to-text
             
+            // 🆕 V13.7: Writing exercise states
+            const [showWriting, setShowWriting] = useState(false);
+            const [writingWords, setWritingWords] = useState([]);
+            const [writingText, setWritingText] = useState('');
+            const [writingFeedback, setWritingFeedback] = useState(null);
+            const [writingLoading, setWritingLoading] = useState(false);
+            const [writingWordCount, setWritingWordCount] = useState(0);
+            
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
             const [statsData, setStatsData] = useState(null);
@@ -580,6 +588,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     }
                     if (showTranslation) {
                         setTranslationWords(prevWords => 
+                            prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
+                        );
+                    }
+                    if (showWriting) {
+                        setWritingWords(prevWords => 
                             prevWords.map(w => w.id === wordId ? { ...w, favourite: nextLevel } : w)
                         );
                     }
@@ -2352,6 +2365,147 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                 }
             }
 
+            // 🆕 V13.7: Load Writing exercise — pick 6-8 random words
+            async function loadWriting() {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey) {
+                    alert('⚠️ Please set your Groq API Key in Settings first!');
+                    setShowSettings(true);
+                    return;
+                }
+                try {
+                    let query = supabase.from('vocabulary_v4').select('*').is('deleted_at', null);
+                    
+                    if (search) {
+                        if (searchMode === 0) {
+                            query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
+                        } else if (searchMode === 1) {
+                            const synonyms = await getAIRelatedWords(search, { setLoading: setDeepSearchLoading });
+                            if (synonyms.length > 0) {
+                                query = query.or(synonyms.map(t => `vocabulary.ilike.%${t}%`).join(','));
+                            } else {
+                                query = query.or(`vocabulary.ilike.%${search}%,synonyms.ilike.%${search}%`);
+                            }
+                        }
+                    }
+                    if (familyFilter !== 'All') query = query.eq('family', familyFilter);
+                    if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
+                    if (favouriteLevel === 1) query = query.eq('favourite', 1);
+                    else if (favouriteLevel === 2) query = query.eq('favourite', 2);
+                    else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
+
+                    const { data, error } = await query;
+                    if (error) throw error;
+                    
+                    if (!data || data.length < 4) {
+                        alert('Need at least 4 vocabulary words to start this exercise!');
+                        return;
+                    }
+                    
+                    // Pick 6-8 random words (or less if not enough)
+                    const shuffled = [...data].sort(() => Math.random() - 0.5);
+                    const count = Math.min(shuffled.length, Math.floor(Math.random() * 3) + 6); // 6-8
+                    const selected = shuffled.slice(0, count);
+                    
+                    setWritingWords(selected);
+                    setWritingText('');
+                    setWritingFeedback(null);
+                    setWritingLoading(false);
+                    setWritingWordCount(0);
+                    setShowWriting(true);
+                } catch (err) {
+                    console.error('Error loading writing:', err);
+                    alert('Error loading writing exercise');
+                }
+            }
+            
+            // 🆕 V13.7: Evaluate user's writing with AI
+            async function evaluateWriting() {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey || !writingText.trim()) return;
+                
+                setWritingLoading(true);
+                try {
+                    const wordList = writingWords.map(w => w.vocabulary).join(', ');
+                    
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ 
+                                role: 'system', 
+                                content: `You are an expert British English writing examiner. Evaluate the student's text with extreme precision and detail. Use British English standards (colour, organise, etc.).
+
+You must return ONLY valid JSON with this structure:
+{
+  "grade": "A" or "B" or "C" or "D",
+  "percentage": 0-100,
+  "summary": "1-2 sentence overall assessment",
+  "words_used": ["list of target words successfully used"],
+  "words_missed": ["list of target words NOT used"],
+  "word_usage_notes": ["feedback on how well each used word was employed, e.g. 'sturdy — used correctly and naturally'"],
+  "corrections": [
+    {
+      "original": "exact text with error",
+      "corrected": "corrected version",
+      "type": "grammar" or "spelling" or "punctuation" or "style" or "vocabulary",
+      "explanation": "why this is wrong and how to fix it"
+    }
+  ],
+  "strengths": ["list of things done well"],
+  "suggestions": ["list of specific improvements"],
+  "improved_version": "the student's full text rewritten with all corrections applied and style improvements"
+}`
+                            }, { 
+                                role: 'user', 
+                                content: `TARGET VOCABULARY to use: ${wordList}
+
+STUDENT'S TEXT:
+"${writingText.trim()}"
+
+Evaluate this writing exhaustively. Check EVERY sentence for:
+- Spelling errors (use British English)
+- Grammar mistakes (articles, prepositions, verb tenses, subject-verb agreement, etc.)
+- Punctuation errors
+- Awkward phrasing or unnatural expressions
+- Vocabulary usage: were the target words used correctly and naturally?
+- Level of detail and descriptiveness
+- Coherence and flow
+
+Grade scale:
+A (85-100%): Excellent — few or no errors, rich vocabulary, natural flow
+B (70-84%): Good — minor errors, most target words used well
+C (50-69%): Adequate — several errors, limited vocabulary usage
+D (0-49%): Needs work — many errors, few target words used
+
+Return ONLY the JSON.`
+                            }],
+                            temperature: 0.1,
+                            max_tokens: 2000
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('Evaluation failed');
+
+                    const data = await response.json();
+                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    const braceStart = raw.indexOf('{');
+                    const braceEnd = raw.lastIndexOf('}');
+                    if (braceStart !== -1 && braceEnd !== -1) {
+                        const feedback = JSON.parse(raw.substring(braceStart, braceEnd + 1));
+                        setWritingFeedback(feedback);
+                    } else {
+                        throw new Error('Invalid JSON response');
+                    }
+                } catch (error) {
+                    console.error('Writing evaluation error:', error);
+                    alert('❌ Error evaluating text. Please try again.');
+                } finally {
+                    setWritingLoading(false);
+                }
+            }
+
             // 🆕 V11.16: Validate answer with AI for Guesswork exercise
             async function validateGuessworkWithAI(userAnswer, correctAnswer, context) {
                 const apiKey = groqApiKey.trim();
@@ -3695,9 +3849,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             await generateSpanishTranslation(updatedWord.context);
                         }
                     }
+                    if (showWriting) {
+                        setWritingWords(prev => prev.map(w => w.id === editingWord.id ? updatedWord : w));
+                    }
                     
                     // 🆕 V11.20: Update main table state without refreshing filters
-                    if (!showFlashcards && !showDictation && !showSelection && !showGuesswork && !showTranslation) {
+                    if (!showFlashcards && !showDictation && !showSelection && !showGuesswork && !showTranslation && !showWriting) {
                         // Only update if editing from main table
                         setWords(prevWords => 
                             prevWords.map(w => w.id === editingWord.id ? updatedWord : w)
@@ -3823,7 +3980,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v13.6</span>
+                                        English Booster <span className="version-text">v13.7</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4434,13 +4591,28 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             setShowExercisesModal(false);
                                             loadTranslation();
                                         }}
-                                        className="group relative overflow-hidden bg-pink-600 hover:bg-pink-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl md:col-span-2"
+                                        className="group relative overflow-hidden bg-pink-600 hover:bg-pink-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
                                     >
                                         <div className="flex items-center gap-4 mb-3">
                                             <span className="text-4xl">🌐</span>
                                             <h3 className="text-xl font-black text-white uppercase">Translation</h3>
                                         </div>
                                         <p className="text-sm text-white/80">Translate Spanish sentences to English. Practice language conversion skills.</p>
+                                    </button>
+                                    
+                                    {/* 🆕 V13.7: Writing */}
+                                    <button
+                                        onClick={() => {
+                                            setShowExercisesModal(false);
+                                            loadWriting();
+                                        }}
+                                        className="group relative overflow-hidden bg-teal-600 hover:bg-teal-500 p-6 rounded-2xl text-left transition-all hover:scale-105 hover:shadow-2xl"
+                                    >
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <span className="text-4xl">✍️</span>
+                                            <h3 className="text-xl font-black text-white uppercase">Writing</h3>
+                                        </div>
+                                        <p className="text-sm text-white/80">Write a paragraph using given vocabulary. AI evaluates grammar, spelling and style.</p>
                                     </button>
                                 </div>
                             </div>
@@ -7126,6 +7298,266 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         style={{ width: `${((translationIndex + 1) / translationWords.length) * 100}%` }}
                                     />
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    )}
+
+                    {/* 🆕 V13.7: WRITING EXERCISE */}
+                    {showWriting && writingWords.length > 0 && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-md overflow-y-auto">
+                            <div className="w-full max-w-4xl my-2 sm:my-8">
+                                {/* Header */}
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black main-gradient uppercase italic">✍️ Writing</h2>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a paragraph (50-150 words) using as many of the given vocabulary words as possible.\n\nThe AI examiner will evaluate:\n• Grammar & spelling (British English)\n• Vocabulary usage (were target words used correctly?)\n• Punctuation & style\n• Coherence & detail level\n\nGrade scale:\n🏆 A (85-100%): Excellent\n⭐ B (70-84%): Good\n📝 C (50-69%): Adequate\n🔴 D (0-49%): Needs work\n\nTip: Try to use the words naturally in context, not just list them!')}
+                                            className="text-blue-400 hover:text-blue-300 text-lg"
+                                        >ℹ️</button>
+                                        <button
+                                            onClick={() => {
+                                                setShowWriting(false);
+                                                setWritingWords([]);
+                                                setWritingText('');
+                                                setWritingFeedback(null);
+                                                setWritingLoading(false);
+                                                setShowExercisesModal(true);
+                                            }}
+                                            className="text-slate-400 hover:text-white text-3xl leading-none"
+                                        >&times;</button>
+                                    </div>
+                                </div>
+
+                                {/* Target vocabulary words */}
+                                <div className="bg-gradient-to-br from-teal-600 to-emerald-600 rounded-3xl p-6 mb-6 shadow-2xl">
+                                    <h3 className="text-white/70 text-sm font-bold uppercase mb-4 text-center">Use these words in your paragraph:</h3>
+                                    <div className="flex flex-wrap justify-center gap-3">
+                                        {writingWords.map((w, i) => {
+                                            const used = writingFeedback?.words_used?.some(u => u.toLowerCase() === w.vocabulary.toLowerCase());
+                                            const missed = writingFeedback?.words_missed?.some(m => m.toLowerCase() === w.vocabulary.toLowerCase());
+                                            return (
+                                                <span key={i} className={`px-4 py-2 rounded-full text-base font-bold transition-all ${
+                                                    writingFeedback 
+                                                        ? (used ? 'bg-green-500/30 text-green-200 border-2 border-green-400' : 
+                                                           missed ? 'bg-red-500/30 text-red-200 border-2 border-red-400 line-through opacity-60' : 
+                                                           'bg-white/20 text-white')
+                                                        : 'bg-white/20 text-white'
+                                                }`}>
+                                                    {writingFeedback && used && '✓ '}{writingFeedback && missed && '✗ '}{w.vocabulary}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                    {writingFeedback && (
+                                        <p className="text-center text-white/60 text-sm mt-3">
+                                            ✓ {writingFeedback.words_used?.length || 0}/{writingWords.length} words used
+                                        </p>
+                                    )}
+                                </div>
+
+                                {!writingFeedback ? (
+                                    <>
+                                        {/* Writing area */}
+                                        <textarea
+                                            value={writingText}
+                                            onChange={(e) => {
+                                                setWritingText(e.target.value);
+                                                setWritingWordCount(e.target.value.trim() ? e.target.value.trim().split(/\s+/).length : 0);
+                                            }}
+                                            placeholder="Write your paragraph here (50-150 words). Try to use the vocabulary words naturally in context..."
+                                            className="w-full p-6 rounded-xl text-lg min-h-[200px] resize-none mb-2"
+                                            autoFocus
+                                        />
+                                        
+                                        {/* Word count */}
+                                        <div className="flex justify-between items-center mb-4">
+                                            <span className={`text-sm font-bold ${
+                                                writingWordCount < 30 ? 'text-red-400' : 
+                                                writingWordCount < 50 ? 'text-yellow-400' : 
+                                                writingWordCount > 200 ? 'text-yellow-400' : 'text-green-400'
+                                            }`}>
+                                                {writingWordCount} words {writingWordCount < 30 ? '(too short)' : writingWordCount < 50 ? '(almost there)' : writingWordCount > 200 ? '(quite long)' : '✓'}
+                                            </span>
+                                            <span className="text-slate-500 text-sm">Target: 50-150 words</span>
+                                        </div>
+                                        
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={evaluateWriting}
+                                                disabled={writingLoading || writingWordCount < 15}
+                                                className="flex-1 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black uppercase text-sm"
+                                            >
+                                                {writingLoading ? '🤖 Evaluating your writing...' : '📝 Submit for Evaluation'}
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setWritingWords(prev => [...prev].sort(() => Math.random() - 0.5));
+                                                    loadWriting();
+                                                }}
+                                                className="px-6 bg-slate-700 hover:bg-slate-600 text-white py-4 rounded-2xl font-black uppercase text-sm"
+                                            >
+                                                🔄 New Words
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* AI Feedback */}
+                                        <div className="space-y-6">
+                                            {/* Grade badge */}
+                                            <div className="flex justify-center">
+                                                <div className={`inline-flex items-center gap-3 px-8 py-4 rounded-2xl border-2 ${
+                                                    writingFeedback.grade === 'A' ? 'bg-green-900/20 border-green-500' :
+                                                    writingFeedback.grade === 'B' ? 'bg-yellow-900/20 border-yellow-500' :
+                                                    writingFeedback.grade === 'C' ? 'bg-orange-900/20 border-orange-500' :
+                                                    'bg-red-900/20 border-red-500'
+                                                }`}>
+                                                    <span className="text-4xl">
+                                                        {writingFeedback.grade === 'A' ? '🏆' :
+                                                         writingFeedback.grade === 'B' ? '⭐' :
+                                                         writingFeedback.grade === 'C' ? '📝' : '🔴'}
+                                                    </span>
+                                                    <div>
+                                                        <p className={`text-3xl font-black ${
+                                                            writingFeedback.grade === 'A' ? 'text-green-400' :
+                                                            writingFeedback.grade === 'B' ? 'text-yellow-400' :
+                                                            writingFeedback.grade === 'C' ? 'text-orange-400' :
+                                                            'text-red-400'
+                                                        }`}>
+                                                            Grade {writingFeedback.grade}
+                                                        </p>
+                                                        <p className="text-white text-sm">{writingFeedback.percentage}% — {writingFeedback.summary}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Corrections */}
+                                            {writingFeedback.corrections && writingFeedback.corrections.length > 0 && (
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
+                                                    <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
+                                                        <span className="text-2xl">🔍</span>
+                                                        Corrections ({writingFeedback.corrections.length})
+                                                    </h4>
+                                                    <div className="space-y-3">
+                                                        {writingFeedback.corrections.map((c, i) => (
+                                                            <div key={i} className={`border-l-4 rounded-r-lg p-4 ${
+                                                                c.type === 'grammar' ? 'bg-red-900/20 border-red-500' :
+                                                                c.type === 'spelling' ? 'bg-red-900/20 border-red-400' :
+                                                                c.type === 'punctuation' ? 'bg-yellow-900/20 border-yellow-500' :
+                                                                'bg-blue-900/20 border-blue-500'
+                                                            }`}>
+                                                                <div className="flex items-start gap-3">
+                                                                    <span className="text-lg shrink-0">
+                                                                        {c.type === 'grammar' ? '⚠️' : c.type === 'spelling' ? '🔤' : c.type === 'punctuation' ? '📌' : '💡'}
+                                                                    </span>
+                                                                    <div className="flex-1">
+                                                                        <p className="text-xs uppercase font-black text-slate-400 mb-1">{c.type}</p>
+                                                                        <p className="text-sm">
+                                                                            <span className="text-red-300 line-through">{c.original}</span>
+                                                                            <span className="text-white mx-2">→</span>
+                                                                            <span className="text-green-300 font-bold">{c.corrected}</span>
+                                                                        </p>
+                                                                        <p className="text-slate-400 text-xs mt-1">{c.explanation}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* No corrections — perfect! */}
+                                            {(!writingFeedback.corrections || writingFeedback.corrections.length === 0) && (
+                                                <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-4xl">🎉</span>
+                                                        <div>
+                                                            <p className="text-green-300 font-bold text-lg">No errors found!</p>
+                                                            <p className="text-green-200 text-sm">Your grammar, spelling and punctuation are spot on.</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Vocabulary usage notes */}
+                                            {writingFeedback.word_usage_notes && writingFeedback.word_usage_notes.length > 0 && (
+                                                <div className="bg-teal-900/20 border border-teal-500/30 rounded-2xl p-6">
+                                                    <h4 className="text-teal-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
+                                                        <span className="text-2xl">📚</span> Vocabulary Usage
+                                                    </h4>
+                                                    <div className="space-y-2">
+                                                        {writingFeedback.word_usage_notes.map((note, i) => (
+                                                            <p key={i} className="text-sm text-teal-100/80">• {note}</p>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Strengths & Suggestions side by side */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {writingFeedback.strengths && writingFeedback.strengths.length > 0 && (
+                                                    <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-5">
+                                                        <h4 className="text-green-300 font-bold uppercase text-sm mb-3">💪 Strengths</h4>
+                                                        {writingFeedback.strengths.map((s, i) => (
+                                                            <p key={i} className="text-sm text-green-100/80 mb-1">✓ {s}</p>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {writingFeedback.suggestions && writingFeedback.suggestions.length > 0 && (
+                                                    <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-5">
+                                                        <h4 className="text-amber-300 font-bold uppercase text-sm mb-3">💡 Suggestions</h4>
+                                                        {writingFeedback.suggestions.map((s, i) => (
+                                                            <p key={i} className="text-sm text-amber-100/80 mb-1">→ {s}</p>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Your text vs Improved version */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Text:</h4>
+                                                    <div className="bg-slate-800 p-4 rounded-xl text-sm text-white leading-relaxed">{writingText}</div>
+                                                </div>
+                                                {writingFeedback.improved_version && (
+                                                    <div>
+                                                        <h4 className="text-xs uppercase font-black text-teal-400 mb-2">✨ Improved Version:</h4>
+                                                        <div className="bg-teal-900/20 border border-teal-500/30 p-4 rounded-xl text-sm text-teal-100 leading-relaxed">
+                                                            {writingFeedback.improved_version}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Action buttons */}
+                                        <div className="mt-6 flex gap-4">
+                                            <button
+                                                onClick={() => {
+                                                    setWritingText('');
+                                                    setWritingFeedback(null);
+                                                    setWritingWordCount(0);
+                                                }}
+                                                className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
+                                            >
+                                                ✍️ Try Again (Same Words)
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setWritingFeedback(null);
+                                                    setWritingText('');
+                                                    setWritingWordCount(0);
+                                                    loadWriting();
+                                                }}
+                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black uppercase text-sm"
+                                            >
+                                                🔄 New Words
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}
