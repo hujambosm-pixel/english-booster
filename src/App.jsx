@@ -168,7 +168,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // 🆕 V14.1: Dictation AI feedback states
+            // 🆕 V14.2: Dictation AI feedback states
             const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
@@ -233,7 +233,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingFeedback, setWritingFeedback] = useState(null);
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
-            const [writingPopup, setWritingPopup] = useState(null); // {x, y, correction}
+            const [writingPopup, setWritingPopup] = useState(null); // {x, y, yAbove, correction}
+            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.2: clickable correction popup
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -1582,6 +1583,11 @@ Return ONLY valid JSON, no explanation.` }],
                     const dictationAvgErrors = dictationPracticed.length > 0 
                         ? (dictationPracticed.reduce((sum, w) => sum + (w.dictation_errors_total || 0), 0) / dictationPracticed.reduce((sum, w) => sum + w.dictation_count, 0)).toFixed(2)
                         : 0;
+                    // 🆕 V14.2: Cambridge grades for Dictation (derived from avg errors)
+                    const dictGradeC2 = dictationPracticed.filter(w => ((w.dictation_errors_total||0)/w.dictation_count) === 0).length;
+                    const dictGradeC1 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 0 && avg <= 1; }).length;
+                    const dictGradeB2 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 1 && avg <= 2; }).length;
+                    const dictGradeB1 = dictationPracticed.filter(w => (w.dictation_errors_total||0)/w.dictation_count > 2).length;
                     
                     const selectionPracticed = allWords.filter(w => w.selection_count > 0);
                     const selectionAvgAttempts = selectionPracticed.length > 0
@@ -1643,7 +1649,7 @@ Return ONLY valid JSON, no explanation.` }],
                         difficulty: { easy, medium, hard, notPracticed },
                         exercises: {
                             flashcard: { count: flashcardPracticed, active: fcActive, emerging: fcEmerging, passive: fcPassive },
-                            dictation: { count: dictationPracticed.length, avgErrors: dictationAvgErrors },
+                            dictation: { count: dictationPracticed.length, avgErrors: dictationAvgErrors, gradeC2: dictGradeC2, gradeC1: dictGradeC1, gradeB2: dictGradeB2, gradeB1: dictGradeB1 },
                             selection: { count: selectionPracticed.length, active: seActive, emerging: seEmerging, passive: sePassive },
                             guesswork: { count: guessworkPracticed, active: gwActive, emerging: gwEmerging, passive: gwPassive },
                             translation: { count: translationPracticed.length, gradeC2, gradeC1, gradeB2, gradeB1 }
@@ -2442,27 +2448,33 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: `You are an expert British English writing examiner. Evaluate grammar, spelling, punctuation, style, AND semantic correctness. Check that every sentence makes logical sense and that words are used with their correct meaning in context.
+                                content: `You are an expert British English writing examiner at Cambridge Assessment level. Evaluate grammar, spelling, punctuation, style, AND semantic correctness.
+
+CRITICAL ACCURACY RULES — read carefully before flagging anything:
+- NEVER flag recognised English idioms, phrasal verbs, or set expressions as errors (e.g. "it takes a village", "on the fence", "under the weather", "by hook or by crook"). These are correct even if used figuratively.
+- NEVER flag British spellings (colour, organise, realise, behaviour) as errors.
+- Only flag a word as semantically incorrect if its meaning in that sentence is genuinely wrong — not just unusual.
+- Be precise: do NOT over-correct. Only mark real errors that a Cambridge examiner would penalise.
+
+CAMBRIDGE GRADING:
+- C2 (90–100%): Near-native, sophisticated grammar, idiomatic, no real errors
+- C1 (75–89%): Advanced, natural, at most 1 very minor imprecision
+- B2 (60–74%): Good but with 1–2 clear grammar/vocabulary errors
+- B1 (0–59%): 3+ errors or significant issues affecting clarity
 
 You must return ONLY valid JSON with this structure:
 {
-  "grade": "A" or "B" or "C" or "D",
+  "grade": "C2" or "C1" or "B2" or "B1",
   "percentage": 0-100,
   "summary": "1 sentence assessment",
   "words_used": ["target words successfully used"],
   "words_missed": ["target words NOT used"],
-  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally in this context' or 'lean period — semantically incorrect here: a lean period is a time of scarcity, but the sentence describes abundance'"],
-  "annotated_text": "The student's FULL original text with inline markup. Use ONLY these tags: <del>wrong</del><ins>correct</ins> for corrections (mark ONLY the minimal wrong words). Use <note>brief comment</note> for semantic issues or style notes that are not simple corrections. Do NOT include explanations inside the text flow — keep notes very short (3-8 words max). NEVER wrap whole sentences. Keep all correct text exactly as written.",
+  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally' or 'lean period — semantically incorrect here: X'"],
+  "annotated_text": "The student's FULL original text with inline markup. Use ONLY: <del>wrong</del><ins>correct</ins> for corrections. Use <note>brief comment</note> for semantic/style notes (3-8 words max). NEVER wrap correct idioms or set expressions. NEVER wrap whole sentences.",
   "corrections_list": [
-    {
-      "id": 1,
-      "original": "wrong text",
-      "corrected": "fixed text", 
-      "type": "grammar/spelling/punctuation/style/semantic",
-      "explanation": "brief explanation"
-    }
+    {"id": 1, "original": "wrong text", "corrected": "fixed text", "type": "grammar/spelling/punctuation/style/semantic", "explanation": "brief explanation"}
   ],
-  "improved_version": "CRITICAL: Rewrite the student's text with all corrections applied. You MUST use the EXACT target vocabulary words given — NEVER replace them with synonyms or alternatives. If the student used 'pop out', keep 'pop out', do NOT change it to 'popped up'. The improved version should sound natural while preserving every target word the student used."
+  "improved_version": "Student's full text with all corrections applied. MUST use the EXACT target vocabulary words given — NEVER replace them with synonyms."
 }`
                             }, { 
                                 role: 'user', 
@@ -2471,13 +2483,13 @@ You must return ONLY valid JSON with this structure:
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
-Evaluate exhaustively:
-1. GRAMMAR: articles, prepositions, tenses, agreement, etc.
-2. SPELLING: British English (colour, organise, etc.)
-3. SEMANTICS: Does each sentence make logical sense? Are words used with their correct meaning? E.g. if someone writes "the lean period was full of abundance" — flag the semantic contradiction.
-4. VOCABULARY: Were target words used correctly AND in the right semantic context? Be strict — a word used grammatically correct but semantically wrong should be flagged.
-5. For annotated_text: <del>wrong</del><ins>correct</ins> for fixes. <note>short comment</note> for semantic/style observations. Notes must be VERY short (3-8 words).
-6. IMPROVED VERSION: Must use the EXACT target words — never substitute them.
+Evaluate exhaustively but accurately:
+1. GRAMMAR: articles, prepositions, tenses, agreement, word order
+2. SPELLING: British English only
+3. SEMANTICS: Does each sentence make logical sense? Are words used correctly? IMPORTANT: idioms and set expressions are CORRECT even if used figuratively — do NOT flag "it takes a village", "my forte", etc. unless genuinely misused.
+4. VOCABULARY: Were target words used correctly AND in the right semantic context? Only flag clear misuse.
+5. annotated_text: use <del>wrong</del><ins>correct</ins> and <note>short comment</note>. Notes 3-8 words max. Never mark correct idioms.
+6. improved_version: MUST use the EXACT target words.
 
 Return ONLY JSON.`
                             }],
@@ -2506,7 +2518,7 @@ Return ONLY JSON.`
                 }
             }
 
-            // 🆕 V14.1: Evaluate dictation with AI (precise, like Writing exercise)
+            // 🆕 V14.2: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !userInput.trim()) return;
@@ -2519,27 +2531,42 @@ Return ONLY JSON.`
                             model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: `You are an expert English language teacher (Cambridge-level) correcting a dictation exercise. The student heard a sentence and transcribed it. Compare word-by-word and character-by-character. Flag ALL errors: misspellings, missing words, extra words, wrong words, punctuation errors, capitalisation errors.
+                                content: `You are a strict but fair Cambridge English teacher correcting a dictation exercise. The student heard a sentence and wrote it down. Compare their transcription to the original sentence word-by-word and character-by-character.
 
-Be strict and precise — like a real English teacher. Even small errors matter (missing period, wrong apostrophe, etc.).
+WHAT TO FLAG (be exhaustive):
+- Misspelt words (even one wrong letter)
+- Wrong words (substituted with a different word)
+- Missing words
+- Extra words added by student
+- Wrong punctuation (missing period, wrong comma, etc.)
+- Wrong capitalisation
 
-Return ONLY valid JSON with this EXACT structure:
+WHAT NOT TO FLAG:
+- Do NOT flag acceptable spelling variants unless clearly wrong
+- Do NOT add commentary — only mark actual transcription errors
+
+CAMBRIDGE GRADING based on error count:
+- 0 errors → C2
+- 1 error → C1
+- 2 errors → B2
+- 3+ errors → B1
+
+Return ONLY valid JSON:
 {
-  "annotated_text": "Student's text with markup: <del>wrong</del><ins>correct</ins> for corrections. For missing words: <ins>missing-word</ins>. For extra words: <del>extra-word</del>. Keep ALL correct words exactly as the student wrote them.",
+  "annotated_text": "Student's text with: <del>wrong</del><ins>correct</ins> for substitutions/misspellings. For missing words: <ins>missing-word</ins>. For extra words: <del>extra-word</del>. Keep ALL correct words exactly as written.",
   "corrections_list": [
-    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "spelling", "explanation": "brief explanation"}
+    {"id": 1, "original": "wrong", "corrected": "correct", "type": "spelling/missing-word/extra-word/wrong-word/punctuation/capitalisation", "explanation": "brief explanation"}
   ],
-  "error_count": 0
-}
-
-Types: spelling / missing-word / extra-word / wrong-word / punctuation / capitalisation`
+  "error_count": 0,
+  "grade": "C2/C1/B2/B1"
+}`
                             }, { 
                                 role: 'user', 
-                                content: `ORIGINAL SENTENCE (the correct answer): "${correctText}"
+                                content: `ORIGINAL SENTENCE: "${correctText}"
 
 STUDENT'S TRANSCRIPTION: "${userInput}"
 
-Identify every single difference between the two. Be exhaustive and precise. Return ONLY JSON.`
+Compare every single word and character. Flag every difference. Return ONLY JSON.`
                             }],
                             temperature: 0.0,
                             max_tokens: 1200
@@ -2768,7 +2795,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // 🆕 V11.38: Validate translation with Cambridge grading (C1/C2/B2/B1)
+            // 🆕 V14.2: Validate translation with Cambridge grading + annotated feedback like Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) {
@@ -2776,151 +2803,61 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                     return null;
                 }
 
-                // 🆕 V11.38: Check for EXACT match - AI evaluates C1 vs C2
-                const userClean = userTranslation.trim().toLowerCase();
-                const originalClean = originalEnglish.trim().toLowerCase();
-                
-                if (userClean === originalClean) {
-                    // Perfect match - let AI decide C1 or C2 based on grammar sophistication
-                    setTranslationAIValidating(true);
-                    try {
-                        const levelCheckPrompt = `Evaluate this English sentence for grammatical sophistication:
-
-"${originalEnglish}"
-
-Is this sentence at **C2 level** (very sophisticated grammar, complex structures, advanced vocabulary) or **C1 level** (advanced but less complex)?
-
-Respond ONLY with "C2" or "C1" - nothing else.`;
-
-                        const levelResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${apiKey}`
-                            },
-                            body: JSON.stringify({
-                                model: 'llama-3.1-8b-instant',
-                                messages: [{ role: 'user', content: levelCheckPrompt }],
-                                temperature: 0.3,
-                                max_tokens: 10
-                            })
-                        });
-
-                        const levelData = await levelResponse.json();
-                        const levelText = levelData.choices?.[0]?.message?.content?.trim() || 'C1';
-                        const gradeLevel = levelText.includes('C2') ? 'C2' : 'C1';
-
-                        setTranslationAIValidating(false);
-                        return {
-                            grade: gradeLevel,
-                            score: "Active",
-                            percentage: 100,
-                            grammar_errors: [],
-                            vocabulary_issues: [],
-                            feedback: "🎉 Perfect! Your translation matches the original exactly. Excellent work!"
-                        };
-                    } catch (error) {
-                        console.error('Level check error:', error);
-                        setTranslationAIValidating(false);
-                        // Fallback to C1 if check fails
-                        return {
-                            grade: "C1",
-                            score: "Active",
-                            percentage: 100,
-                            grammar_errors: [],
-                            vocabulary_issues: [],
-                            feedback: "🎉 Perfect! Your translation matches the original exactly. Excellent work!"
-                        };
-                    }
-                }
-
                 setTranslationAIValidating(true);
                 try {
-                    const prompt = `You are a strict Cambridge English examiner evaluating a Spanish-to-English translation task.
-
-**ORIGINAL ENGLISH**: "${originalEnglish}"
-**SPANISH VERSION**: "${spanishSource}"
-**STUDENT'S ENGLISH TRANSLATION**: "${userTranslation}"
-
-**STRICT GRADING CRITERIA** (V11.38 - Cambridge Levels):
-- **0 errors** → Grade **C1** or **C2** (score: Easy), percentage: 90-100%
-  * C2: Very sophisticated grammar, complex structures
-  * C1: Advanced but less complex
-- **1 error** (grammar OR vocabulary) → Grade **B2** (score: Medium), percentage: 70-85%
-- **2+ errors** → Grade **B1** (score: Hard), percentage: 40-65%
-
-**IMPORTANT**: Easy/Medium/Hard represents student's memorization difficulty, NOT the Cambridge level itself.
-
-**SPECIAL RULES**:
-⚠️ IGNORE he/she/his/her differences (Spanish doesn't specify gender)
-⚠️ Be STRICT but FAIR - count only real errors
-⚠️ Punctuation differences are NOT errors
-
-**EVALUATION STEPS**:
-1. Count GRAMMAR errors in the **ENGLISH translation**: tense, subject-verb agreement, word order, articles, prepositions
-2. Count VOCABULARY errors in the **ENGLISH translation**: wrong word choice, spelling mistakes in English, missing/extra words (except he/she)
-3. Total errors = grammar_errors.length + vocabulary_issues.length
-4. Assign grade based on TOTAL ERROR COUNT:
-   - 0 errors → Evaluate grammar sophistication: **C2** (very complex) or **C1** (advanced), score: **Easy**
-   - 1 error → **B2**, score: **Medium**
-   - 2+ errors → **B1**, score: **Hard**
-
-**FEEDBACK REQUIREMENTS**:
-✅ Correct errors in the **ENGLISH translation** only (NOT the Spanish)
-✅ Format: "Error in English: [wrong part] → Should be: [English correction]. Reason: [why]"
-✅ If 0 errors: "Perfect translation! No errors found. ✅"
-✅ Be CONCISE and SPECIFIC about **ENGLISH** corrections
-❌ NO generic praise like "good attempt", "with revision could improve", etc.
-❌ NO vague or encouraging comments
-❌ NO suggestions if translation is already correct
-❌ DO NOT correct the Spanish text - only the English translation
-
-Respond ONLY in this JSON format (no markdown, no backticks):
-{
-  "grade": "B1/B2/C1/C2",
-  "score": "Easy/Medium/Hard",
-  "percentage": 95,
-  "grammar_errors": ["specific grammar error in English 1", "error 2"],
-  "vocabulary_issues": ["specific vocabulary issue in English 1"],
-  "feedback": "Concise list of English corrections. If no errors: 'Perfect translation! No errors found. ✅'"
-}`;
-
                     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.3,
-                            max_tokens: 800
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ 
+                                role: 'system', 
+                                content: `You are a strict but fair Cambridge English examiner evaluating a Spanish-to-English translation task.
+
+CRITICAL ACCURACY RULES:
+- NEVER flag recognised English idioms, phrasal verbs, or set expressions as errors — they are correct.
+- Ignore he/she/his/her differences (Spanish doesn't specify gender).
+- Punctuation-only differences are NOT errors.
+- Only flag real grammar or vocabulary errors in the student's English translation.
+- Be precise: do NOT over-correct. Only mark errors a Cambridge examiner would actually penalise.
+
+CAMBRIDGE GRADING:
+- C2 (90–100%): Perfect or near-perfect translation, sophisticated expression
+- C1 (75–89%): Advanced, at most 1 very minor imprecision
+- B2 (60–74%): Good but with 1–2 clear errors
+- B1 (0–59%): 3+ errors or significant issues
+
+FEEDBACK FORMAT — Return ONLY valid JSON:
+{
+  "grade": "C2/C1/B2/B1",
+  "percentage": 0-100,
+  "annotated_text": "Student's FULL English translation with inline markup. Use <del>wrong</del><ins>correct</ins> for errors. Use <note>brief comment</note> for style notes (3-8 words max). Keep ALL correct text exactly as written. NEVER markup correct idioms or set expressions.",
+  "corrections_list": [
+    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary/style", "explanation": "brief explanation"}
+  ],
+  "feedback": "1-sentence summary of the translation quality"
+}`
+                            }, { 
+                                role: 'user', 
+                                content: `ORIGINAL ENGLISH: "${originalEnglish}"
+SPANISH VERSION: "${spanishSource}"
+STUDENT'S ENGLISH TRANSLATION: "${userTranslation}"
+
+Evaluate the student's English translation only. Return ONLY JSON.`
+                            }],
+                            temperature: 0.1,
+                            max_tokens: 1200
                         })
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`API Error ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`API Error ${response.status}`);
 
                     const data = await response.json();
-                    let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    
-                    // Parse JSON
-                    let result;
-                    try {
-                        result = JSON.parse(textResponse);
-                    } catch (e) {
-                        const firstBraceIndex = textResponse.indexOf('{');
-                        let braceCount = 0, endIndex = -1;
-                        for (let i = firstBraceIndex; i < textResponse.length; i++) {
-                            if (textResponse[i] === '{') braceCount++;
-                            if (textResponse[i] === '}') braceCount--;
-                            if (braceCount === 0) { endIndex = i + 1; break; }
-                        }
-                        result = JSON.parse(textResponse.substring(firstBraceIndex, endIndex));
-                    }
-                    
+                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    const braceStart = raw.indexOf('{');
+                    const braceEnd = raw.lastIndexOf('}');
+                    if (braceStart === -1 || braceEnd === -1) throw new Error('Invalid JSON');
+                    const result = JSON.parse(raw.substring(braceStart, braceEnd + 1));
                     return result;
                 } catch (error) {
                     console.error('Translation Validation Error:', error);
@@ -4035,7 +3972,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.1</span>
+                                        English Booster <span className="version-text">v14.2</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6092,7 +6029,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.1: Call AI for precise error analysis
+                                                            // 🆕 V14.2: Call AI for precise error analysis
                                                             if (groqApiKey.trim()) {
                                                                 evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                             }
@@ -6155,7 +6092,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.1: Call AI for precise error analysis (if API key available)
+                                                        // 🆕 V14.2: Call AI for precise error analysis (if API key available)
                                                         if (groqApiKey.trim()) {
                                                             evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                         }
@@ -6204,32 +6141,37 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V14.1: Score bar with Info icon */}
+                                            {/* 🆕 V14.2: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
-                                                    onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 HOW ERRORS ARE COUNTED:\nEach word that differs from the original counts as 1 error.\nMissing, extra, or wrong words each count as errors.\n\n🏆 PERFORMANCE LEVELS:\n🟢 Active: 0 errors — Perfect transcription\n🟡 Emerging: 1–2 errors — Minor mistakes\n🔴 Passive: 3+ errors — Needs more practice\n\n🤖 AI ANALYSIS (requires Groq API key):\nWhen enabled, the AI performs a precise, teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
+                                                    onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
                                                     className="absolute right-3 top-3 text-blue-400 hover:text-blue-300 text-base leading-none"
                                                     title="Grading criteria"
                                                 >ℹ️</button>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Errors</p>
-                                                    <p className="text-2xl font-black text-white">{dictationErrorCount}</p>
+                                                    <p className="text-2xl font-black text-white">{dictationAIFeedback ? dictationAIFeedback.error_count : dictationErrorCount}</p>
                                                 </div>
                                                 <div className="h-12 w-px bg-slate-700"></div>
                                                 <div className="text-center">
-                                                    <p className="text-xs uppercase font-black text-slate-500 mb-1">Performance</p>
+                                                    <p className="text-xs uppercase font-black text-slate-500 mb-1">Grade</p>
                                                     <p className={`text-2xl font-black ${
-                                                        dictationDifficulty === 'Active' ? 'text-green-400' :
-                                                        dictationDifficulty === 'Emerging' ? 'text-yellow-400' :
+                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'C2' ? 'text-green-400' :
+                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'C1' ? 'text-teal-400' :
+                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'B2' ? 'text-yellow-400' :
+                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'Active' ? 'text-green-400' :
+                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'Emerging' ? 'text-yellow-400' :
                                                         'text-red-400'
                                                     }`}>
-                                                        {dictationDifficulty === 'Active' ? '🟢' :
-                                                         dictationDifficulty === 'Emerging' ? '🟡' : '🔴'} {dictationDifficulty}
+                                                        {dictationAIFeedback?.grade
+                                                            ? (dictationAIFeedback.grade === 'C2' ? '🏆 C2' : dictationAIFeedback.grade === 'C1' ? '⭐ C1' : dictationAIFeedback.grade === 'B2' ? '📝 B2' : '🔴 B1')
+                                                            : (dictationDifficulty === 'Active' ? '🟢 ' : dictationDifficulty === 'Emerging' ? '🟡 ' : '🔴 ') + dictationDifficulty
+                                                        }
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            {/* 🆕 V14.1: AI-annotated your answer (clickable corrections) */}
+                                            {/* 🆕 V14.2: AI-annotated your answer (clickable corrections) */}
                                             <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
@@ -6247,7 +6189,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                     const correction = dictationAIFeedback.corrections_list.find(c => c.id === id);
                                                                     if (correction) {
                                                                         const rect = target.getBoundingClientRect();
-                                                                        setDictationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, correction });
+                                                                        setDictationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, yAbove: rect.top - 8, correction });
                                                                         e.stopPropagation();
                                                                     }
                                                                 }
@@ -6280,44 +6222,47 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         </div>
                                                     )}
 
-                                                    {/* Correction popup */}
-                                                    {dictationPopup && (
-                                                        <div
-                                                            className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl max-w-xs"
-                                                            style={{
-                                                                left: Math.min(dictationPopup.x, window.innerWidth - 280) + 'px',
-                                                                top: Math.min(dictationPopup.y, window.innerHeight - 140) + 'px',
-                                                                transform: 'translateX(-50%)'
-                                                            }}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            <div className="flex justify-between items-start mb-2">
-                                                                <span className={`text-xs uppercase font-black ${
-                                                                    dictationPopup.correction.type === 'spelling' ? 'text-red-300' :
-                                                                    dictationPopup.correction.type === 'wrong-word' ? 'text-red-400' :
-                                                                    dictationPopup.correction.type === 'missing-word' ? 'text-yellow-400' :
-                                                                    dictationPopup.correction.type === 'extra-word' ? 'text-orange-400' :
-                                                                    dictationPopup.correction.type === 'punctuation' ? 'text-purple-400' :
-                                                                    'text-blue-400'
-                                                                }`}>
-                                                                    {dictationPopup.correction.type === 'spelling' ? '🔤' :
-                                                                     dictationPopup.correction.type === 'wrong-word' ? '❌' :
-                                                                     dictationPopup.correction.type === 'missing-word' ? '➕' :
-                                                                     dictationPopup.correction.type === 'extra-word' ? '➖' :
-                                                                     dictationPopup.correction.type === 'punctuation' ? '📌' : '🔠'} {dictationPopup.correction.type}
-                                                                </span>
-                                                                <button onClick={() => setDictationPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                                    {/* Correction popup - smart positioning */}
+                                                    {dictationPopup && (() => {
+                                                        const pw = 280, ph = 180;
+                                                        const left = Math.max(pw/2 + 8, Math.min(dictationPopup.x, window.innerWidth - pw/2 - 8));
+                                                        const top = dictationPopup.y + ph > window.innerHeight
+                                                            ? Math.max(8, dictationPopup.yAbove - ph)
+                                                            : dictationPopup.y;
+                                                        return (
+                                                            <div
+                                                                className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl"
+                                                                style={{ left: left + 'px', top: top + 'px', transform: 'translateX(-50%)', width: pw + 'px' }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className={`text-xs uppercase font-black ${
+                                                                        dictationPopup.correction.type === 'spelling' ? 'text-red-300' :
+                                                                        dictationPopup.correction.type === 'wrong-word' ? 'text-red-400' :
+                                                                        dictationPopup.correction.type === 'missing-word' ? 'text-yellow-400' :
+                                                                        dictationPopup.correction.type === 'extra-word' ? 'text-orange-400' :
+                                                                        dictationPopup.correction.type === 'punctuation' ? 'text-purple-400' :
+                                                                        'text-blue-400'
+                                                                    }`}>
+                                                                        {dictationPopup.correction.type === 'spelling' ? '🔤' :
+                                                                         dictationPopup.correction.type === 'wrong-word' ? '❌' :
+                                                                         dictationPopup.correction.type === 'missing-word' ? '➕' :
+                                                                         dictationPopup.correction.type === 'extra-word' ? '➖' :
+                                                                         dictationPopup.correction.type === 'punctuation' ? '📌' : '🔠'} {dictationPopup.correction.type}
+                                                                    </span>
+                                                                    <button onClick={() => setDictationPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                                                </div>
+                                                                {dictationPopup.correction.original && (
+                                                                    <p className="text-sm mb-1">
+                                                                        <span className="text-red-300 line-through">{dictationPopup.correction.original}</span>
+                                                                        <span className="text-white mx-2">→</span>
+                                                                        <span className="text-green-300 font-bold">{dictationPopup.correction.corrected}</span>
+                                                                    </p>
+                                                                )}
+                                                                <p className="text-slate-300 text-sm">{dictationPopup.correction.explanation}</p>
                                                             </div>
-                                                            {dictationPopup.correction.original && (
-                                                                <p className="text-sm mb-1">
-                                                                    <span className="text-red-300 line-through">{dictationPopup.correction.original}</span>
-                                                                    <span className="text-white mx-2">→</span>
-                                                                    <span className="text-green-300 font-bold">{dictationPopup.correction.corrected}</span>
-                                                                </p>
-                                                            )}
-                                                            <p className="text-slate-300 text-sm">{dictationPopup.correction.explanation}</p>
-                                                        </div>
-                                                    )}
+                                                        );
+                                                    })()}
                                                 </div>
 
                                                 <div>
@@ -7295,98 +7240,117 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* Cambridge-style feedback */}
+                                        {/* 🆕 V14.2: Writing-style feedback with annotated text */}
                                         {translationAIResult && (
-                                            <div className="space-y-6">
-                                                {/* Grade badge */}
-                                                <div className="flex justify-center">
-                                                    <div className={`inline-flex items-center gap-3 px-8 py-4 rounded-2xl border-2 ${
-                                                        translationAIResult.grade === 'A' ? 'bg-green-900/20 border-green-500' :
-                                                        translationAIResult.grade === 'B' ? 'bg-yellow-900/20 border-yellow-500' :
-                                                        'bg-red-900/20 border-red-500'
-                                                    }`}>
-                                                        <span className="text-4xl">
-                                                            {translationAIResult.grade === 'A' ? '🏆' :
-                                                             translationAIResult.grade === 'B' ? '⭐' : '📝'}
-                                                        </span>
-                                                        <div>
-                                                            <p className={`text-3xl font-black ${
-                                                                translationAIResult.grade === 'A' ? 'text-green-400' :
-                                                                translationAIResult.grade === 'B' ? 'text-yellow-400' :
-                                                                'text-red-400'
-                                                            }`}>
-                                                                Grade {translationAIResult.grade}
-                                                            </p>
-                                                            <p className="text-white text-sm">
-                                                                {translationAIResult.percentage}% - Cambridge Assessment
-                                                            </p>
-                                                        </div>
-                                                    </div>
+                                            <div className="space-y-4" onClick={() => translationPopup && setTranslationPopup(null)}>
+                                                {/* Cambridge grade bar */}
+                                                <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl mb-2 ${
+                                                    translationAIResult.grade === 'C2' ? 'bg-green-900/30 border border-green-500/40' :
+                                                    translationAIResult.grade === 'C1' ? 'bg-teal-900/30 border border-teal-500/40' :
+                                                    translationAIResult.grade === 'B2' ? 'bg-yellow-900/30 border border-yellow-500/40' :
+                                                    'bg-red-900/30 border border-red-500/40'
+                                                }`}>
+                                                    <span className="text-2xl">
+                                                        {translationAIResult.grade === 'C2' ? '🏆' : translationAIResult.grade === 'C1' ? '⭐' : translationAIResult.grade === 'B2' ? '📝' : '🔴'}
+                                                    </span>
+                                                    <span className={`text-xl font-black ${
+                                                        translationAIResult.grade === 'C2' ? 'text-green-400' : translationAIResult.grade === 'C1' ? 'text-teal-400' : translationAIResult.grade === 'B2' ? 'text-yellow-400' : 'text-red-400'
+                                                    }`}>Grade {translationAIResult.grade}</span>
+                                                    <span className="text-slate-300 text-sm">({translationAIResult.percentage}%)</span>
+                                                    <span className="text-slate-400 text-sm flex-1">{translationAIResult.feedback}</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); alert('🌐 TRANSLATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2 (90–100%): Perfect or near-perfect, sophisticated expression\n⭐ C1 (75–89%): Advanced, at most 1 minor imprecision\n📝 B2 (60–74%): Good but 1–2 clear errors\n🔴 B1 (0–59%): 3+ errors or significant issues\n\n🔍 WHAT IS EVALUATED:\n• Grammar: tenses, articles, prepositions, agreement\n• Vocabulary: right word choice, spelling\n• Style: natural English expression\n\n❌ NOT penalised:\n• He/she gender differences\n• Punctuation-only differences\n• Correct idioms & set expressions\n\nClick on highlighted corrections to see details.'); }}
+                                                        className="text-blue-400 hover:text-blue-300 text-base shrink-0"
+                                                    >ℹ️</button>
                                                 </div>
 
-                                                {/* 🆕 V11.38: Improved feedback - single clear panel, no repetition */}
-                                                {((translationAIResult.grammar_errors && translationAIResult.grammar_errors.length > 0) || 
-                                                  (translationAIResult.vocabulary_issues && translationAIResult.vocabulary_issues.length > 0)) ? (
-                                                    <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-6">
-                                                        <h4 className="text-slate-300 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                                            <span className="text-2xl">🔍</span>
-                                                            Errors Found
-                                                        </h4>
-                                                        
-                                                        <div className="space-y-4">
-                                                            {/* Grammar errors */}
-                                                            {translationAIResult.grammar_errors && translationAIResult.grammar_errors.map((error, i) => (
-                                                                <div key={`grammar-${i}`} className="bg-red-900/20 border-l-4 border-red-500 rounded-r-lg p-4">
-                                                                    <div className="flex items-start gap-3">
-                                                                        <span className="text-2xl shrink-0">⚠️</span>
-                                                                        <div className="flex-1">
-                                                                            <p className="text-red-300 font-bold text-xs uppercase mb-2">Grammar Error</p>
-                                                                            <p className="text-red-100 text-sm leading-relaxed">{error}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            
-                                                            {/* Vocabulary issues */}
-                                                            {translationAIResult.vocabulary_issues && translationAIResult.vocabulary_issues.map((issue, i) => (
-                                                                <div key={`vocab-${i}`} className="bg-yellow-900/20 border-l-4 border-yellow-500 rounded-r-lg p-4">
-                                                                    <div className="flex items-start gap-3">
-                                                                        <span className="text-2xl shrink-0">📝</span>
-                                                                        <div className="flex-1">
-                                                                            <p className="text-yellow-300 font-bold text-xs uppercase mb-2">Vocabulary Issue</p>
-                                                                            <p className="text-yellow-100 text-sm leading-relaxed">{issue}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    // Perfect translation
-                                                    <div className="bg-green-900/20 border border-green-500/30 rounded-2xl p-6">
-                                                        <div className="flex items-center gap-3">
-                                                            <span className="text-4xl">🎉</span>
-                                                            <div>
-                                                                <p className="text-green-300 font-bold text-lg">Perfect Translation!</p>
-                                                                <p className="text-green-200 text-sm">No errors found. Excellent work!</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                {/* Annotated text — clickable corrections */}
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
+                                                    <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
+                                                        <span>📝</span> Your Translation
+                                                        {translationAIResult.corrections_list?.length > 0 && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
+                                                    </h4>
+                                                    {translationAIResult.annotated_text ? (
+                                                        <div
+                                                            className="text-base text-white leading-loose"
+                                                            onClick={(e) => {
+                                                                const target = e.target.closest('[data-trans-correction-id]');
+                                                                if (target && translationAIResult.corrections_list) {
+                                                                    const id = parseInt(target.dataset.transCorrectionId);
+                                                                    const correction = translationAIResult.corrections_list.find(c => c.id === id);
+                                                                    if (correction) {
+                                                                        const rect = target.getBoundingClientRect();
+                                                                        setTranslationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, yAbove: rect.top - 8, correction });
+                                                                        e.stopPropagation();
+                                                                    }
+                                                                }
+                                                            }}
+                                                            dangerouslySetInnerHTML={{ __html: (() => {
+                                                                let html = translationAIResult.annotated_text;
+                                                                html = html.replace(/<(?!\/?(?:del|ins|note)(?:\s|>))[^>]*>/g, '');
+                                                                let corrId = 0;
+                                                                html = html.replace(/<del>(.*?)<\/del><ins>(.*?)<\/ins>/g, (match, del_text, ins_text) => {
+                                                                    corrId++;
+                                                                    return '<span data-trans-correction-id="' + corrId + '" style="cursor:pointer;border-bottom:2px dashed #f87171;padding-bottom:1px"><span style="color:#f87171;text-decoration:line-through;opacity:0.8">' + del_text + '</span><span style="color:#4ade80;font-weight:bold">' + ins_text + '</span></span>';
+                                                                });
+                                                                html = html.replace(/<ins>(.*?)<\/ins>/g, (match, ins_text) => {
+                                                                    corrId++;
+                                                                    return '<span data-trans-correction-id="' + corrId + '" style="cursor:pointer;color:#4ade80;font-weight:bold;border-bottom:2px dashed #4ade80;padding-bottom:1px">' + ins_text + '</span>';
+                                                                });
+                                                                html = html.replace(/<del>(.*?)<\/del>/g, (match, del_text) => {
+                                                                    corrId++;
+                                                                    return '<span data-trans-correction-id="' + corrId + '" style="cursor:pointer;color:#f87171;text-decoration:line-through;opacity:0.8;border-bottom:2px dashed #f87171;padding-bottom:1px">' + del_text + '</span>';
+                                                                });
+                                                                html = html.replace(/<note>(.*?)<\/note>/g, '<span style="color:#fb923c;font-style:italic;font-size:0.85em"> — $1</span>');
+                                                                return html;
+                                                            })() }}
+                                                        />
+                                                    ) : (
+                                                        <p className="text-base text-white leading-loose">{translationInput}</p>
+                                                    )}
 
-                                                {/* 🆕 V11.38: Comparison - Your Translation vs Original English only */}
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Translation:</h4>
-                                                        <div className="bg-slate-800 p-4 rounded-xl text-base text-white">
-                                                            {translationInput}
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="text-xs uppercase font-black text-indigo-400 mb-2">Original English:</h4>
-                                                        <div className="bg-indigo-900/20 border border-indigo-500/30 p-4 rounded-xl text-base text-indigo-100">
-                                                            {translationWords[translationIndex].context}
-                                                        </div>
+                                                    {/* Popup - smart positioning */}
+                                                    {translationPopup && (() => {
+                                                        const pw = 300, ph = 190;
+                                                        const left = Math.max(pw/2 + 8, Math.min(translationPopup.x, window.innerWidth - pw/2 - 8));
+                                                        const top = translationPopup.y + ph > window.innerHeight
+                                                            ? Math.max(8, translationPopup.yAbove - ph)
+                                                            : translationPopup.y;
+                                                        return (
+                                                            <div
+                                                                className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl"
+                                                                style={{ left: left + 'px', top: top + 'px', transform: 'translateX(-50%)', width: pw + 'px' }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className={`text-xs uppercase font-black ${
+                                                                        translationPopup.correction.type === 'grammar' ? 'text-red-400' :
+                                                                        translationPopup.correction.type === 'vocabulary' ? 'text-orange-400' :
+                                                                        translationPopup.correction.type === 'spelling' ? 'text-red-300' :
+                                                                        'text-yellow-400'
+                                                                    }`}>
+                                                                        {translationPopup.correction.type === 'grammar' ? '⚠️' : translationPopup.correction.type === 'spelling' ? '🔤' : translationPopup.correction.type === 'vocabulary' ? '📖' : '💡'} {translationPopup.correction.type}
+                                                                    </span>
+                                                                    <button onClick={() => setTranslationPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                                                </div>
+                                                                {translationPopup.correction.original && (
+                                                                    <p className="text-sm mb-1">
+                                                                        <span className="text-red-300 line-through">{translationPopup.correction.original}</span>
+                                                                        <span className="text-white mx-2">→</span>
+                                                                        <span className="text-green-300 font-bold">{translationPopup.correction.corrected}</span>
+                                                                    </p>
+                                                                )}
+                                                                <p className="text-slate-300 text-sm">{translationPopup.correction.explanation}</p>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+
+                                                {/* Original English reference */}
+                                                <div>
+                                                    <h4 className="text-xs uppercase font-black text-indigo-400 mb-2">Original English:</h4>
+                                                    <div className="bg-indigo-900/20 border border-indigo-500/30 p-4 rounded-xl text-base text-indigo-100">
+                                                        {translationWords[translationIndex].context}
                                                     </div>
                                                 </div>
                                             </div>
@@ -7464,7 +7428,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <h2 className="text-2xl font-black main-gradient uppercase italic">✍️ Writing</h2>
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => alert('✍️ WRITING EXERCISE — GRADING CRITERIA\n\n📊 GRADES:\n🏆 A (85–100%): Excellent — natural, correct English with all target words used well\n⭐ B (70–84%): Good — minor errors but clear and mostly correct\n📝 C (55–69%): Fair — some errors that affect clarity\n🔴 D (0–54%): Needs improvement — significant errors\n\n🔍 WHAT IS EVALUATED:\n• Grammar: articles, tenses, prepositions, agreement\n• Spelling: British English (colour, organise, etc.)\n• Semantics: Words used with correct meaning in context\n• Vocabulary: Target words used naturally and correctly\n• Punctuation & Style\n\n💡 TIPS:\n• Write 25–75 words\n• Use ALL target words naturally\n• Click on highlighted corrections to see details\n• Aim for natural, flowing sentences')}
+                                            onClick={() => alert('✍️ WRITING EXERCISE — GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2 (90–100%): Near-native, sophisticated, no real errors\n⭐ C1 (75–89%): Advanced, at most 1 minor imprecision\n📝 B2 (60–74%): Good but 1–2 clear errors\n🔴 B1 (0–59%): 3+ errors or clarity issues\n\n🔍 WHAT IS EVALUATED:\n• Grammar: articles, tenses, prepositions, agreement\n• Spelling: British English (colour, organise, etc.)\n• Semantics: Words used with correct meaning in context\n• Vocabulary: Target words used naturally and correctly\n• Punctuation & Style\n\n✅ NOT penalised:\n• Correct idioms & set expressions\n• Alternative correct phrasings\n\n💡 TIPS:\n• Write 25–75 words\n• Use ALL target words naturally\n• Click on highlighted corrections to see details')}
                                             className="text-blue-400 hover:text-blue-300 text-lg p-1"
                                         >ℹ️</button>
                                         <button
@@ -7541,18 +7505,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* Compact grade line */}
+                                        {/* Compact grade line - Cambridge levels */}
                                         <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl mb-6 ${
-                                            writingFeedback.grade === 'A' ? 'bg-green-900/30 border border-green-500/40' :
-                                            writingFeedback.grade === 'B' ? 'bg-yellow-900/30 border border-yellow-500/40' :
-                                            writingFeedback.grade === 'C' ? 'bg-orange-900/30 border border-orange-500/40' :
+                                            writingFeedback.grade === 'C2' ? 'bg-green-900/30 border border-green-500/40' :
+                                            writingFeedback.grade === 'C1' ? 'bg-teal-900/30 border border-teal-500/40' :
+                                            writingFeedback.grade === 'B2' ? 'bg-yellow-900/30 border border-yellow-500/40' :
                                             'bg-red-900/30 border border-red-500/40'
                                         }`}>
                                             <span className="text-2xl">
-                                                {writingFeedback.grade === 'A' ? '🏆' : writingFeedback.grade === 'B' ? '⭐' : writingFeedback.grade === 'C' ? '📝' : '🔴'}
+                                                {writingFeedback.grade === 'C2' ? '🏆' : writingFeedback.grade === 'C1' ? '⭐' : writingFeedback.grade === 'B2' ? '📝' : '🔴'}
                                             </span>
                                             <span className={`text-xl font-black ${
-                                                writingFeedback.grade === 'A' ? 'text-green-400' : writingFeedback.grade === 'B' ? 'text-yellow-400' : writingFeedback.grade === 'C' ? 'text-orange-400' : 'text-red-400'
+                                                writingFeedback.grade === 'C2' ? 'text-green-400' : writingFeedback.grade === 'C1' ? 'text-teal-400' : writingFeedback.grade === 'B2' ? 'text-yellow-400' : 'text-red-400'
                                             }`}>Grade {writingFeedback.grade}</span>
                                             <span className="text-slate-300 text-sm">({writingFeedback.percentage}%)</span>
                                             <span className="text-slate-400 text-sm flex-1">{writingFeedback.summary}</span>
@@ -7575,6 +7539,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setWritingPopup({
                                                                 x: rect.left + rect.width / 2,
                                                                 y: rect.bottom + 8,
+                                                                yAbove: rect.top - 8,
                                                                 correction
                                                             });
                                                             e.stopPropagation();
@@ -7602,38 +7567,41 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 })() }}
                                             />
                                             
-                                            {/* Popup for correction details */}
-                                            {writingPopup && (
-                                                <div 
-                                                    className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl max-w-sm"
-                                                    style={{ 
-                                                        left: Math.min(writingPopup.x, window.innerWidth - 320) + 'px', 
-                                                        top: Math.min(writingPopup.y, window.innerHeight - 150) + 'px',
-                                                        transform: 'translateX(-50%)'
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                >
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className={`text-xs uppercase font-black ${
-                                                            writingPopup.correction.type === 'semantic' ? 'text-orange-400' :
-                                                            writingPopup.correction.type === 'grammar' ? 'text-red-400' :
-                                                            writingPopup.correction.type === 'spelling' ? 'text-red-300' :
-                                                            'text-yellow-400'
-                                                        }`}>
-                                                            {writingPopup.correction.type === 'grammar' ? '⚠️' : writingPopup.correction.type === 'spelling' ? '🔤' : writingPopup.correction.type === 'semantic' ? '🧠' : writingPopup.correction.type === 'punctuation' ? '📌' : '💡'} {writingPopup.correction.type}
-                                                        </span>
-                                                        <button onClick={() => setWritingPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                            {/* Popup for correction details - smart positioning */}
+                                            {writingPopup && (() => {
+                                                const pw = 300, ph = 190;
+                                                const left = Math.max(pw/2 + 8, Math.min(writingPopup.x, window.innerWidth - pw/2 - 8));
+                                                const top = writingPopup.y + ph > window.innerHeight
+                                                    ? Math.max(8, writingPopup.yAbove - ph)
+                                                    : writingPopup.y;
+                                                return (
+                                                    <div 
+                                                        className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl"
+                                                        style={{ left: left + 'px', top: top + 'px', transform: 'translateX(-50%)', width: pw + 'px' }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className={`text-xs uppercase font-black ${
+                                                                writingPopup.correction.type === 'semantic' ? 'text-orange-400' :
+                                                                writingPopup.correction.type === 'grammar' ? 'text-red-400' :
+                                                                writingPopup.correction.type === 'spelling' ? 'text-red-300' :
+                                                                'text-yellow-400'
+                                                            }`}>
+                                                                {writingPopup.correction.type === 'grammar' ? '⚠️' : writingPopup.correction.type === 'spelling' ? '🔤' : writingPopup.correction.type === 'semantic' ? '🧠' : writingPopup.correction.type === 'punctuation' ? '📌' : '💡'} {writingPopup.correction.type}
+                                                            </span>
+                                                            <button onClick={() => setWritingPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                                        </div>
+                                                        {writingPopup.correction.original && (
+                                                            <p className="text-sm mb-1">
+                                                                <span className="text-red-300 line-through">{writingPopup.correction.original}</span>
+                                                                <span className="text-white mx-2">→</span>
+                                                                <span className="text-green-300 font-bold">{writingPopup.correction.corrected}</span>
+                                                            </p>
+                                                        )}
+                                                        <p className="text-slate-300 text-sm">{writingPopup.correction.explanation}</p>
                                                     </div>
-                                                    {writingPopup.correction.original && (
-                                                        <p className="text-sm mb-1">
-                                                            <span className="text-red-300 line-through">{writingPopup.correction.original}</span>
-                                                            <span className="text-white mx-2">→</span>
-                                                            <span className="text-green-300 font-bold">{writingPopup.correction.corrected}</span>
-                                                        </p>
-                                                    )}
-                                                    <p className="text-slate-300 text-sm">{writingPopup.correction.explanation}</p>
-                                                </div>
-                                            )}
+                                                );
+                                            })()}
                                         </div>
 
                                         {/* Improved version */}
@@ -7798,7 +7766,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <span className="text-[8px] font-black uppercase bg-slate-800 text-slate-500 border border-slate-600 px-1.5 py-0.5 rounded-full">Practice only</span>
                                                     </div>
                                                     <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm">
-                                                        <span className="text-blue-300/60 font-semibold">Avg {statsData.exercises.dictation.avgErrors} err/attempt</span>
+                                                        <span className="text-green-300 font-semibold">C2: <span className="font-black text-white">{statsData.exercises.dictation.gradeC2 || 0}</span></span>
+                                                        <span className="text-teal-300 font-semibold">C1: <span className="font-black text-white">{statsData.exercises.dictation.gradeC1 || 0}</span></span>
+                                                        <span className="text-yellow-300 font-semibold">B2: <span className="font-black text-white">{statsData.exercises.dictation.gradeB2 || 0}</span></span>
+                                                        <span className="text-orange-300 font-semibold">B1: <span className="font-black text-white">{statsData.exercises.dictation.gradeB1 || 0}</span></span>
                                                         <span className="text-blue-300 font-black">{statsData.exercises.dictation.count} practiced</span>
                                                     </div>
                                                 </button>
