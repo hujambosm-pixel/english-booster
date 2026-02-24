@@ -168,6 +168,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
+            // 🆕 V15.0: Dictation AI feedback states
+            const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
+            const [dictationAILoading, setDictationAILoading] = useState(false);
+            const [dictationPopup, setDictationPopup] = useState(null);
+            
             // 🆕 V11.11: Selection exercise states
             const [showSelection, setShowSelection] = useState(false);
             const [selectionWords, setSelectionWords] = useState([]);
@@ -330,6 +335,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                             setDictationDifficulty('');
                             setDictationPlayCount(0);
                             setDictationPlaySpeed('normal');
+                            setDictationAIFeedback(null);
+                            setDictationPopup(null);
                             
                             // Auto-play the next word after a short delay
                             setTimeout(() => {
@@ -2496,6 +2503,61 @@ Return ONLY JSON.`
                     alert('❌ Error evaluating text. Please try again.');
                 } finally {
                     setWritingLoading(false);
+                }
+            }
+
+            // 🆕 V15.0: Evaluate dictation with AI (precise, like Writing exercise)
+            async function evaluateDictation(userInput, correctText) {
+                const apiKey = groqApiKey.trim();
+                if (!apiKey || !userInput.trim()) return;
+                setDictationAILoading(true);
+                try {
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ 
+                                role: 'system', 
+                                content: `You are an expert English language teacher (Cambridge-level) correcting a dictation exercise. The student heard a sentence and transcribed it. Compare word-by-word and character-by-character. Flag ALL errors: misspellings, missing words, extra words, wrong words, punctuation errors, capitalisation errors.
+
+Be strict and precise — like a real English teacher. Even small errors matter (missing period, wrong apostrophe, etc.).
+
+Return ONLY valid JSON with this EXACT structure:
+{
+  "annotated_text": "Student's text with markup: <del>wrong</del><ins>correct</ins> for corrections. For missing words: <ins>missing-word</ins>. For extra words: <del>extra-word</del>. Keep ALL correct words exactly as the student wrote them.",
+  "corrections_list": [
+    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "spelling", "explanation": "brief explanation"}
+  ],
+  "error_count": 0
+}
+
+Types: spelling / missing-word / extra-word / wrong-word / punctuation / capitalisation`
+                            }, { 
+                                role: 'user', 
+                                content: `ORIGINAL SENTENCE (the correct answer): "${correctText}"
+
+STUDENT'S TRANSCRIPTION: "${userInput}"
+
+Identify every single difference between the two. Be exhaustive and precise. Return ONLY JSON.`
+                            }],
+                            temperature: 0.0,
+                            max_tokens: 1200
+                        })
+                    });
+                    if (!response.ok) throw new Error('Evaluation failed');
+                    const data = await response.json();
+                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    const braceStart = raw.indexOf('{');
+                    const braceEnd = raw.lastIndexOf('}');
+                    if (braceStart !== -1 && braceEnd !== -1) {
+                        const feedback = JSON.parse(raw.substring(braceStart, braceEnd + 1));
+                        setDictationAIFeedback(feedback);
+                    }
+                } catch (error) {
+                    console.error('Dictation AI evaluation error:', error);
+                } finally {
+                    setDictationAILoading(false);
                 }
             }
 
@@ -6028,6 +6090,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationErrorCount(errorCount);
                                                             setDictationDifficulty(difficulty);
                                                             setShowDictationAnswer(true);
+                                                            setDictationAIFeedback(null);
+                                                            setDictationPopup(null);
+                                                            // 🆕 V15.0: Call AI for precise error analysis
+                                                            if (groqApiKey.trim()) {
+                                                                evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
+                                                            }
                                                             // Save immediately so closing won't lose data
                                                             try {
                                                                 const w = dictationWords[dictationIndex];
@@ -6085,6 +6153,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setDictationErrorCount(errorCount);
                                                         setDictationDifficulty(difficulty);
                                                         setShowDictationAnswer(true);
+                                                        setDictationAIFeedback(null);
+                                                        setDictationPopup(null);
+                                                        // 🆕 V15.0: Call AI for precise error analysis (if API key available)
+                                                        if (groqApiKey.trim()) {
+                                                            evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
+                                                        }
                                                         // Save immediately so closing won't lose data
                                                         try {
                                                             const w = dictationWords[dictationIndex];
@@ -6130,15 +6204,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V11.5: Auto-difficulty display */}
-                                            <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl">
+                                            {/* 🆕 V15.0: Score bar with Info icon */}
+                                            <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
+                                                <button
+                                                    onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 HOW ERRORS ARE COUNTED:\nEach word that differs from the original counts as 1 error.\nMissing, extra, or wrong words each count as errors.\n\n🏆 PERFORMANCE LEVELS:\n🟢 Active: 0 errors — Perfect transcription\n🟡 Emerging: 1–2 errors — Minor mistakes\n🔴 Passive: 3+ errors — Needs more practice\n\n🤖 AI ANALYSIS (requires Groq API key):\nWhen enabled, the AI performs a precise, teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
+                                                    className="absolute right-3 top-3 text-blue-400 hover:text-blue-300 text-base leading-none"
+                                                    title="Grading criteria"
+                                                >ℹ️</button>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Errors</p>
                                                     <p className="text-2xl font-black text-white">{dictationErrorCount}</p>
                                                 </div>
                                                 <div className="h-12 w-px bg-slate-700"></div>
                                                 <div className="text-center">
-                                                    <p className="text-xs uppercase font-black text-slate-500 mb-1">Difficulty</p>
+                                                    <p className="text-xs uppercase font-black text-slate-500 mb-1">Performance</p>
                                                     <p className={`text-2xl font-black ${
                                                         dictationDifficulty === 'Active' ? 'text-green-400' :
                                                         dictationDifficulty === 'Emerging' ? 'text-yellow-400' :
@@ -6150,38 +6229,111 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-6">
-                                                {/* 🆕 V11.5: Your answer with error highlighting */}
-                                                <div>
-                                                    <h4 className="text-xs uppercase font-black text-slate-500 mb-2">Your Answer (🟢 correct, 🔴 errors):</h4>
-                                                    <div className="bg-slate-800 p-4 rounded-xl text-lg">
-                                                        {dictationInput ? 
-                                                            highlightDifferences(dictationInput, dictationWords[dictationIndex].context).highlighted 
+                                            {/* 🆕 V15.0: AI-annotated your answer (clickable corrections) */}
+                                            <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
+                                                    <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
+                                                        <span>📝</span> Your Answer
+                                                        {dictationAILoading && <span className="text-blue-400 text-xs font-normal normal-case animate-pulse">🤖 AI analysing...</span>}
+                                                        {dictationAIFeedback && !dictationAILoading && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
+                                                    </h4>
+                                                    <div
+                                                        className="text-base text-white leading-loose"
+                                                        onClick={(e) => {
+                                                            const target = e.target.closest('[data-dict-correction-id]');
+                                                            if (target && dictationAIFeedback?.corrections_list) {
+                                                                const id = parseInt(target.dataset.dictCorrectionId);
+                                                                const correction = dictationAIFeedback.corrections_list.find(c => c.id === id);
+                                                                if (correction) {
+                                                                    const rect = target.getBoundingClientRect();
+                                                                    setDictationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, correction });
+                                                                    e.stopPropagation();
+                                                                }
+                                                            }
+                                                        }}
+                                                        dangerouslySetInnerHTML={dictationAIFeedback ? { __html: (() => {
+                                                            let html = (dictationAIFeedback.annotated_text || dictationInput);
+                                                            html = html.replace(/<(?!\/?(?:del|ins)(?:\s|>))[^>]*>/g, '');
+                                                            let corrId = 0;
+                                                            html = html.replace(/<del>(.*?)<\/del><ins>(.*?)<\/ins>/g, (match, del_text, ins_text) => {
+                                                                corrId++;
+                                                                return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;border-bottom:2px dashed #f87171;padding-bottom:1px"><span style="color:#f87171;text-decoration:line-through;opacity:0.8">' + del_text + '</span><span style="color:#4ade80;font-weight:bold"> ' + ins_text + '</span></span>';
+                                                            });
+                                                            html = html.replace(/<ins>(.*?)<\/ins>/g, (match, ins_text) => {
+                                                                corrId++;
+                                                                return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;color:#4ade80;font-weight:bold;border-bottom:2px dashed #4ade80;padding-bottom:1px"> [+' + ins_text + ']</span>';
+                                                            });
+                                                            html = html.replace(/<del>(.*?)<\/del>/g, (match, del_text) => {
+                                                                corrId++;
+                                                                return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;color:#f87171;text-decoration:line-through;opacity:0.8;border-bottom:2px dashed #f87171;padding-bottom:1px">' + del_text + '</span>';
+                                                            });
+                                                            return html;
+                                                        })() } : undefined}
+                                                    >
+                                                        {!dictationAIFeedback && (dictationInput ?
+                                                            highlightDifferences(dictationInput, dictationWords[dictationIndex].context).highlighted
                                                             : <span className="text-slate-600 italic">No input</span>
-                                                        }
+                                                        )}
                                                     </div>
+
+                                                    {/* Correction popup */}
+                                                    {dictationPopup && (
+                                                        <div
+                                                            className="fixed z-[200] bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl max-w-xs"
+                                                            style={{
+                                                                left: Math.min(dictationPopup.x, window.innerWidth - 280) + 'px',
+                                                                top: Math.min(dictationPopup.y, window.innerHeight - 140) + 'px',
+                                                                transform: 'translateX(-50%)'
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className={`text-xs uppercase font-black ${
+                                                                    dictationPopup.correction.type === 'spelling' ? 'text-red-300' :
+                                                                    dictationPopup.correction.type === 'wrong-word' ? 'text-red-400' :
+                                                                    dictationPopup.correction.type === 'missing-word' ? 'text-yellow-400' :
+                                                                    dictationPopup.correction.type === 'extra-word' ? 'text-orange-400' :
+                                                                    dictationPopup.correction.type === 'punctuation' ? 'text-purple-400' :
+                                                                    'text-blue-400'
+                                                                }`}>
+                                                                    {dictationPopup.correction.type === 'spelling' ? '🔤' :
+                                                                     dictationPopup.correction.type === 'wrong-word' ? '❌' :
+                                                                     dictationPopup.correction.type === 'missing-word' ? '➕' :
+                                                                     dictationPopup.correction.type === 'extra-word' ? '➖' :
+                                                                     dictationPopup.correction.type === 'punctuation' ? '📌' : '🔠'} {dictationPopup.correction.type}
+                                                                </span>
+                                                                <button onClick={() => setDictationPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
+                                                            </div>
+                                                            {dictationPopup.correction.original && (
+                                                                <p className="text-sm mb-1">
+                                                                    <span className="text-red-300 line-through">{dictationPopup.correction.original}</span>
+                                                                    <span className="text-white mx-2">→</span>
+                                                                    <span className="text-green-300 font-bold">{dictationPopup.correction.corrected}</span>
+                                                                </p>
+                                                            )}
+                                                            <p className="text-slate-300 text-sm">{dictationPopup.correction.explanation}</p>
+                                                        </div>
+                                                    )}
                                                 </div>
+
                                                 <div>
-                                                    <h4 className="text-xs uppercase font-black text-green-400 mb-2">Correct Answer:</h4>
-                                                    <div className="bg-green-900/20 border border-green-500/30 p-4 rounded-xl text-lg text-green-100">
+                                                    <h4 className="text-xs uppercase font-black text-green-400 mb-2">✅ Correct Answer:</h4>
+                                                    <div className="bg-green-900/20 border border-green-500/30 p-4 rounded-xl text-base text-green-100">
                                                         {highlightWordInContext(dictationWords[dictationIndex].context, dictationWords[dictationIndex].vocabulary)}
                                                     </div>
                                                 </div>
                                             </div>
                                             
-                                            {/* 🆕 V11.16: Removed Edit button - already in header */}
                                             <div className="mt-6">
                                                 <button
                                                     onClick={async () => {
-                                                        // 🆕 V11.5: Save difficulty to database
                                                         try {
                                                             const currentDictationWord = dictationWords[dictationIndex];
-                                                        await supabase.from('vocabulary_v4').update({ 
-
-                                                            dictation_count: (currentDictationWord.dictation_count || 0) + 1,
-                                                            dictation_errors_total: (currentDictationWord.dictation_errors_total || 0) + dictationErrorCount,
-                                                            last_practiced_date: new Date().toISOString()
-                                                        }).eq('id', currentDictationWord.id);
+                                                            await supabase.from('vocabulary_v4').update({ 
+                                                                dictation_count: (currentDictationWord.dictation_count || 0) + 1,
+                                                                dictation_errors_total: (currentDictationWord.dictation_errors_total || 0) + dictationErrorCount,
+                                                                last_practiced_date: new Date().toISOString()
+                                                            }).eq('id', currentDictationWord.id);
                                                         } catch (error) {
                                                             console.error('Error saving difficulty:', error);
                                                         }
@@ -6194,6 +6346,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setDictationAIFeedback(null);
+                                                            setDictationPopup(null);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
                                                             setShowDictation(false);
@@ -6205,6 +6359,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
+                                                            setDictationAIFeedback(null);
+                                                            setDictationPopup(null);
                                                             setShowExercisesModal(true);
                                                         }
                                                     }}
@@ -7304,8 +7460,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <h2 className="text-2xl font-black main-gradient uppercase italic">✍️ Writing</h2>
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => alert('✍️ WRITING EXERCISE\n\nWrite a short paragraph (25-75 words) using the given vocabulary words.\n\nThe AI evaluates: grammar, spelling, semantics, vocabulary usage, punctuation & style.\n\nClick on coloured corrections in your text to see details.\n\nTip: Use words naturally in context!')}
-                                            className="text-blue-400 hover:text-blue-300 text-lg"
+                                            onClick={() => alert('✍️ WRITING EXERCISE — GRADING CRITERIA\n\n📊 GRADES:\n🏆 A (85–100%): Excellent — natural, correct English with all target words used well\n⭐ B (70–84%): Good — minor errors but clear and mostly correct\n📝 C (55–69%): Fair — some errors that affect clarity\n🔴 D (0–54%): Needs improvement — significant errors\n\n🔍 WHAT IS EVALUATED:\n• Grammar: articles, tenses, prepositions, agreement\n• Spelling: British English (colour, organise, etc.)\n• Semantics: Words used with correct meaning in context\n• Vocabulary: Target words used naturally and correctly\n• Punctuation & Style\n\n💡 TIPS:\n• Write 25–75 words\n• Use ALL target words naturally\n• Click on highlighted corrections to see details\n• Aim for natural, flowing sentences')}
+                                            className="text-blue-400 hover:text-blue-300 text-lg p-1"
                                         >ℹ️</button>
                                         <button
                                             onClick={() => {
@@ -7317,7 +7473,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 setWritingPopup(null);
                                                 setShowExercisesModal(true);
                                             }}
-                                            className="text-slate-400 hover:text-white text-3xl leading-none"
+                                            className="text-slate-400 hover:text-white text-3xl leading-none p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-700/50 transition-colors"
+                                            aria-label="Close"
                                         >&times;</button>
                                     </div>
                                 </div>
