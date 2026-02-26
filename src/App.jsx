@@ -2440,12 +2440,19 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                 setWritingLoading(true);
                 try {
                     const wordList = writingWords.map(w => w.vocabulary).join(', ');
-                    
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'deepseek-r1-distill-llama-70b',
+
+                    // 🆕 V14.4: Try DeepSeek R1 first, auto-fallback to llama if unavailable
+                    const modelsToTry = ['deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
+                    let response = null;
+                    let usedModel = '';
+                    let lastError = '';
+                    for (const model of modelsToTry) {
+                        try {
+                            response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                                body: JSON.stringify({
+                                    model,
                             messages: [{ 
                                 role: 'system', 
                                 content: `You are a strict Cambridge English examiner. Your job is to identify ONLY real errors in a student's short English paragraph. You do NOT suggest improvements — you only correct genuine mistakes.
@@ -2527,11 +2534,28 @@ Return ONLY the JSON object. Do not include your thinking or reasoning in the ou
                             max_tokens: 3000
                         })
                     });
+                            if (response.ok) { usedModel = model; break; }
+                            const errData = await response.json().catch(() => ({}));
+                            lastError = `${model}: HTTP ${response.status} — ${errData?.error?.message || 'unknown'}`;
+                            console.warn('Model failed, trying next:', lastError);
+                            response = null;
+                        } catch (fetchErr) {
+                            lastError = `${model}: ${fetchErr.message}`;
+                            console.warn('Model fetch error, trying next:', lastError);
+                            response = null;
+                        }
+                    }
 
-                    if (!response.ok) throw new Error('Evaluation failed');
+                    if (!response) {
+                        throw new Error(`All models failed. Last error: ${lastError}`);
+                    }
+                    console.log('Writing evaluated with model:', usedModel);
 
                     const data = await response.json();
-                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                    let raw = (data.choices?.[0]?.message?.content || '');
+                    // 🆕 V14.4: Strip DeepSeek R1 <think>...</think> reasoning block
+                    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+                    raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                     const braceStart = raw.indexOf('{');
                     const braceEnd = raw.lastIndexOf('}');
                     if (braceStart !== -1 && braceEnd !== -1) {
@@ -2542,7 +2566,7 @@ Return ONLY the JSON object. Do not include your thinking or reasoning in the ou
                     }
                 } catch (error) {
                     console.error('Writing evaluation error:', error);
-                    alert('❌ Error evaluating text. Please try again.');
+                    alert(`❌ Error evaluating text.\n\n${error.message}\n\nCheck the browser console for details.`);
                 } finally {
                     setWritingLoading(false);
                 }
