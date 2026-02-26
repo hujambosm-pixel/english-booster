@@ -168,7 +168,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // 🆕 V14.2: Dictation AI feedback states
+            // 🆕 V14.3: Dictation AI feedback states
             const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
@@ -234,7 +234,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
             const [writingPopup, setWritingPopup] = useState(null); // {x, y, yAbove, correction}
-            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.2: clickable correction popup
+            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.3: clickable correction popup
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -1583,7 +1583,7 @@ Return ONLY valid JSON, no explanation.` }],
                     const dictationAvgErrors = dictationPracticed.length > 0 
                         ? (dictationPracticed.reduce((sum, w) => sum + (w.dictation_errors_total || 0), 0) / dictationPracticed.reduce((sum, w) => sum + w.dictation_count, 0)).toFixed(2)
                         : 0;
-                    // 🆕 V14.2: Cambridge grades for Dictation (derived from avg errors)
+                    // 🆕 V14.3: Cambridge grades for Dictation (derived from avg errors)
                     const dictGradeC2 = dictationPracticed.filter(w => ((w.dictation_errors_total||0)/w.dictation_count) === 0).length;
                     const dictGradeC1 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 0 && avg <= 1; }).length;
                     const dictGradeB2 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 1 && avg <= 2; }).length;
@@ -2448,52 +2448,70 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             model: 'llama-3.3-70b-versatile',
                             messages: [{ 
                                 role: 'system', 
-                                content: `You are an expert British English writing examiner at Cambridge Assessment level. Evaluate grammar, spelling, punctuation, style, AND semantic correctness.
+                                content: `You are a strict Cambridge English examiner. Your job is to identify ONLY real errors in a student's short English paragraph. You do NOT suggest improvements — you only correct genuine mistakes.
 
-CRITICAL ACCURACY RULES — read carefully before flagging anything:
-- NEVER flag recognised English idioms, phrasal verbs, or set expressions as errors (e.g. "it takes a village", "on the fence", "under the weather", "by hook or by crook"). These are correct even if used figuratively.
-- NEVER flag British spellings (colour, organise, realise, behaviour) as errors.
-- Only flag a word as semantically incorrect if its meaning in that sentence is genuinely wrong — not just unusual.
-- Be precise: do NOT over-correct. Only mark real errors that a Cambridge examiner would penalise.
+━━━ DECISION TREE — apply this before marking ANYTHING ━━━
+Before flagging any word or phrase, ask these questions in order:
+1. Is it grammatically incorrect? If NO → do NOT mark it.
+2. Is it a recognised idiom, phrasal verb, or set expression in any major English dictionary? If YES → do NOT mark it.
+3. Would a Cambridge examiner clearly deduct marks for this? If UNSURE → do NOT mark it. Use <note> at most.
+If you cannot answer YES to question 1 AND YES to question 3 → leave it completely unmarked.
 
-CAMBRIDGE GRADING:
-- C2 (90–100%): Near-native, sophisticated grammar, idiomatic, no real errors
-- C1 (75–89%): Advanced, natural, at most 1 very minor imprecision
-- B2 (60–74%): Good but with 1–2 clear grammar/vocabulary errors
-- B1 (0–59%): 3+ errors or significant issues affecting clarity
+━━━ ABSOLUTE PROHIBITIONS ━━━
+✗ NEVER produce a correction where <del> and <ins> contain identical text. If no change is needed, do not mark it.
+✗ NEVER insert explanations, definitions, or relative clauses into the student's text.
+✗ NEVER add "which means...", "i.e.", or any explanatory content inside annotated_text.
+✗ NEVER restructure or rephrase correct sentences.
+✗ NEVER penalise unusual but valid collocations. A collocation is only wrong if it is impossible in English or changes the meaning incorrectly.
+✗ NEVER flag British spellings (colour, organise, realise, behaviour, neighbour) as errors.
+✗ NEVER flag stylistic choices as errors.
+✗ Only modify the minimal incorrect segment — never the whole clause.
 
-You must return ONLY valid JSON with this structure:
+━━━ COLLOCATION RULE ━━━
+Unusual collocations are NOT automatically incorrect.
+Examples that must NOT be flagged: "greedy to the marrow", "strong rain", "big effort".
+Only flag a collocation if it is genuinely impossible in English or clearly changes the intended meaning.
+
+━━━ CAMBRIDGE GRADE CALIBRATION ━━━
+Count only real grammar/spelling errors (per the rules above):
+- 0 errors → C1 or C2 based on sophistication (C2 if grammar is complex/varied, C1 if simpler)
+- 1 minor grammar error → C1, percentage 80–88%
+- 2 grammar errors → B2 high, percentage 70–79%
+- 3+ grammar errors affecting clarity → B1, percentage 50–65%
+Stylistic awkwardness alone does NOT reduce the grade.
+Unusual vocabulary choices that are valid do NOT reduce the grade.
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY valid JSON — no markdown, no backticks, no extra text:
 {
   "grade": "C2" or "C1" or "B2" or "B1",
   "percentage": 0-100,
-  "summary": "1 sentence assessment",
-  "words_used": ["target words successfully used"],
+  "summary": "1 sentence, factual assessment of real errors found",
+  "words_used": ["target words the student used"],
   "words_missed": ["target words NOT used"],
-  "word_usage_notes": ["e.g. 'sturdy — used correctly and naturally' or 'lean period — semantically incorrect here: X'"],
-  "annotated_text": "The student's FULL original text with inline markup. Use ONLY: <del>wrong</del><ins>correct</ins> for corrections. Use <note>brief comment</note> for semantic/style notes (3-8 words max). NEVER wrap correct idioms or set expressions. NEVER wrap whole sentences.",
+  "word_usage_notes": ["word — brief factual note on usage correctness"],
+  "annotated_text": "Student's FULL original text. Mark ONLY real errors: <del>wrong</del><ins>correct</ins>. Optional <note>3-8 words max</note> for genuine style issues. Leave all correct text — including valid idioms — completely unmarked.",
   "corrections_list": [
-    {"id": 1, "original": "wrong text", "corrected": "fixed text", "type": "grammar/spelling/punctuation/style/semantic", "explanation": "brief explanation"}
+    {"id": 1, "original": "exact wrong text from student", "corrected": "corrected text", "type": "grammar/spelling/punctuation", "explanation": "precise reason"}
   ],
-  "improved_version": "Student's full text with all corrections applied. MUST use the EXACT target vocabulary words given — NEVER replace them with synonyms."
+  "improved_version": "Student's full text with only the real errors corrected. Every target vocabulary word must appear exactly as the student wrote it."
 }`
                             }, { 
                                 role: 'user', 
-                                content: `TARGET VOCABULARY (must be preserved exactly in improved_version): ${wordList}
+                                content: `TARGET VOCABULARY (preserve exactly in improved_version): ${wordList}
 
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
-Evaluate exhaustively but accurately:
-1. GRAMMAR: articles, prepositions, tenses, agreement, word order
-2. SPELLING: British English only
-3. SEMANTICS: Does each sentence make logical sense? Are words used correctly? IMPORTANT: idioms and set expressions are CORRECT even if used figuratively — do NOT flag "it takes a village", "my forte", etc. unless genuinely misused.
-4. VOCABULARY: Were target words used correctly AND in the right semantic context? Only flag clear misuse.
-5. annotated_text: use <del>wrong</del><ins>correct</ins> and <note>short comment</note>. Notes 3-8 words max. Never mark correct idioms.
-6. improved_version: MUST use the EXACT target words.
+Step 1 — List every candidate error you notice.
+Step 2 — For each candidate, apply the decision tree: Is it grammatically wrong? Is it a known idiom or set expression? Would Cambridge clearly penalise it?
+Step 3 — Only include in corrections_list the items that passed Step 2 as genuine errors.
+Step 4 — Build annotated_text marking only those confirmed errors. Leave everything else untouched.
+Step 5 — Assign grade based solely on the confirmed error count.
 
 Return ONLY JSON.`
                             }],
-                            temperature: 0.1,
+                            temperature: 0.0,
                             max_tokens: 2000
                         })
                     });
@@ -2518,7 +2536,7 @@ Return ONLY JSON.`
                 }
             }
 
-            // 🆕 V14.2: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
+            // 🆕 V14.3: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !userInput.trim()) return;
@@ -2795,7 +2813,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // 🆕 V14.2: Validate translation with Cambridge grading + annotated feedback like Writing
+            // 🆕 V14.3: Validate translation with Cambridge grading + annotated feedback like Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) {
@@ -3972,7 +3990,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.2</span>
+                                        English Booster <span className="version-text">v14.3</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6029,7 +6047,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.2: Call AI for precise error analysis
+                                                            // 🆕 V14.3: Call AI for precise error analysis
                                                             if (groqApiKey.trim()) {
                                                                 evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                             }
@@ -6092,7 +6110,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.2: Call AI for precise error analysis (if API key available)
+                                                        // 🆕 V14.3: Call AI for precise error analysis (if API key available)
                                                         if (groqApiKey.trim()) {
                                                             evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                         }
@@ -6141,7 +6159,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V14.2: Score bar with Cambridge grade + Info icon */}
+                                            {/* 🆕 V14.3: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
                                                     onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
@@ -6171,7 +6189,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            {/* 🆕 V14.2: AI-annotated your answer (clickable corrections) */}
+                                            {/* 🆕 V14.3: AI-annotated your answer (clickable corrections) */}
                                             <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
@@ -7240,7 +7258,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* 🆕 V14.2: Writing-style feedback with annotated text */}
+                                        {/* 🆕 V14.3: Writing-style feedback with annotated text */}
                                         {translationAIResult && (
                                             <div className="space-y-4" onClick={() => translationPopup && setTranslationPopup(null)}>
                                                 {/* Cambridge grade bar */}
