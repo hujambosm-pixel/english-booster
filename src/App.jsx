@@ -168,7 +168,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // 🆕 V14.3: Dictation AI feedback states
+            // 🆕 V14.4: Dictation AI feedback states
             const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
@@ -234,7 +234,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
             const [writingPopup, setWritingPopup] = useState(null); // {x, y, yAbove, correction}
-            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.3: clickable correction popup
+            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.4: clickable correction popup
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -1583,7 +1583,7 @@ Return ONLY valid JSON, no explanation.` }],
                     const dictationAvgErrors = dictationPracticed.length > 0 
                         ? (dictationPracticed.reduce((sum, w) => sum + (w.dictation_errors_total || 0), 0) / dictationPracticed.reduce((sum, w) => sum + w.dictation_count, 0)).toFixed(2)
                         : 0;
-                    // 🆕 V14.3: Cambridge grades for Dictation (derived from avg errors)
+                    // 🆕 V14.4: Cambridge grades for Dictation (derived from avg errors)
                     const dictGradeC2 = dictationPracticed.filter(w => ((w.dictation_errors_total||0)/w.dictation_count) === 0).length;
                     const dictGradeC1 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 0 && avg <= 1; }).length;
                     const dictGradeB2 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 1 && avg <= 2; }).length;
@@ -2445,7 +2445,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
+                            model: 'deepseek-r1-distill-llama-70b',
                             messages: [{ 
                                 role: 'system', 
                                 content: `You are a strict Cambridge English examiner. Your job is to identify ONLY real errors in a student's short English paragraph. You do NOT suggest improvements — you only correct genuine mistakes.
@@ -2472,17 +2472,26 @@ Unusual collocations are NOT automatically incorrect.
 Examples that must NOT be flagged: "greedy to the marrow", "strong rain", "big effort".
 Only flag a collocation if it is genuinely impossible in English or clearly changes the intended meaning.
 
+━━━ NATURALNESS EVALUATION (COMPLETELY SEPARATE — DOES NOT AFFECT GRADE) ━━━
+After completing the error check, evaluate fluency separately.
+If a sentence or phrase is grammatically correct but sounds unnatural or uncommon to a native British English speaker:
+- Do NOT mark it in annotated_text.
+- Do NOT include it in corrections_list.
+- Do NOT let it affect the grade or percentage.
+- Add a short, helpful observation (max 12 words) in naturalness_notes.
+If everything sounds natural, return an empty array: []
+
 ━━━ CAMBRIDGE GRADE CALIBRATION ━━━
-Count only real grammar/spelling errors (per the rules above):
+Count ONLY confirmed grammar/spelling errors from corrections_list:
 - 0 errors → C1 or C2 based on sophistication (C2 if grammar is complex/varied, C1 if simpler)
 - 1 minor grammar error → C1, percentage 80–88%
 - 2 grammar errors → B2 high, percentage 70–79%
 - 3+ grammar errors affecting clarity → B1, percentage 50–65%
 Stylistic awkwardness alone does NOT reduce the grade.
-Unusual vocabulary choices that are valid do NOT reduce the grade.
+naturalness_notes do NOT reduce the grade.
 
 ━━━ OUTPUT FORMAT ━━━
-Return ONLY valid JSON — no markdown, no backticks, no extra text:
+Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking text:
 {
   "grade": "C2" or "C1" or "B2" or "B1",
   "percentage": 0-100,
@@ -2490,7 +2499,8 @@ Return ONLY valid JSON — no markdown, no backticks, no extra text:
   "words_used": ["target words the student used"],
   "words_missed": ["target words NOT used"],
   "word_usage_notes": ["word — brief factual note on usage correctness"],
-  "annotated_text": "Student's FULL original text. Mark ONLY real errors: <del>wrong</del><ins>correct</ins>. Optional <note>3-8 words max</note> for genuine style issues. Leave all correct text — including valid idioms — completely unmarked.",
+  "naturalness_notes": ["short observation about fluency/naturalness, max 12 words each"],
+  "annotated_text": "Student's FULL original text. Mark ONLY real errors: <del>wrong</del><ins>correct</ins>. Optional <note>3-8 words max</note> for genuine style issues only. Leave all correct text — including valid idioms — completely unmarked.",
   "corrections_list": [
     {"id": 1, "original": "exact wrong text from student", "corrected": "corrected text", "type": "grammar/spelling/punctuation", "explanation": "precise reason"}
   ],
@@ -2503,16 +2513,18 @@ Return ONLY valid JSON — no markdown, no backticks, no extra text:
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
+Think step by step before producing the JSON:
 Step 1 — List every candidate error you notice.
 Step 2 — For each candidate, apply the decision tree: Is it grammatically wrong? Is it a known idiom or set expression? Would Cambridge clearly penalise it?
-Step 3 — Only include in corrections_list the items that passed Step 2 as genuine errors.
-Step 4 — Build annotated_text marking only those confirmed errors. Leave everything else untouched.
-Step 5 — Assign grade based solely on the confirmed error count.
+Step 3 — Only include in corrections_list the items confirmed as genuine errors in Step 2.
+Step 4 — Separately, note any phrases that are correct but sound unnatural to a native speaker → put these in naturalness_notes only.
+Step 5 — Build annotated_text marking only the confirmed errors from Step 3.
+Step 6 — Assign grade based solely on the confirmed error count from Step 3.
 
-Return ONLY JSON.`
+Return ONLY the JSON object. Do not include your thinking or reasoning in the output.`
                             }],
                             temperature: 0.0,
-                            max_tokens: 2000
+                            max_tokens: 3000
                         })
                     });
 
@@ -2536,7 +2548,7 @@ Return ONLY JSON.`
                 }
             }
 
-            // 🆕 V14.3: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
+            // 🆕 V14.4: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !userInput.trim()) return;
@@ -2813,7 +2825,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // 🆕 V14.3: Validate translation with Cambridge grading + annotated feedback like Writing
+            // 🆕 V14.4: Validate translation with Cambridge grading + annotated feedback like Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) {
@@ -3990,7 +4002,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.3</span>
+                                        English Booster <span className="version-text">v14.4</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6047,7 +6059,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.3: Call AI for precise error analysis
+                                                            // 🆕 V14.4: Call AI for precise error analysis
                                                             if (groqApiKey.trim()) {
                                                                 evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                             }
@@ -6110,7 +6122,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.3: Call AI for precise error analysis (if API key available)
+                                                        // 🆕 V14.4: Call AI for precise error analysis (if API key available)
                                                         if (groqApiKey.trim()) {
                                                             evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                         }
@@ -6159,7 +6171,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V14.3: Score bar with Cambridge grade + Info icon */}
+                                            {/* 🆕 V14.4: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
                                                     onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
@@ -6189,7 +6201,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            {/* 🆕 V14.3: AI-annotated your answer (clickable corrections) */}
+                                            {/* 🆕 V14.4: AI-annotated your answer (clickable corrections) */}
                                             <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
@@ -7258,7 +7270,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* 🆕 V14.3: Writing-style feedback with annotated text */}
+                                        {/* 🆕 V14.4: Writing-style feedback with annotated text */}
                                         {translationAIResult && (
                                             <div className="space-y-4" onClick={() => translationPopup && setTranslationPopup(null)}>
                                                 {/* Cambridge grade bar */}
@@ -7643,6 +7655,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div className="space-y-2">
                                                     {writingFeedback.word_usage_notes.map((note, i) => (
                                                         <p key={i} className="text-sm text-teal-100/80">• {note}</p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 🆕 V14.4: Naturalness notes — separate from grade */}
+                                        {writingFeedback.naturalness_notes && writingFeedback.naturalness_notes.length > 0 && (
+                                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 mb-6">
+                                                <h4 className="text-blue-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
+                                                    <span className="text-2xl">🗣️</span> Naturalness & Fluency
+                                                    <span className="text-blue-500 text-xs font-normal normal-case">(does not affect grade)</span>
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {writingFeedback.naturalness_notes.map((note, i) => (
+                                                        <p key={i} className="text-sm text-blue-100/80">• {note}</p>
                                                     ))}
                                                 </div>
                                             </div>
