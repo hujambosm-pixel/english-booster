@@ -168,7 +168,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // 🆕 V14.4: Dictation AI feedback states
+            // 🆕 V14.5: Dictation AI feedback states
             const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
@@ -234,7 +234,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
             const [writingPopup, setWritingPopup] = useState(null); // {x, y, yAbove, correction}
-            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.4: clickable correction popup
+            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.5: clickable correction popup
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -1583,7 +1583,7 @@ Return ONLY valid JSON, no explanation.` }],
                     const dictationAvgErrors = dictationPracticed.length > 0 
                         ? (dictationPracticed.reduce((sum, w) => sum + (w.dictation_errors_total || 0), 0) / dictationPracticed.reduce((sum, w) => sum + w.dictation_count, 0)).toFixed(2)
                         : 0;
-                    // 🆕 V14.4: Cambridge grades for Dictation (derived from avg errors)
+                    // 🆕 V14.5: Cambridge grades for Dictation (derived from avg errors)
                     const dictGradeC2 = dictationPracticed.filter(w => ((w.dictation_errors_total||0)/w.dictation_count) === 0).length;
                     const dictGradeC1 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 0 && avg <= 1; }).length;
                     const dictGradeB2 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 1 && avg <= 2; }).length;
@@ -2433,29 +2433,53 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
             }
             
             // 🆕 V13.7: Evaluate user's writing with AI
+            // 🆕 V14.5: Shared Groq helper — DeepSeek R1 first, auto-fallback to LLaMA 70b
+            // Strips <think> blocks, handles all error cases, returns parsed JSON or throws
+            async function callGroqWithFallback(apiKey, messages, maxTokens = 2000) {
+                const modelsToTry = ['deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
+                let lastError = '';
+                for (const model of modelsToTry) {
+                    try {
+                        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                            body: JSON.stringify({ model, messages, temperature: 0.0, max_tokens: maxTokens })
+                        });
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            lastError = `${model}: HTTP ${res.status} — ${errData?.error?.message || 'unknown'}`;
+                            console.warn('Groq fallback — model failed:', lastError);
+                            continue;
+                        }
+                        const data = await res.json();
+                        let raw = data.choices?.[0]?.message?.content || '';
+                        // Strip DeepSeek R1 reasoning block
+                        raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '');
+                        raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                        const start = raw.indexOf('{');
+                        const end = raw.lastIndexOf('}');
+                        if (start === -1 || end === -1) {
+                            lastError = `${model}: no JSON object in response`;
+                            console.warn('Groq fallback — bad response:', lastError);
+                            continue;
+                        }
+                        console.log('✅ Groq model used:', model);
+                        return JSON.parse(raw.substring(start, end + 1));
+                    } catch (err) {
+                        lastError = `${model}: ${err.message}`;
+                        console.warn('Groq fallback — exception:', lastError);
+                    }
+                }
+                throw new Error(`All models failed. Last: ${lastError}`);
+            }
+
             async function evaluateWriting() {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !writingText.trim()) return;
-                
                 setWritingLoading(true);
                 try {
                     const wordList = writingWords.map(w => w.vocabulary).join(', ');
-
-                    // 🆕 V14.4: Try DeepSeek R1 first, auto-fallback to llama if unavailable
-                    const modelsToTry = ['deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
-                    let response = null;
-                    let usedModel = '';
-                    let lastError = '';
-                    for (const model of modelsToTry) {
-                        try {
-                            response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                                body: JSON.stringify({
-                                    model,
-                            messages: [{ 
-                                role: 'system', 
-                                content: `You are a strict Cambridge English examiner. Your job is to identify ONLY real errors in a student's short English paragraph. You do NOT suggest improvements — you only correct genuine mistakes.
+                    const systemPrompt = `You are a strict Cambridge English examiner. Your job is to identify ONLY real errors in a student's short English paragraph. You do NOT suggest improvements — you only correct genuine mistakes.
 
 ━━━ DECISION TREE — apply this before marking ANYTHING ━━━
 Before flagging any word or phrase, ask these questions in order:
@@ -2466,10 +2490,10 @@ If you cannot answer YES to question 1 AND YES to question 3 → leave it comple
 
 ━━━ ABSOLUTE PROHIBITIONS ━━━
 ✗ NEVER produce a correction where <del> and <ins> contain identical text. If no change is needed, do not mark it.
-✗ NEVER insert explanations, definitions, or relative clauses into the student's text.
+✗ NEVER insert explanations, definitions, or relative clauses into the student text.
 ✗ NEVER add "which means...", "i.e.", or any explanatory content inside annotated_text.
 ✗ NEVER restructure or rephrase correct sentences.
-✗ NEVER penalise unusual but valid collocations. A collocation is only wrong if it is impossible in English or changes the meaning incorrectly.
+✗ NEVER penalise unusual but valid collocations. A collocation is only wrong if impossible in English or changes the meaning incorrectly.
 ✗ NEVER flag British spellings (colour, organise, realise, behaviour, neighbour) as errors.
 ✗ NEVER flag stylistic choices as errors.
 ✗ Only modify the minimal incorrect segment — never the whole clause.
@@ -2490,7 +2514,7 @@ If everything sounds natural, return an empty array: []
 
 ━━━ CAMBRIDGE GRADE CALIBRATION ━━━
 Count ONLY confirmed grammar/spelling errors from corrections_list:
-- 0 errors → C1 or C2 based on sophistication (C2 if grammar is complex/varied, C1 if simpler)
+- 0 errors → C1 or C2 based on sophistication (C2 if complex/varied grammar, C1 if simpler)
 - 1 minor grammar error → C1, percentage 80–88%
 - 2 grammar errors → B2 high, percentage 70–79%
 - 3+ grammar errors affecting clarity → B1, percentage 50–65%
@@ -2512,100 +2536,63 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking t
     {"id": 1, "original": "exact wrong text from student", "corrected": "corrected text", "type": "grammar/spelling/punctuation", "explanation": "precise reason"}
   ],
   "improved_version": "Student's full text with only the real errors corrected. Every target vocabulary word must appear exactly as the student wrote it."
-}`
-                            }, { 
-                                role: 'user', 
-                                content: `TARGET VOCABULARY (preserve exactly in improved_version): ${wordList}
+}`;
+                    const userPrompt = `TARGET VOCABULARY (preserve exactly in improved_version): ${wordList}
 
 STUDENT'S TEXT:
 "${writingText.trim()}"
 
 Think step by step before producing the JSON:
 Step 1 — List every candidate error you notice.
-Step 2 — For each candidate, apply the decision tree: Is it grammatically wrong? Is it a known idiom or set expression? Would Cambridge clearly penalise it?
-Step 3 — Only include in corrections_list the items confirmed as genuine errors in Step 2.
-Step 4 — Separately, note any phrases that are correct but sound unnatural to a native speaker → put these in naturalness_notes only.
-Step 5 — Build annotated_text marking only the confirmed errors from Step 3.
-Step 6 — Assign grade based solely on the confirmed error count from Step 3.
+Step 2 — For each candidate, apply the decision tree: grammatically wrong? Known idiom? Would Cambridge penalise it?
+Step 3 — Only include confirmed errors in corrections_list.
+Step 4 — Separately, note phrases that are correct but unnatural → naturalness_notes only.
+Step 5 — Build annotated_text with confirmed errors only.
+Step 6 — Assign grade based solely on confirmed error count.
 
-Return ONLY the JSON object. Do not include your thinking or reasoning in the output.`
-                            }],
-                            temperature: 0.0,
-                            max_tokens: 3000
-                        })
-                    });
-                            if (response.ok) { usedModel = model; break; }
-                            const errData = await response.json().catch(() => ({}));
-                            lastError = `${model}: HTTP ${response.status} — ${errData?.error?.message || 'unknown'}`;
-                            console.warn('Model failed, trying next:', lastError);
-                            response = null;
-                        } catch (fetchErr) {
-                            lastError = `${model}: ${fetchErr.message}`;
-                            console.warn('Model fetch error, trying next:', lastError);
-                            response = null;
-                        }
-                    }
-
-                    if (!response) {
-                        throw new Error(`All models failed. Last error: ${lastError}`);
-                    }
-                    console.log('Writing evaluated with model:', usedModel);
-
-                    const data = await response.json();
-                    let raw = (data.choices?.[0]?.message?.content || '');
-                    // 🆕 V14.4: Strip DeepSeek R1 <think>...</think> reasoning block
-                    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
-                    raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    const braceStart = raw.indexOf('{');
-                    const braceEnd = raw.lastIndexOf('}');
-                    if (braceStart !== -1 && braceEnd !== -1) {
-                        const feedback = JSON.parse(raw.substring(braceStart, braceEnd + 1));
-                        setWritingFeedback(feedback);
-                    } else {
-                        throw new Error('Invalid JSON response');
-                    }
+Return ONLY the JSON object.`;
+                    const feedback = await callGroqWithFallback(apiKey, [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ], 3000);
+                    setWritingFeedback(feedback);
                 } catch (error) {
                     console.error('Writing evaluation error:', error);
-                    alert(`❌ Error evaluating text.\n\n${error.message}\n\nCheck the browser console for details.`);
+                    alert(`❌ Error evaluating writing.\n\n${error.message}`);
                 } finally {
                     setWritingLoading(false);
                 }
             }
 
-            // 🆕 V14.4: Evaluate dictation with AI (Cambridge-graded, teacher-level precision)
+            // 🆕 V14.5: Evaluate dictation with AI — DeepSeek R1 + fallback
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !userInput.trim()) return;
                 setDictationAILoading(true);
                 try {
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
-                            messages: [{ 
-                                role: 'system', 
-                                content: `You are a strict but fair Cambridge English teacher correcting a dictation exercise. The student heard a sentence and wrote it down. Compare their transcription to the original sentence word-by-word and character-by-character.
+                    const systemPrompt = `You are a strict Cambridge English teacher correcting a dictation exercise. The student heard a sentence and transcribed it. Compare their transcription to the original word-by-word and character-by-character.
 
-WHAT TO FLAG (be exhaustive):
+━━━ WHAT TO FLAG ━━━
 - Misspelt words (even one wrong letter)
 - Wrong words (substituted with a different word)
 - Missing words
-- Extra words added by student
+- Extra words added by the student
 - Wrong punctuation (missing period, wrong comma, etc.)
 - Wrong capitalisation
 
-WHAT NOT TO FLAG:
-- Do NOT flag acceptable spelling variants unless clearly wrong
+━━━ WHAT NOT TO FLAG ━━━
+- Acceptable spelling variants unless clearly wrong
 - Do NOT add commentary — only mark actual transcription errors
+- NEVER produce a correction where <del> and <ins> contain identical text
 
-CAMBRIDGE GRADING based on error count:
+━━━ CAMBRIDGE GRADING ━━━
+Based on error count:
 - 0 errors → C2
-- 1 error → C1
+- 1 error  → C1
 - 2 errors → B2
 - 3+ errors → B1
 
-Return ONLY valid JSON:
+Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking text:
 {
   "annotated_text": "Student's text with: <del>wrong</del><ins>correct</ins> for substitutions/misspellings. For missing words: <ins>missing-word</ins>. For extra words: <del>extra-word</del>. Keep ALL correct words exactly as written.",
   "corrections_list": [
@@ -2613,28 +2600,25 @@ Return ONLY valid JSON:
   ],
   "error_count": 0,
   "grade": "C2/C1/B2/B1"
-}`
-                            }, { 
-                                role: 'user', 
-                                content: `ORIGINAL SENTENCE: "${correctText}"
+}`;
+                    const userPrompt = `ORIGINAL SENTENCE: "${correctText}"
 
 STUDENT'S TRANSCRIPTION: "${userInput}"
 
-Compare every single word and character. Flag every difference. Return ONLY JSON.`
-                            }],
-                            temperature: 0.0,
-                            max_tokens: 1200
-                        })
-                    });
-                    if (!response.ok) throw new Error('Evaluation failed');
-                    const data = await response.json();
-                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    const braceStart = raw.indexOf('{');
-                    const braceEnd = raw.lastIndexOf('}');
-                    if (braceStart !== -1 && braceEnd !== -1) {
-                        const feedback = JSON.parse(raw.substring(braceStart, braceEnd + 1));
-                        setDictationAIFeedback(feedback);
-                    }
+Compare every single word and character. Flag every difference.
+
+Think step by step:
+Step 1 — List every difference between original and transcription.
+Step 2 — Classify each: misspelling, wrong-word, missing-word, extra-word, punctuation, capitalisation.
+Step 3 — Build annotated_text and corrections_list from confirmed errors only.
+Step 4 — Count errors and assign Cambridge grade.
+
+Return ONLY the JSON object.`;
+                    const feedback = await callGroqWithFallback(apiKey, [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ], 1500);
+                    setDictationAIFeedback(feedback);
                 } catch (error) {
                     console.error('Dictation AI evaluation error:', error);
                 } finally {
@@ -2849,73 +2833,70 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // 🆕 V14.4: Validate translation with Cambridge grading + annotated feedback like Writing
+            // 🆕 V14.5: Validate translation — DeepSeek R1 + fallback, same quality as Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) {
                     alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
-
                 setTranslationAIValidating(true);
                 try {
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
-                            messages: [{ 
-                                role: 'system', 
-                                content: `You are a strict but fair Cambridge English examiner evaluating a Spanish-to-English translation task.
+                    const systemPrompt = `You are a strict Cambridge English examiner evaluating a Spanish-to-English translation task.
 
-CRITICAL ACCURACY RULES:
-- NEVER flag recognised English idioms, phrasal verbs, or set expressions as errors — they are correct.
-- Ignore he/she/his/her differences (Spanish doesn't specify gender).
-- Punctuation-only differences are NOT errors.
-- Only flag real grammar or vocabulary errors in the student's English translation.
-- Be precise: do NOT over-correct. Only mark errors a Cambridge examiner would actually penalise.
+━━━ DECISION TREE — apply this before marking ANYTHING ━━━
+Before flagging any word or phrase, ask these questions in order:
+1. Is it grammatically incorrect in English? If NO → do NOT mark it.
+2. Is it a recognised English idiom, phrasal verb, or set expression? If YES → do NOT mark it.
+3. Would a Cambridge examiner clearly deduct marks for this? If UNSURE → do NOT mark it.
 
-CAMBRIDGE GRADING:
-- C2 (90–100%): Perfect or near-perfect translation, sophisticated expression
-- C1 (75–89%): Advanced, at most 1 very minor imprecision
-- B2 (60–74%): Good but with 1–2 clear errors
-- B1 (0–59%): 3+ errors or significant issues
+━━━ ABSOLUTE PROHIBITIONS ━━━
+✗ NEVER produce a correction where <del> and <ins> contain identical text.
+✗ NEVER flag he/she/his/her differences — Spanish does not specify gender.
+✗ NEVER flag punctuation-only differences.
+✗ NEVER flag British spellings as errors.
+✗ NEVER penalise unusual but valid collocations.
+✗ NEVER restructure correct sentences.
+✗ Only evaluate the student's ENGLISH — not the Spanish source.
 
-FEEDBACK FORMAT — Return ONLY valid JSON:
+━━━ CAMBRIDGE GRADE CALIBRATION ━━━
+Count ONLY confirmed errors from corrections_list:
+- 0 errors → C1 or C2 based on sophistication (C2 if complex/varied, C1 if simpler)
+- 1 minor error → C1, percentage 80–88%
+- 2 errors → B2 high, percentage 70–79%
+- 3+ errors → B1, percentage 50–65%
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking text:
 {
   "grade": "C2/C1/B2/B1",
   "percentage": 0-100,
-  "annotated_text": "Student's FULL English translation with inline markup. Use <del>wrong</del><ins>correct</ins> for errors. Use <note>brief comment</note> for style notes (3-8 words max). Keep ALL correct text exactly as written. NEVER markup correct idioms or set expressions.",
+  "annotated_text": "Student's FULL English translation with inline markup. Use <del>wrong</del><ins>correct</ins> for confirmed errors. Use <note>3-8 words max</note> for style notes only. Keep ALL correct text exactly as written.",
   "corrections_list": [
-    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary/style", "explanation": "brief explanation"}
+    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary", "explanation": "precise reason"}
   ],
-  "feedback": "1-sentence summary of the translation quality"
-}`
-                            }, { 
-                                role: 'user', 
-                                content: `ORIGINAL ENGLISH: "${originalEnglish}"
+  "feedback": "1-sentence factual summary of errors found"
+}`;
+                    const userPrompt = `ORIGINAL ENGLISH: "${originalEnglish}"
 SPANISH VERSION: "${spanishSource}"
 STUDENT'S ENGLISH TRANSLATION: "${userTranslation}"
 
-Evaluate the student's English translation only. Return ONLY JSON.`
-                            }],
-                            temperature: 0.1,
-                            max_tokens: 1200
-                        })
-                    });
+Think step by step:
+Step 1 — List every candidate error in the student's English.
+Step 2 — Apply the decision tree to each: grammatically wrong? Known idiom? Cambridge would penalise?
+Step 3 — Only include confirmed errors in corrections_list.
+Step 4 — Build annotated_text with confirmed errors only.
+Step 5 — Assign grade based solely on confirmed error count.
 
-                    if (!response.ok) throw new Error(`API Error ${response.status}`);
-
-                    const data = await response.json();
-                    let raw = (data.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    const braceStart = raw.indexOf('{');
-                    const braceEnd = raw.lastIndexOf('}');
-                    if (braceStart === -1 || braceEnd === -1) throw new Error('Invalid JSON');
-                    const result = JSON.parse(raw.substring(braceStart, braceEnd + 1));
+Return ONLY the JSON object.`;
+                    const result = await callGroqWithFallback(apiKey, [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ], 1500);
                     return result;
                 } catch (error) {
                     console.error('Translation Validation Error:', error);
-                    alert('❌ Translation validation failed. Please check your API key.');
+                    alert(`❌ Translation validation failed.\n\n${error.message}`);
                     return null;
                 } finally {
                     setTranslationAIValidating(false);
@@ -4026,7 +4007,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.4</span>
+                                        English Booster <span className="version-text">v14.5</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6083,7 +6064,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.4: Call AI for precise error analysis
+                                                            // 🆕 V14.5: Call AI for precise error analysis
                                                             if (groqApiKey.trim()) {
                                                                 evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                             }
@@ -6146,7 +6127,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.4: Call AI for precise error analysis (if API key available)
+                                                        // 🆕 V14.5: Call AI for precise error analysis (if API key available)
                                                         if (groqApiKey.trim()) {
                                                             evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                         }
@@ -6195,7 +6176,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V14.4: Score bar with Cambridge grade + Info icon */}
+                                            {/* 🆕 V14.5: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
                                                     onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
@@ -6225,7 +6206,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            {/* 🆕 V14.4: AI-annotated your answer (clickable corrections) */}
+                                            {/* 🆕 V14.5: AI-annotated your answer (clickable corrections) */}
                                             <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
@@ -7294,7 +7275,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* 🆕 V14.4: Writing-style feedback with annotated text */}
+                                        {/* 🆕 V14.5: Writing-style feedback with annotated text */}
                                         {translationAIResult && (
                                             <div className="space-y-4" onClick={() => translationPopup && setTranslationPopup(null)}>
                                                 {/* Cambridge grade bar */}
@@ -7684,7 +7665,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
 
-                                        {/* 🆕 V14.4: Naturalness notes — separate from grade */}
+                                        {/* 🆕 V14.5: Naturalness notes — separate from grade */}
                                         {writingFeedback.naturalness_notes && writingFeedback.naturalness_notes.length > 0 && (
                                             <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 mb-6">
                                                 <h4 className="text-blue-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
