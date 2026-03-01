@@ -3612,16 +3612,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         }
                     }
 
-                    // 🆕 V11.20: Find current word in all possible contexts
-                    const currentWord = words.find(w => w.id === wordId) || 
-                                       flashcardWords.find(w => w.id === wordId) ||
-                                       dictationWords.find(w => w.id === wordId) ||
-                                       selectionWords.find(w => w.id === wordId) ||
-                                       guessworkWords.find(w => w.id === wordId);
-                    
-                    if (!currentWord) {
-                        throw new Error('Word not found in current context');
-                    }
+                    // currentWord already defined above (used in prompt)
                     
                     const currentSyns = (currentWord.synonyms || '').split(',').map(s => s.trim()).filter(s => s);
                     const improvedSyns = (result.synonyms || '').split(',').map(s => s.trim()).filter(s => s);
