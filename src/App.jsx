@@ -168,7 +168,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationPlaySpeed, setDictationPlaySpeed] = useState('normal');
             const MAX_DICTATION_PLAYS = 4;
             
-            // 🆕 V14.5: Dictation AI feedback states
+            // 🆕 V14.6: Dictation AI feedback states
             const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
@@ -234,7 +234,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [writingLoading, setWritingLoading] = useState(false);
             const [writingWordCount, setWritingWordCount] = useState(0);
             const [writingPopup, setWritingPopup] = useState(null); // {x, y, yAbove, correction}
-            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.5: clickable correction popup
+            const [translationPopup, setTranslationPopup] = useState(null); // 🆕 V14.6: clickable correction popup
             
             // 🆕 V11.41: Stats dashboard states
             const [showStats, setShowStats] = useState(false);
@@ -1583,7 +1583,7 @@ Return ONLY valid JSON, no explanation.` }],
                     const dictationAvgErrors = dictationPracticed.length > 0 
                         ? (dictationPracticed.reduce((sum, w) => sum + (w.dictation_errors_total || 0), 0) / dictationPracticed.reduce((sum, w) => sum + w.dictation_count, 0)).toFixed(2)
                         : 0;
-                    // 🆕 V14.5: Cambridge grades for Dictation (derived from avg errors)
+                    // 🆕 V14.6: Cambridge grades for Dictation (derived from avg errors)
                     const dictGradeC2 = dictationPracticed.filter(w => ((w.dictation_errors_total||0)/w.dictation_count) === 0).length;
                     const dictGradeC1 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 0 && avg <= 1; }).length;
                     const dictGradeB2 = dictationPracticed.filter(w => { const avg = (w.dictation_errors_total||0)/w.dictation_count; return avg > 1 && avg <= 2; }).length;
@@ -2433,7 +2433,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
             }
             
             // 🆕 V13.7: Evaluate user's writing with AI
-            // 🆕 V14.5: Shared Groq helper — DeepSeek R1 first, auto-fallback to LLaMA 70b
+            // 🆕 V14.6: Shared Groq helper — DeepSeek R1 first, auto-fallback to LLaMA 70b
             // Strips <think> blocks, handles all error cases, returns parsed JSON or throws
             async function callGroqWithFallback(apiKey, messages, maxTokens = 2000) {
                 const modelsToTry = ['deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
@@ -2564,7 +2564,7 @@ Return ONLY the JSON object.`;
                 }
             }
 
-            // 🆕 V14.5: Evaluate dictation with AI — DeepSeek R1 + fallback
+            // 🆕 V14.6: Evaluate dictation with AI — DeepSeek R1 + fallback
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || !userInput.trim()) return;
@@ -2833,7 +2833,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
             }
 
-            // 🆕 V14.5: Validate translation — DeepSeek R1 + fallback, same quality as Writing
+            // 🆕 V14.6: Validate translation — DeepSeek R1 + fallback, same quality as Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey) {
@@ -3492,6 +3492,9 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     
                     const prompt = `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
 
+CURRENT CONTEXT SENTENCE (the student's existing sentence — you MUST produce something COMPLETELY DIFFERENT):
+"${currentWord?.context || 'none'}"
+
 For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggestions:
 
 1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)
@@ -3501,17 +3504,19 @@ For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggesti
    - DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
    - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
-2. CONTEXT: A natural sentence (12-15 words) in British English that HELPS UNDERSTAND THE MEANING of "${word}"
-   ⛔️ CRITICAL: You MUST use "${word}" as a ${currentFamily} in your sentence
+2. CONTEXT: A NEW, COMPLETELY DIFFERENT sentence (12-15 words) in British English
+   ⛔️ CRITICAL: Your sentence MUST be totally different from the current context sentence above — different subject, different situation, different structure
+   ⛔️ DO NOT paraphrase or lightly reword the current sentence — invent an entirely new scenario
+   ⛔️ You MUST use "${word}" as a ${currentFamily} in your sentence
    ⛔️ DO NOT use synonyms instead of "${word}"
    ✅ REQUIRED: ${contextExamples[currentFamily] || ('Use "' + word + '" correctly')}
-   ✅ The sentence should clearly illustrate what "${word}" means — a reader unfamiliar with the word should be able to infer its meaning from the context
+   ✅ The sentence should clearly illustrate what "${word}" means in a NEW context
 
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
 
 FINAL MANDATORY RULES:
 - Synonyms = EXACT ${currentFamily} synonyms only (interchangeable, same meaning)
-- Context = use "${word}" as a ${currentFamily}, and the sentence must help understand the meaning
+- Context = NEW sentence, completely different scenario from current one, uses "${word}" as a ${currentFamily}
 - Family field in JSON = "${currentFamily}" (DO NOT modify)
 
 Respond ONLY in this exact JSON format (no markdown, no backticks):
@@ -4007,7 +4012,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.5</span>
+                                        English Booster <span className="version-text">v14.6</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5123,7 +5128,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('improveContext', ctx);
                                                             e.dataTransfer.setData('improveContextSource', 'current');
                                                         }}
-                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 py-2 rounded-lg cursor-move text-sm"
+                                                        onClick={() => {
+                                                            // 📱 MOBILE: Tap to move to green panel
+                                                            setImproveData({
+                                                                ...improveData,
+                                                                selections: {
+                                                                    ...(improveData.selections || {}),
+                                                                    currentContext: [],
+                                                                    improvedContext: [ctx]
+                                                                }
+                                                            });
+                                                        }}
+                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 py-2 rounded-lg cursor-pointer text-sm touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                     >
                                                         {ctx}
                                                     </div>
@@ -5135,7 +5151,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('improveContext', improveData.current.context);
                                                             e.dataTransfer.setData('improveContextSource', 'current');
                                                         }}
-                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 py-2 rounded-lg cursor-move text-sm"
+                                                        onClick={() => {
+                                                            // 📱 MOBILE: Tap original context to move to green panel (keep it)
+                                                            setImproveData({
+                                                                ...improveData,
+                                                                selections: {
+                                                                    ...(improveData.selections || {}),
+                                                                    currentContext: [],
+                                                                    improvedContext: [improveData.current.context]
+                                                                }
+                                                            });
+                                                        }}
+                                                        className="bg-red-700/50 hover:bg-red-700/70 text-red-100 px-3 py-2 rounded-lg cursor-pointer text-sm touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                     >
                                                         {improveData.current.context}
                                                     </div>
@@ -5243,7 +5270,18 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             e.dataTransfer.setData('improveContext', ctx);
                                                             e.dataTransfer.setData('improveContextSource', 'improved');
                                                         }}
-                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 py-2 rounded-lg cursor-move text-sm"
+                                                        onClick={() => {
+                                                            // 📱 MOBILE: Tap to move back to red panel
+                                                            setImproveData({
+                                                                ...improveData,
+                                                                selections: {
+                                                                    ...(improveData.selections || {}),
+                                                                    currentContext: [ctx],
+                                                                    improvedContext: []
+                                                                }
+                                                            });
+                                                        }}
+                                                        className="bg-green-700/50 hover:bg-green-700/70 text-green-100 px-3 py-2 rounded-lg cursor-pointer text-sm touch-manipulation select-none active:scale-95 active:opacity-70 transition-transform"
                                                     >
                                                         {ctx}
                                                     </div>
@@ -6064,7 +6102,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.5: Call AI for precise error analysis
+                                                            // 🆕 V14.6: Call AI for precise error analysis
                                                             if (groqApiKey.trim()) {
                                                                 evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                             }
@@ -6127,7 +6165,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.5: Call AI for precise error analysis (if API key available)
+                                                        // 🆕 V14.6: Call AI for precise error analysis (if API key available)
                                                         if (groqApiKey.trim()) {
                                                             evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
                                                         }
@@ -6176,7 +6214,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </>
                                     ) : (
                                         <>
-                                            {/* 🆕 V14.5: Score bar with Cambridge grade + Info icon */}
+                                            {/* 🆕 V14.6: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
                                                     onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
@@ -6206,7 +6244,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </div>
                                             </div>
 
-                                            {/* 🆕 V14.5: AI-annotated your answer (clickable corrections) */}
+                                            {/* 🆕 V14.6: AI-annotated your answer (clickable corrections) */}
                                             <div className="space-y-4 relative" onClick={() => dictationPopup && setDictationPopup(null)}>
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
@@ -7275,7 +7313,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </>
                                 ) : (
                                     <>
-                                        {/* 🆕 V14.5: Writing-style feedback with annotated text */}
+                                        {/* 🆕 V14.6: Writing-style feedback with annotated text */}
                                         {translationAIResult && (
                                             <div className="space-y-4" onClick={() => translationPopup && setTranslationPopup(null)}>
                                                 {/* Cambridge grade bar */}
@@ -7665,7 +7703,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
 
-                                        {/* 🆕 V14.5: Naturalness notes — separate from grade */}
+                                        {/* 🆕 V14.6: Naturalness notes — separate from grade */}
                                         {writingFeedback.naturalness_notes && writingFeedback.naturalness_notes.length > 0 && (
                                             <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 mb-6">
                                                 <h4 className="text-blue-300 font-bold uppercase text-sm mb-3 flex items-center gap-2">
