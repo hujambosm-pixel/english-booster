@@ -94,17 +94,54 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 });
             }
 
-            function speakOnce(text) {
+            function speakTextForVoice(text) {
+                return new Promise(async resolve => {
+                    if (groqAudioRef.current) { groqAudioRef.current.pause(); groqAudioRef.current = null; }
+                    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+                    const useGroq = preferredVoice.startsWith('groq-') && groqApiKey.trim();
+                    if (useGroq) {
+                        try {
+                            const inputText = text.length > 190 ? text.substring(0, 190) + '...' : '... ' + text;
+                            const resp = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
+                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: inputText, voice: preferredVoice.replace('groq-', ''), response_format: 'wav' })
+                            });
+                            if (!resp.ok) throw new Error('Groq TTS failed');
+                            const blob = await resp.blob();
+                            const url = URL.createObjectURL(blob);
+                            const audio = new Audio(url);
+                            groqAudioRef.current = audio;
+                            audio.onended = () => { URL.revokeObjectURL(url); groqAudioRef.current = null; resolve(); };
+                            audio.onerror  = () => { URL.revokeObjectURL(url); resolve(); };
+                            await audio.play();
+                        } catch (e) {
+                            speakBrowserTTSForVoice(text).then(resolve);
+                        }
+                    } else {
+                        speakBrowserTTSForVoice(text).then(resolve);
+                    }
+                });
+            }
+
+            function speakBrowserTTSForVoice(text) {
                 return new Promise(resolve => {
+                    if (!('speechSynthesis' in window)) { resolve(); return; }
                     window.speechSynthesis.cancel();
-                    const utt = new SpeechSynthesisUtterance(text);
-                    utt.rate = 0.95;
-                    utt.pitch = 1.0;
                     const voices = window.speechSynthesis.getVoices();
-                    const enVoice = voices.find(v => v.lang.startsWith('en-GB') && v.localService) ||
-                                    voices.find(v => v.lang.startsWith('en') && v.localService) ||
-                                    voices.find(v => v.lang.startsWith('en'));
-                    if (enVoice) utt.voice = enVoice;
+                    const utt = new SpeechSynthesisUtterance(text);
+                    utt.lang = 'en-GB';
+                    utt.rate = 1.0;
+                    utt.pitch = 1.0;
+                    utt.volume = 1.0;
+                    if (preferredVoice === 'auto' || preferredVoice.startsWith('groq-')) {
+                        const best = getBestBrowserVoice(voices);
+                        if (best) utt.voice = best;
+                    } else {
+                        const sel = voices.find(v => v.name === preferredVoice);
+                        if (sel) utt.voice = sel;
+                    }
                     utt.onend = resolve;
                     utt.onerror = resolve;
                     window.speechSynthesis.speak(utt);
@@ -153,7 +190,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     setVoiceHistory(history);
 
                     setVoiceStatus('speaking');
-                    await speakOnce(aiText);
+                    await speakTextForVoice(aiText);
                 }
                 setVoiceStatus('idle');
             }
@@ -197,7 +234,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 setVoiceHistory(history);
 
                 setVoiceStatus('speaking');
-                await speakOnce(opening);
+                await speakTextForVoice(opening);
 
                 await runVoiceLoop(systemPrompt, history);
             }
