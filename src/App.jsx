@@ -41,6 +41,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [showAddModal, setShowAddModal] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [showExercisesModal, setShowExercisesModal] = useState(false); // 🆕 V11.59: Exercises modal
+            const [showTalkToMeModal, setShowTalkToMeModal] = useState(false);
             const [showDictionaryModal, setShowDictionaryModal] = useState(false); // 🆕 V11.55: Dictionary modal
             const [selectedWordForDict, setSelectedWordForDict] = useState(''); // 🆕 V11.55: Selected word for dictionary
             const [editingWord, setEditingWord] = useState(null);
@@ -61,6 +62,37 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [magicLoading, setMagicLoading] = useState(false);
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
             
+            async function openTalkToMe(filter) {
+                if (!supabase) return;
+                setShowTalkToMeModal(false);
+
+                let query = supabase.from('vocabulary_v4').select('vocabulary, synonyms, context, family, difficulty').is('deleted_at', null);
+
+                if (filter === 'favourites') query = query.in('favourite', [1, 2]);
+                else if (filter === 'top_favourites') query = query.eq('favourite', 2);
+                else if (filter === 'passive') query = query.eq('difficulty', 'Passive');
+                else if (filter === 'emerging') query = query.eq('difficulty', 'Emerging');
+                // 'all' — no extra filter
+
+                const { data, error } = await query;
+                if (error || !data || data.length === 0) return;
+
+                // Shuffle and pick up to 30
+                const shuffled = [...data].sort(() => Math.random() - 0.5).slice(0, 30);
+
+                const wordList = shuffled.map(w => {
+                    const parts = [];
+                    if (w.family) parts.push(`(${w.family})`);
+                    if (w.synonyms) parts.push(`synonyms: ${w.synonyms}`);
+                    if (w.context) parts.push(`e.g. "${w.context}"`);
+                    return `• ${w.vocabulary}${parts.length ? ' — ' + parts.join(' | ') : ''}`;
+                }).join('\n');
+
+                const prompt = `You are a friendly conversational English vocabulary tutor. I'm a Spanish speaker learning these ${shuffled.length} English words:\n\n${wordList}\n\nReview them naturally through conversation: introduce words, use them in context, ask me questions about them, and explain gently when I'm unsure. Don't just list or drill — have a real conversation. Work through all the words gradually. Start the conversation yourself, don't wait for me.`;
+
+                window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank');
+            }
+
             // 🆕 V13.0: Separate API call for usage frequency — always reliable
             // 🆕 V13.2: Usage frequency — precise, using 70b model
             async function fetchUsageInfo(word) {
@@ -4040,9 +4072,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
                                         
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
+                                            {/* Talk to me */}
+                                            <button
+                                                onClick={() => setShowTalkToMeModal(true)}
+                                                className="p-2 lg:px-3 lg:py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-400 hover:bg-teal-600/30 transition-colors flex items-center gap-1.5"
+                                                title="Talk to me — practice with ChatGPT"
+                                            >
+                                                <i className="fas fa-comments text-xl lg:text-sm"></i>
+                                                <span className="hidden lg:inline text-sm font-bold">Talk to me</span>
+                                            </button>
+
                                             {/* 🆕 V11.62: Exercises button - icon only on mobile, text on desktop */}
-                                            <button 
-                                                onClick={() => setShowExercisesModal(true)} 
+                                            <button
+                                                onClick={() => setShowExercisesModal(true)}
                                                 className="p-2 lg:px-3 lg:py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors flex items-center gap-1.5"
                                                 title="Practice Exercises"
                                             >
@@ -8188,6 +8230,55 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     )}
 
                     {/* 🆕 V11.57: Dictionary Modal - Increased z-index to appear above all other modals */}
+                    {showTalkToMeModal && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+                            <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-lg">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-2xl font-black main-gradient uppercase italic">💬 Talk to me</h2>
+                                    <button onClick={() => setShowTalkToMeModal(false)} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                </div>
+                                <p className="text-slate-400 text-sm mb-6">Choose which words to practise. ChatGPT will open with up to 30 randomly selected words and start a conversation with you.</p>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <button onClick={() => openTalkToMe('top_favourites')} className="group bg-yellow-600 hover:bg-yellow-500 p-5 rounded-2xl text-left transition-all hover:scale-[1.02]">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="text-2xl">⭐⭐</span>
+                                            <h3 className="text-lg font-black text-white uppercase">Top Favourites</h3>
+                                        </div>
+                                        <p className="text-sm text-white/75">Words marked as level-2 favourites — your highest priority.</p>
+                                    </button>
+                                    <button onClick={() => openTalkToMe('favourites')} className="group bg-amber-600 hover:bg-amber-500 p-5 rounded-2xl text-left transition-all hover:scale-[1.02]">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="text-2xl">⭐</span>
+                                            <h3 className="text-lg font-black text-white uppercase">All Favourites</h3>
+                                        </div>
+                                        <p className="text-sm text-white/75">All words marked as favourites (level 1 and 2).</p>
+                                    </button>
+                                    <button onClick={() => openTalkToMe('passive')} className="group bg-blue-600 hover:bg-blue-500 p-5 rounded-2xl text-left transition-all hover:scale-[1.02]">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="text-2xl">🌱</span>
+                                            <h3 className="text-lg font-black text-white uppercase">Passive</h3>
+                                        </div>
+                                        <p className="text-sm text-white/75">Words you recognise but haven't fully activated yet.</p>
+                                    </button>
+                                    <button onClick={() => openTalkToMe('emerging')} className="group bg-green-600 hover:bg-green-500 p-5 rounded-2xl text-left transition-all hover:scale-[1.02]">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="text-2xl">📈</span>
+                                            <h3 className="text-lg font-black text-white uppercase">Emerging</h3>
+                                        </div>
+                                        <p className="text-sm text-white/75">Words you're starting to use but need more practice.</p>
+                                    </button>
+                                    <button onClick={() => openTalkToMe('all')} className="group bg-slate-600 hover:bg-slate-500 p-5 rounded-2xl text-left transition-all hover:scale-[1.02]">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="text-2xl">📚</span>
+                                            <h3 className="text-lg font-black text-white uppercase">All Words</h3>
+                                        </div>
+                                        <p className="text-sm text-white/75">Pick 30 random words from your entire vocabulary.</p>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {showDictionaryModal && (
                         <div className="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
                             <div className="glass-card p-8 rounded-3xl w-full max-w-2xl border-blue-500/30 my-8 max-h-[90vh] overflow-y-auto">
