@@ -42,6 +42,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [showSettings, setShowSettings] = useState(false);
             const [showExercisesModal, setShowExercisesModal] = useState(false); // 🆕 V11.59: Exercises modal
             const [showTalkToMeModal, setShowTalkToMeModal] = useState(false);
+            const [talkToMeMethod, setTalkToMeMethod] = useState(localStorage.getItem('talk_to_me_method') || 'chatgpt');
+            const [showVoiceModal, setShowVoiceModal] = useState(false);
+            const [voiceFilter, setVoiceFilter] = useState('favourites');
+            const [voiceStatus, setVoiceStatus] = useState('idle'); // idle | starting | listening | thinking | speaking
+            const [voiceHistory, setVoiceHistory] = useState([]);
+            const [voiceLiveTranscript, setVoiceLiveTranscript] = useState('');
             const [showDictionaryModal, setShowDictionaryModal] = useState(false); // 🆕 V11.55: Dictionary modal
             const [selectedWordForDict, setSelectedWordForDict] = useState(''); // 🆕 V11.55: Selected word for dictionary
             const [editingWord, setEditingWord] = useState(null);
@@ -62,6 +68,151 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [magicLoading, setMagicLoading] = useState(false);
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
             
+            function listenOnce(onInterim) {
+                return new Promise((resolve, reject) => {
+                    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    if (!SR) { reject(new Error('Speech recognition not supported')); return; }
+                    const rec = new SR();
+                    voiceRecognitionRef.current = rec;
+                    rec.lang = 'en-US';
+                    rec.interimResults = true;
+                    rec.maxAlternatives = 1;
+                    let resolved = false;
+                    rec.onresult = e => {
+                        const last = e.results[e.results.length - 1];
+                        if (last.isFinal) {
+                            resolved = true;
+                            voiceRecognitionRef.current = null;
+                            resolve(last[0].transcript.trim());
+                        } else if (onInterim) {
+                            onInterim(last[0].transcript);
+                        }
+                    };
+                    rec.onerror = e => { if (!resolved) { resolved = true; reject(e); } };
+                    rec.onend = () => { if (!resolved) { resolved = true; reject(new Error('No speech detected')); } };
+                    rec.start();
+                });
+            }
+
+            function speakOnce(text) {
+                return new Promise(resolve => {
+                    window.speechSynthesis.cancel();
+                    const utt = new SpeechSynthesisUtterance(text);
+                    utt.rate = 0.95;
+                    utt.pitch = 1.0;
+                    const voices = window.speechSynthesis.getVoices();
+                    const enVoice = voices.find(v => v.lang.startsWith('en-GB') && v.localService) ||
+                                    voices.find(v => v.lang.startsWith('en') && v.localService) ||
+                                    voices.find(v => v.lang.startsWith('en'));
+                    if (enVoice) utt.voice = enVoice;
+                    utt.onend = resolve;
+                    utt.onerror = resolve;
+                    window.speechSynthesis.speak(utt);
+                });
+            }
+
+            async function callGroqForVoice(systemPrompt, history) {
+                try {
+                    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ role: 'system', content: systemPrompt }, ...history],
+                            temperature: 0.8,
+                            max_tokens: 120
+                        })
+                    });
+                    if (!resp.ok) return null;
+                    const data = await resp.json();
+                    return data.choices?.[0]?.message?.content?.trim() || null;
+                } catch (e) { return null; }
+            }
+
+            async function runVoiceLoop(systemPrompt, history) {
+                while (voiceRunningRef.current) {
+                    setVoiceStatus('listening');
+                    setVoiceLiveTranscript('');
+                    let userText;
+                    try {
+                        userText = await listenOnce(interim => setVoiceLiveTranscript(interim));
+                    } catch (e) {
+                        if (!voiceRunningRef.current) break;
+                        continue; // silence / error → retry
+                    }
+                    if (!voiceRunningRef.current) break;
+                    setVoiceLiveTranscript('');
+                    const historyWithUser = [...history, { role: 'user', content: userText }];
+
+                    setVoiceStatus('thinking');
+                    const aiText = await callGroqForVoice(systemPrompt, historyWithUser);
+                    if (!voiceRunningRef.current) break;
+                    if (!aiText) continue;
+
+                    history = [...historyWithUser, { role: 'assistant', content: aiText }];
+                    setVoiceHistory(history);
+
+                    setVoiceStatus('speaking');
+                    await speakOnce(aiText);
+                }
+                setVoiceStatus('idle');
+            }
+
+            async function startVoiceSession(filter) {
+                if (!supabase || !groqApiKey.trim()) {
+                    alert('A Groq API key is required for built-in voice mode. Add it in Settings.');
+                    return;
+                }
+                setVoiceStatus('starting');
+                setVoiceHistory([]);
+                setVoiceLiveTranscript('');
+
+                let query = supabase.from('vocabulary_v4').select('vocabulary, synonyms, context, family, difficulty').is('deleted_at', null);
+                if (filter === 'favourites') query = query.in('favourite', [1, 2]);
+                else if (filter === 'top_favourites') query = query.eq('favourite', 2);
+                else if (filter === 'passive') query = query.eq('difficulty', 'Passive');
+                else if (filter === 'emerging') query = query.eq('difficulty', 'Emerging');
+
+                const { data, error } = await query;
+                if (error || !data || data.length === 0) { setVoiceStatus('idle'); return; }
+
+                const shuffled = [...data].sort(() => Math.random() - 0.5).slice(0, 30);
+                const wordList = shuffled.map(w => {
+                    const parts = [];
+                    if (w.family) parts.push(`(${w.family})`);
+                    if (w.synonyms) parts.push(`synonyms: ${w.synonyms}`);
+                    if (w.context) parts.push(`e.g. "${w.context}"`);
+                    return `• ${w.vocabulary}${parts.length ? ' — ' + parts.join(' | ') : ''}`;
+                }).join('\n');
+
+                const systemPrompt = `You are a friendly English vocabulary tutor. The user is a Spanish speaker practising these ${shuffled.length} words:\n\n${wordList}\n\nReview them through natural conversation: introduce words, use them in context, ask questions, explain gently when needed. VOICE MODE: every response must be under 40 words, short sentences only, no lists or bullet points. Talk like a human tutor. Start the conversation yourself now.`;
+
+                voiceRunningRef.current = true;
+
+                setVoiceStatus('thinking');
+                const opening = await callGroqForVoice(systemPrompt, []);
+                if (!voiceRunningRef.current || !opening) { setVoiceStatus('idle'); return; }
+
+                const history = [{ role: 'assistant', content: opening }];
+                setVoiceHistory(history);
+
+                setVoiceStatus('speaking');
+                await speakOnce(opening);
+
+                await runVoiceLoop(systemPrompt, history);
+            }
+
+            function stopVoiceSession() {
+                voiceRunningRef.current = false;
+                if (voiceRecognitionRef.current) {
+                    try { voiceRecognitionRef.current.stop(); } catch (e) {}
+                    voiceRecognitionRef.current = null;
+                }
+                window.speechSynthesis.cancel();
+                setVoiceStatus('idle');
+                setShowVoiceModal(false);
+            }
+
             async function openTalkToMe(filter) {
                 if (!supabase) return;
                 setShowTalkToMeModal(false);
@@ -147,6 +298,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             }
             const [dupCheck, setDupCheck] = useState({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' });
             const dupDebounceTimer = React.useRef(null);
+            const voiceRunningRef = useRef(false);
+            const voiceRecognitionRef = useRef(null);
             const [showImproveModal, setShowImproveModal] = useState(false);
             const [improveData, setImproveData] = useState(null);
             const [showMergeModal, setShowMergeModal] = useState(false);
@@ -4035,7 +4188,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.61</span>
+                                        English Booster <span className="version-text">v14.62</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4074,9 +4227,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Talk to me */}
                                             <button
-                                                onClick={() => setShowTalkToMeModal(true)}
+                                                onClick={() => talkToMeMethod === 'builtin' ? setShowVoiceModal(true) : setShowTalkToMeModal(true)}
                                                 className="p-2 lg:px-3 lg:py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-400 hover:bg-teal-600/30 transition-colors flex items-center gap-1.5"
-                                                title="Talk to me — practice with ChatGPT"
+                                                title="Talk to me — practice vocabulary"
                                             >
                                                 <i className="fas fa-comments text-xl lg:text-sm"></i>
                                                 <span className="hidden lg:inline text-sm font-bold">Talk to me</span>
@@ -4559,6 +4712,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-xs text-slate-500 mt-2">How many seconds to blur options before showing them (0 = no blur, default: 5)</p>
                                     </div>
                                     
+                                    <div>
+                                        <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Talk to me — Method</label>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => { setTalkToMeMethod('chatgpt'); localStorage.setItem('talk_to_me_method', 'chatgpt'); }}
+                                                className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${talkToMeMethod === 'chatgpt' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                                            >🤖 Open ChatGPT</button>
+                                            <button
+                                                onClick={() => { setTalkToMeMethod('builtin'); localStorage.setItem('talk_to_me_method', 'builtin'); }}
+                                                className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${talkToMeMethod === 'builtin' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                                            >🎙️ Built-in Voice</button>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-2">ChatGPT opens a browser tab. Built-in uses Groq AI + Web Speech API (requires Groq key).</p>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <button onClick={async () => {
                                             const {data} = await supabase.from('vocabulary_v4').select('*').is('deleted_at', null);
@@ -8230,6 +8398,81 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     )}
 
                     {/* 🆕 V11.57: Dictionary Modal - Increased z-index to appear above all other modals */}
+                    {showVoiceModal && (
+                        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+                            <div className="glass-card p-8 rounded-[2.5rem] w-full max-w-lg flex flex-col gap-5" style={{maxHeight: '90vh'}}>
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-black main-gradient uppercase italic">🎙️ Voice Mode</h2>
+                                    <button onClick={stopVoiceSession} className="text-slate-400 hover:text-white text-3xl">&times;</button>
+                                </div>
+
+                                {voiceStatus === 'idle' ? (
+                                    <div className="flex flex-col gap-3">
+                                        <p className="text-slate-400 text-sm mb-1">Choose which words to practise, then start:</p>
+                                        {[
+                                            { key: 'top_favourites', label: '⭐⭐ Top Favourites', desc: 'Level-2 favourites' },
+                                            { key: 'favourites',     label: '⭐ All Favourites',  desc: 'Level 1 and 2' },
+                                            { key: 'passive',        label: '🌱 Passive',          desc: 'Words you recognise' },
+                                            { key: 'emerging',       label: '📈 Emerging',         desc: "Words you're activating" },
+                                            { key: 'all',            label: '📚 All Words',        desc: 'Random selection' },
+                                        ].map(opt => (
+                                            <button
+                                                key={opt.key}
+                                                onClick={() => setVoiceFilter(opt.key)}
+                                                className={`p-3 rounded-xl text-left transition-all border flex items-center gap-3 ${voiceFilter === opt.key ? 'bg-teal-600/30 border-teal-500 text-teal-300' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                                            >
+                                                <span className="font-bold text-sm flex-1">{opt.label}</span>
+                                                <span className="text-xs text-slate-500">{opt.desc}</span>
+                                            </button>
+                                        ))}
+                                        <button
+                                            onClick={() => startVoiceSession(voiceFilter)}
+                                            className="mt-2 w-full py-4 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-2xl text-lg uppercase tracking-wide transition-all hover:scale-[1.02]"
+                                        >
+                                            🎙️ Start Conversation
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-4" style={{minHeight: 0}}>
+                                        <div className={`text-center py-2 rounded-xl font-bold text-sm animate-pulse ${
+                                            voiceStatus === 'listening' ? 'bg-red-500/20 text-red-400' :
+                                            voiceStatus === 'thinking'  ? 'bg-yellow-500/20 text-yellow-400' :
+                                            voiceStatus === 'speaking'  ? 'bg-blue-500/20 text-blue-400' :
+                                            'bg-slate-800 text-slate-500'
+                                        }`}>
+                                            {voiceStatus === 'listening' ? '🔴 Listening...' :
+                                             voiceStatus === 'thinking'  ? '🤖 Thinking...' :
+                                             voiceStatus === 'speaking'  ? '🔊 Speaking...' :
+                                             '⏳ Loading words...'}
+                                        </div>
+
+                                        <div className="overflow-y-auto flex flex-col gap-2 custom-scroll" style={{maxHeight: '42vh'}}>
+                                            {voiceHistory.map((msg, i) => (
+                                                <div key={i} className={`p-3 rounded-xl text-sm ${msg.role === 'assistant' ? 'bg-teal-900/30 border border-teal-700/30 text-teal-200' : 'bg-slate-800 border border-slate-700/30 text-slate-300'}`}>
+                                                    <span className="text-xs font-black uppercase text-slate-500 block mb-1">{msg.role === 'assistant' ? '🤖 Tutor' : '🎤 You'}</span>
+                                                    {msg.content}
+                                                </div>
+                                            ))}
+                                            {voiceLiveTranscript && (
+                                                <div className="p-3 rounded-xl text-sm bg-slate-800/50 border border-dashed border-slate-600 text-slate-400 italic">
+                                                    <span className="text-xs font-black uppercase text-slate-500 block mb-1">🎤 You (live)</span>
+                                                    {voiceLiveTranscript}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <button
+                                            onClick={stopVoiceSession}
+                                            className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-black rounded-2xl uppercase tracking-wide transition-all"
+                                        >
+                                            ⏹ Stop
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {showTalkToMeModal && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
                             <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-lg">
