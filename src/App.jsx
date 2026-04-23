@@ -69,27 +69,42 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
             
             function listenOnce(onInterim) {
-                return new Promise((resolve, reject) => {
+                return new Promise(resolve => {
                     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-                    if (!SR) { reject(new Error('Speech recognition not supported')); return; }
+                    if (!SR) { resolve(''); return; }
                     const rec = new SR();
                     voiceRecognitionRef.current = rec;
                     rec.lang = 'en-US';
                     rec.interimResults = true;
                     rec.maxAlternatives = 1;
-                    let resolved = false;
+                    let done = false;
+                    let lastInterim = '';
+
+                    const finish = text => {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timeout);
+                        voiceRecognitionRef.current = null;
+                        resolve(text.trim());
+                    };
+
+                    // 10-second hard timeout — never hang forever
+                    const timeout = setTimeout(() => {
+                        try { rec.stop(); } catch (e) {}
+                        finish(lastInterim);
+                    }, 10000);
+
                     rec.onresult = e => {
                         const last = e.results[e.results.length - 1];
                         if (last.isFinal) {
-                            resolved = true;
-                            voiceRecognitionRef.current = null;
-                            resolve(last[0].transcript.trim());
-                        } else if (onInterim) {
-                            onInterim(last[0].transcript);
+                            finish(last[0].transcript);
+                        } else {
+                            lastInterim = last[0].transcript;
+                            if (onInterim) onInterim(lastInterim);
                         }
                     };
-                    rec.onerror = e => { if (!resolved) { resolved = true; reject(e); } };
-                    rec.onend = () => { if (!resolved) { resolved = true; reject(new Error('No speech detected')); } };
+                    rec.onerror = () => finish(lastInterim);
+                    rec.onend   = () => finish(lastInterim); // always resolves, never rejects
                     rec.start();
                 });
             }
@@ -170,15 +185,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 while (voiceRunningRef.current) {
                     setVoiceStatus('listening');
                     setVoiceLiveTranscript('');
-                    let userText;
-                    try {
-                        userText = await listenOnce(interim => setVoiceLiveTranscript(interim));
-                    } catch (e) {
-                        if (!voiceRunningRef.current) break;
-                        continue; // silence / error → retry
-                    }
+                    const userText = await listenOnce(interim => setVoiceLiveTranscript(interim));
                     if (!voiceRunningRef.current) break;
                     setVoiceLiveTranscript('');
+
+                    if (!userText) {
+                        setVoiceStatus('retrying');
+                        await new Promise(r => setTimeout(r, 800));
+                        continue;
+                    }
+
                     const historyWithUser = [...history, { role: 'user', content: userText }];
 
                     setVoiceStatus('thinking');
@@ -4225,7 +4241,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.62</span>
+                                        English Booster <span className="version-text">v14.63</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8473,11 +8489,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex flex-col gap-4" style={{minHeight: 0}}>
                                         <div className={`text-center py-2 rounded-xl font-bold text-sm animate-pulse ${
                                             voiceStatus === 'listening' ? 'bg-red-500/20 text-red-400' :
+                                            voiceStatus === 'retrying'  ? 'bg-orange-500/20 text-orange-400' :
                                             voiceStatus === 'thinking'  ? 'bg-yellow-500/20 text-yellow-400' :
                                             voiceStatus === 'speaking'  ? 'bg-blue-500/20 text-blue-400' :
                                             'bg-slate-800 text-slate-500'
                                         }`}>
-                                            {voiceStatus === 'listening' ? '🔴 Listening...' :
+                                            {voiceStatus === 'listening' ? '🔴 Listening... (speak now)' :
+                                             voiceStatus === 'retrying'  ? '🔴 No speech detected, trying again...' :
                                              voiceStatus === 'thinking'  ? '🤖 Thinking...' :
                                              voiceStatus === 'speaking'  ? '🔊 Speaking...' :
                                              '⏳ Loading words...'}
