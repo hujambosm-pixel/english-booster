@@ -88,7 +88,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     return `• ${w.vocabulary}${parts.length ? ' — ' + parts.join(' | ') : ''}`;
                 }).join('\n');
 
-                const prompt = `You are a friendly conversational English vocabulary tutor. I'm a Spanish speaker learning these ${shuffled.length} English words:\n\n${wordList}\n\nReview them naturally through conversation: introduce words, use them in context, ask me questions about them, and explain gently when I'm unsure. Don't just list or drill — have a real conversation. Work through all the words gradually. Start the conversation yourself, don't wait for me.`;
+                const prompt = `You are a friendly conversational English vocabulary tutor. I'm a Spanish speaker learning these ${shuffled.length} English words:\n\n${wordList}\n\nReview them naturally through conversation: introduce words, use them in context, ask me questions about them, and explain gently when I'm unsure. Don't just list or drill — have a real conversation. Work through all the words gradually. Start the conversation yourself, don't wait for me.\n\nThe user will switch to voice mode immediately. Keep all your responses conversational, natural and spoken-friendly — short sentences, no bullet points, no lists. Talk like a friendly human tutor, not a textbook.`;
 
                 window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank');
             }
@@ -4035,7 +4035,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.6</span>
+                                        English Booster <span className="version-text">v14.61</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
