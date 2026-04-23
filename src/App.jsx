@@ -353,6 +353,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const dupDebounceTimer = React.useRef(null);
             const voiceRunningRef = useRef(false);
             const voiceRecognitionRef = useRef(null);
+            const voiceScrollRef = useRef(null);
             const [showImproveModal, setShowImproveModal] = useState(false);
             const [improveData, setImproveData] = useState(null);
             const [showMergeModal, setShowMergeModal] = useState(false);
@@ -761,6 +762,13 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 }, search ? 150 : 0);
                 return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
+
+            // Auto-scroll voice modal conversation to bottom on new messages or live transcript
+            useEffect(() => {
+                if (voiceScrollRef.current) {
+                    voiceScrollRef.current.scrollTop = voiceScrollRef.current.scrollHeight;
+                }
+            }, [voiceHistory, voiceLiveTranscript]);
 
             // 🆕 V11.4: Check recycle bin count on mount
             useEffect(() => {
@@ -4241,7 +4249,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.63</span>
+                                        English Booster <span className="version-text">v14.64</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8501,7 +8509,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                              '⏳ Loading words...'}
                                         </div>
 
-                                        <div className="overflow-y-auto flex flex-col gap-2 custom-scroll" style={{maxHeight: '42vh'}}>
+                                        <div ref={voiceScrollRef} className="overflow-y-auto flex flex-col gap-2 custom-scroll" style={{maxHeight: '42vh'}}>
                                             {voiceHistory.map((msg, i) => (
                                                 <div key={i} className={`p-3 rounded-xl text-sm ${msg.role === 'assistant' ? 'bg-teal-900/30 border border-teal-700/30 text-teal-200' : 'bg-slate-800 border border-slate-700/30 text-slate-300'}`}>
                                                     <span className="text-xs font-black uppercase text-slate-500 block mb-1">{msg.role === 'assistant' ? '🤖 Tutor' : '🎤 You'}</span>
