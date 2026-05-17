@@ -41,6 +41,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [showAddModal, setShowAddModal] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [showExercisesModal, setShowExercisesModal] = useState(false); // 🆕 V11.59: Exercises modal
+            const [showSupabasePausedModal, setShowSupabasePausedModal] = useState(false);
             const [showTalkToMeModal, setShowTalkToMeModal] = useState(false);
             const [talkToMeMethod, setTalkToMeMethod] = useState(localStorage.getItem('talk_to_me_method') || 'chatgpt');
             const [showVoiceModal, setShowVoiceModal] = useState(false);
@@ -1471,6 +1472,21 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 return 'Passive';
             }
 
+            function isSupabasePausedError(err) {
+                if (!err) return false;
+                const msg = (err.message || '').toLowerCase();
+                return (
+                    err instanceof TypeError ||          // network-level failure (fetch failed)
+                    err.status === 503 ||
+                    msg.includes('failed to fetch') ||
+                    msg.includes('network error') ||
+                    msg.includes('networkerror') ||
+                    msg.includes('connection refused') ||
+                    msg.includes('503') ||
+                    msg.includes('service unavailable')
+                );
+            }
+
             async function fetchWords(pageNum, isNewSearch = false) {
                 if (loading && !isNewSearch) return;
                 if (!supabase) {
@@ -1527,6 +1543,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                         setLoading(false);
                         return;
                     }
+                    if (error && isSupabasePausedError(error)) {
+                        if (supabaseUrl && supabaseKey) setShowSupabasePausedModal(true);
+                        setLoading(false);
+                        return;
+                    }
 
                     setTotalCount(count || 0);
                     
@@ -1545,8 +1566,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     }
                 } catch (err) {
                     console.error('❌ fetchWords error:', err);
+                    if (supabaseUrl && supabaseKey && isSupabasePausedError(err)) {
+                        setShowSupabasePausedModal(true);
+                    }
                     setHasMore(false);
-                } finally { 
+                } finally {
                     setLoading(false); 
                 }
             }
@@ -4252,7 +4276,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.65</span>
+                                        English Booster <span className="version-text">v14.66</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8714,6 +8738,48 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
+
+                    {showSupabasePausedModal && (
+                        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-md">
+                            <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-lg border-yellow-500/30">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <span className="text-4xl">⚠️</span>
+                                    <h2 className="text-2xl font-black text-yellow-400 uppercase">Database Unavailable</h2>
+                                </div>
+                                <p className="text-slate-300 text-sm leading-relaxed mb-6">
+                                    Your Supabase project may be <span className="text-yellow-400 font-bold">paused due to inactivity</span>. Free tier projects pause automatically after 7 days without activity.
+                                </p>
+                                <div className="bg-slate-800/60 rounded-2xl p-5 mb-6 space-y-2">
+                                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">To restore it:</p>
+                                    <p className="text-sm text-slate-300">1. Go to <span className="text-indigo-400 font-bold">supabase.com/dashboard</span></p>
+                                    <p className="text-sm text-slate-300">2. Find your project</p>
+                                    <p className="text-sm text-slate-300">3. Click <span className="text-green-400 font-bold">Restore project</span></p>
+                                    <p className="text-sm text-slate-300">4. Wait 1–2 minutes, then reload the app</p>
+                                </div>
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={() => window.open('https://supabase.com/dashboard', '_blank')}
+                                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl uppercase tracking-wide transition-all hover:scale-[1.02] flex items-center justify-center gap-2"
+                                    >
+                                        <i className="fas fa-external-link-alt text-sm"></i>
+                                        Go to Supabase Dashboard
+                                    </button>
+                                    <button
+                                        onClick={() => window.location.reload()}
+                                        className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white font-black rounded-2xl uppercase tracking-wide transition-all"
+                                    >
+                                        🔄 Reload App
+                                    </button>
+                                    <button
+                                        onClick={() => setShowSupabasePausedModal(false)}
+                                        className="w-full py-3 text-slate-500 hover:text-slate-300 text-sm transition-colors"
+                                    >
+                                        Dismiss
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                 </div>
             );
