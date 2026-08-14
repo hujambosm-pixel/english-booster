@@ -66,9 +66,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [originalEditData, setOriginalEditData] = useState(null);
             
             const [groqApiKey, setGroqApiKey] = useState((localStorage.getItem('groq_api_key') || '').trim());
+            const [geminiApiKey, setGeminiApiKey] = useState((localStorage.getItem('gemini_api_key') || '').trim()); // 🆕 V14.67
             const [magicLoading, setMagicLoading] = useState(false);
             const [usageInfo, setUsageInfo] = useState(null); // 🆕 V12.8: Usage frequency info
-            
+
             function listenOnce(onInterim) {
                 return new Promise(resolve => {
                     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -299,6 +300,55 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 const prompt = `You are a friendly conversational English vocabulary tutor. I'm a Spanish speaker learning these ${shuffled.length} English words:\n\n${wordList}\n\nReview them naturally through conversation: introduce words, use them in context, ask me questions about them, and explain gently when I'm unsure. Don't just list or drill — have a real conversation. Work through all the words gradually. Start the conversation yourself, don't wait for me.\n\nThe user will switch to voice mode immediately. Keep all your responses conversational, natural and spoken-friendly — short sentences, no bullet points, no lists. Talk like a friendly human tutor, not a textbook.`;
 
                 window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank');
+            }
+
+            const [magicFillModel, setMagicFillModel] = useState(null); // 🆕 V14.67: 'Gemini' | 'Groq' — which model produced the last fill
+
+            // 🆕 V14.67: Gemini 2.5 Flash call for Magic Fill — returns raw text, throws on any failure so the caller can fall back to Groq
+            const GEMINI_MAGIC_FILL_MODEL = 'gemini-2.5-flash';
+
+            async function callGeminiMagicFill(apiKey, systemContent, prompt) {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MAGIC_FILL_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                            systemInstruction: { parts: [{ text: systemContent }] },
+                            generationConfig: {
+                                temperature: 0.2,
+                                maxOutputTokens: 800,
+                                responseMimeType: 'application/json',
+                                // Thinking off: this is a short structured-output task and thinking tokens
+                                // would eat the output budget, returning a candidate with no text parts.
+                                thinkingConfig: { thinkingBudget: 0 }
+                            }
+                        })
+                    }
+                );
+
+                if (!response.ok) {
+                    let detail = '';
+                    try {
+                        const errorData = await response.json();
+                        detail = errorData.error?.message || '';
+                    } catch (e) { /* non-JSON error body */ }
+                    throw new Error(`Gemini API Error ${response.status}${detail ? ': ' + detail : ''}`);
+                }
+
+                const data = await response.json();
+                const candidate = data.candidates && data.candidates[0];
+                if (!candidate) {
+                    throw new Error(`No candidates from Gemini${data.promptFeedback?.blockReason ? ' (blocked: ' + data.promptFeedback.blockReason + ')' : ''}`);
+                }
+
+                const parts = candidate.content?.parts || [];
+                const text = parts[0]?.text || parts.map(p => p.text || '').join('');
+                if (!text || !text.trim()) {
+                    throw new Error(`Empty Gemini response${candidate.finishReason ? ' (finishReason: ' + candidate.finishReason + ')' : ''}`);
+                }
+                return text;
             }
 
             // 🆕 V13.0: Separate API call for usage frequency — always reliable
@@ -3456,12 +3506,15 @@ Return ONLY the JSON object.`;
                 if (!word) return;
                 
                 const apiKey = groqApiKey.trim();
-                
-                if (!apiKey || apiKey === '') {
-                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
+                const geminiKey = geminiApiKey.trim(); // 🆕 V14.67
+
+                if (!apiKey && !geminiKey) {
+                    alert('⚠️ Please set your Gemini or Groq API Key in Settings first!\n\nGet a FREE Groq key at: https://console.groq.com\nGet a FREE Gemini key at: https://aistudio.google.com/apikey');
                     setShowSettings(true);
                     return;
                 }
+
+                setMagicFillModel(null); // 🆕 V14.67
 
                 // 🆕 V11.38: Get current word data to check family BEFORE AI request
                 let currentData = null;
@@ -3507,46 +3560,74 @@ MANDATORY RULES FOR "${word}" (${currentFamily}):
 RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
-                    const response = await fetch(
-                        'https://api.groq.com/openai/v1/chat/completions',
-                        {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${apiKey}`
-                            },
-                            body: JSON.stringify({
-                                model: 'llama-3.3-70b-versatile',
-                                messages: [
-                                    {
-                                        role: 'system',
-                                        content: 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.'
-                                    },
-                                    {
-                                        role: 'user',
-                                        content: prompt
-                                    }
-                                ],
-                                temperature: 0.2,
-                                max_tokens: 500
-                            })
+                    const systemContent = 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.';
+
+                    let textResponse = null;
+                    let modelUsed = null;
+                    let geminiError = null;
+
+                    // 🆕 V14.67: Gemini 2.5 Flash first when a key is configured
+                    if (geminiKey) {
+                        try {
+                            textResponse = await callGeminiMagicFill(geminiKey, systemContent, prompt);
+                            modelUsed = 'Gemini';
+                            console.log('✅ Magic Fill model used: Gemini');
+                        } catch (e) {
+                            geminiError = e;
+                            textResponse = null;
+                            console.warn('⚠️ Gemini failed, falling back to Groq:', e.message);
                         }
-                    );
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        console.error('Groq API Error:', errorData);
-                        throw new Error(errorData.error?.message || `API Error ${response.status}`);
                     }
 
-                    const data = await response.json();
-                    
-                    if (!data.choices || !data.choices[0]) {
-                        throw new Error('No response from AI');
+                    // 🆕 V14.67: Groq fallback (unchanged behaviour)
+                    if (textResponse === null) {
+                        if (!apiKey) {
+                            throw new Error(`Gemini failed and no Groq API key is configured for fallback.\n\n${geminiError ? geminiError.message : ''}`);
+                        }
+
+                        const response = await fetch(
+                            'https://api.groq.com/openai/v1/chat/completions',
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${apiKey}`
+                                },
+                                body: JSON.stringify({
+                                    model: 'llama-3.3-70b-versatile',
+                                    messages: [
+                                        {
+                                            role: 'system',
+                                            content: systemContent
+                                        },
+                                        {
+                                            role: 'user',
+                                            content: prompt
+                                        }
+                                    ],
+                                    temperature: 0.2,
+                                    max_tokens: 500
+                                })
+                            }
+                        );
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            console.error('Groq API Error:', errorData);
+                            throw new Error(errorData.error?.message || `API Error ${response.status}`);
+                        }
+
+                        const data = await response.json();
+
+                        if (!data.choices || !data.choices[0]) {
+                            throw new Error('No response from AI');
+                        }
+
+                        textResponse = data.choices[0].message.content;
+                        modelUsed = 'Groq';
+                        console.log('✅ Magic Fill model used: Groq');
                     }
-                    
-                    let textResponse = data.choices[0].message.content;
-                    
+
                     
                     textResponse = textResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
                     
@@ -3628,6 +3709,9 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
                     // currentData already obtained at the beginning of function (V11.38)
+
+                    // 🆕 V14.67: Show which model produced this fill
+                    setMagicFillModel(modelUsed);
 
                     // 🆕 V13.0: Fetch usage info separately (reliable, independent call)
                     fetchUsageInfo(word);
@@ -4276,7 +4360,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.66</span>
+                                        English Booster <span className="version-text">v14.67</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -4285,7 +4369,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -4486,7 +4570,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -4582,7 +4666,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -4675,6 +4759,32 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {groqApiKey && (
                                             <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
                                                 ✓ Key configured ({groqApiKey.length} chars)
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* 🆕 V14.67: Gemini key — primary model for Magic Fill, Groq stays as automatic fallback */}
+                                    <div>
+                                        <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block tracking-widest">Gemini API Key</label>
+                                        <input
+                                            type="password"
+                                            value={geminiApiKey}
+                                            onChange={e => {
+                                                const trimmedKey = e.target.value.trim();
+                                                setGeminiApiKey(trimmedKey);
+                                                localStorage.setItem('gemini_api_key', trimmedKey);
+                                            }}
+                                            onBlur={e => {
+                                                const trimmedKey = e.target.value.trim();
+                                                setGeminiApiKey(trimmedKey);
+                                                localStorage.setItem('gemini_api_key', trimmedKey);
+                                            }}
+                                            placeholder="AIza..."
+                                            className="w-full p-4 rounded-xl text-sm font-mono"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-2">Used first for Magic Fill (gemini-2.5-flash), with Groq as automatic fallback. Get your free key at: <a href="https://aistudio.google.com/apikey" target="_blank" className="text-indigo-400 underline">Google AI Studio</a></p>
+                                        {geminiApiKey && (
+                                            <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded text-xs text-green-400">
+                                                ✓ Key configured ({geminiApiKey.length} chars)
                                             </div>
                                         )}
                                     </div>
@@ -5214,6 +5324,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
+                                    {/* 🆕 V14.67: Which model generated the fill */}
+                                    {magicFillModel && (
+                                        <div className="col-span-2 flex items-center gap-2 text-[10px]">
+                                            <span className={`font-bold px-2 py-0.5 rounded-full ${
+                                                magicFillModel === 'Gemini' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
+                                            }`}>✨ {magicFillModel}</span>
+                                            <span className="text-slate-500">generated these fields</span>
+                                        </div>
+                                    )}
                                     {/* 🆕 V12.8: Usage frequency info */}
                                     {usageInfo && (
                                         <div className="col-span-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs">
