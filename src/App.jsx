@@ -304,16 +304,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             const [magicFillModel, setMagicFillModel] = useState(null); // 🆕 V14.67: 'Gemini' | 'Groq' — which model produced the last fill
 
-            // 🆕 V14.67: Gemini 2.5 Flash call for Magic Fill — returns raw text, throws on any failure so the caller can fall back to Groq
-            const GEMINI_MAGIC_FILL_MODEL = 'gemini-2.5-flash';
+            // 🆕 V14.67: Gemini 2.5 Flash call — returns raw text, throws on any failure so the caller can fall back to Groq
+            // 🆕 V14.68: shared by Magic Fill and AI Improve; `label` only tags the console output
+            const GEMINI_MODEL = 'gemini-2.5-flash';
 
-            async function callGeminiMagicFill(apiKey, systemContent, prompt) {
+            async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill') {
                 const startedAt = Date.now();
-                console.log(`%c[Magic Fill] 🔷 Trying Gemini (${GEMINI_MAGIC_FILL_MODEL})...`, 'color:#60a5fa;font-weight:bold');
+                console.log(`%c[${label}] 🔷 Trying Gemini (${GEMINI_MODEL})...`, 'color:#60a5fa;font-weight:bold');
 
                 try {
                     const response = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MAGIC_FILL_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+                        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -339,7 +340,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         let parsed = null;
                         try { parsed = JSON.parse(bodyText); } catch (e) { /* not JSON */ }
                         const detail = parsed?.error?.message || bodyText.slice(0, 300);
-                        console.error(`[Magic Fill] ❌ Gemini HTTP ${response.status} ${response.statusText || ''}`.trim(), {
+                        console.error(`[${label}] ❌ Gemini HTTP ${response.status} ${response.statusText || ''}`.trim(), {
                             status: response.status,
                             reason: parsed?.error?.status || null,
                             message: detail,
@@ -351,7 +352,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const data = await response.json();
                     const candidate = data.candidates && data.candidates[0];
                     if (!candidate) {
-                        console.error('[Magic Fill] ❌ Gemini returned no candidates', {
+                        console.error(`[${label}] ❌ Gemini returned no candidates`, {
                             blockReason: data.promptFeedback?.blockReason || null,
                             safetyRatings: data.promptFeedback?.safetyRatings || null,
                             response: data
@@ -362,7 +363,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     const parts = candidate.content?.parts || [];
                     const text = parts[0]?.text || parts.map(p => p.text || '').join('');
                     if (!text || !text.trim()) {
-                        console.error('[Magic Fill] ❌ Gemini returned an empty text part', {
+                        console.error(`[${label}] ❌ Gemini returned an empty text part`, {
                             finishReason: candidate.finishReason || null,
                             partCount: parts.length,
                             usageMetadata: data.usageMetadata || null,
@@ -372,7 +373,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
 
                     console.log(
-                        `%c[Magic Fill] ✅ Gemini succeeded in ${Date.now() - startedAt}ms`,
+                        `%c[${label}] ✅ Gemini succeeded in ${Date.now() - startedAt}ms`,
                         'color:#4ade80;font-weight:bold',
                         { finishReason: candidate.finishReason || 'n/a', tokens: data.usageMetadata || null }
                     );
@@ -380,25 +381,26 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
                 } catch (err) {
                     // Single place where every Gemini failure surfaces, network errors included
-                    console.error(`[Magic Fill] ❌ Gemini call failed after ${Date.now() - startedAt}ms:`, err);
+                    console.error(`[${label}] ❌ Gemini call failed after ${Date.now() - startedAt}ms:`, err);
                     throw err;
                 }
             }
 
             // 🆕 V14.67: Shared "which model wrote this" chip
-            const ModelBadge = ({ model, note, prominent }) => {
+            // 🆕 V14.68: filled rather than translucent — the AI Improve panel is itself green,
+            // so a tinted green chip would disappear into its background
+            const ModelBadge = ({ model, prominent }) => {
                 if (!model) return null;
                 const isGemini = model === 'Gemini';
                 return (
                     <div className={`flex items-center gap-2 flex-wrap ${prominent ? 'justify-center' : ''}`}>
-                        <span className={`font-black rounded-full border whitespace-nowrap ${
+                        <span className={`font-black rounded-full border-2 whitespace-nowrap shadow-lg ${
                             prominent ? 'text-xs px-3 py-1.5' : 'text-[10px] px-2 py-0.5'
                         } ${
                             isGemini
-                                ? 'bg-blue-500/20 text-blue-300 border-blue-400/50'
-                                : 'bg-orange-500/20 text-orange-300 border-orange-400/50'
-                        }`}>✨ {model}</span>
-                        {note && <span className={`text-slate-400 ${prominent ? 'text-[11px]' : 'text-[10px]'}`}>{note}</span>}
+                                ? 'bg-green-400 text-green-950 border-green-200 shadow-green-500/30'
+                                : 'bg-orange-400 text-orange-950 border-orange-200 shadow-orange-500/30'
+                        }`}>{isGemini ? '✨' : '⚡'} Generated by {model}</span>
                     </div>
                 );
             };
@@ -3621,7 +3623,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     // 🆕 V14.67: Gemini 2.5 Flash first when a key is configured
                     if (geminiKey) {
                         try {
-                            textResponse = await callGeminiMagicFill(geminiKey, systemContent, prompt);
+                            textResponse = await callGemini(geminiKey, systemContent, prompt, 'Magic Fill');
                             modelUsed = 'Gemini';
                             console.log('%c[Magic Fill] ✨ Model used: GEMINI (no fallback needed)', 'color:#60a5fa;font-weight:bold');
                         } catch (e) {
@@ -3866,14 +3868,16 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                 if (!word) return;
                 
                 const apiKey = groqApiKey.trim();
-                if (!apiKey || apiKey === '') {
-                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nGet a FREE key at: https://console.groq.com');
+                const geminiKey = geminiApiKey.trim(); // 🆕 V14.68
+
+                if (!apiKey && !geminiKey) {
+                    alert('⚠️ Please set your Gemini or Groq API Key in Settings first!\n\nGet a FREE Groq key at: https://console.groq.com\nGet a FREE Gemini key at: https://aistudio.google.com/apikey');
                     setShowSettings(true);
                     return;
                 }
 
                 // 🆕 V11.38: Get current word data to check family BEFORE AI request
-                const currentWord = words.find(w => w.id === wordId) || 
+                const currentWord = words.find(w => w.id === wordId) ||
                                    flashcardWords.find(w => w.id === wordId) ||
                                    dictationWords.find(w => w.id === wordId) ||
                                    selectionWords.find(w => w.id === wordId) ||
@@ -3946,35 +3950,75 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 }`;
 
 
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
-                            messages: [
-                                { role: 'system', content: 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.' },
-                                { role: 'user', content: prompt }
-                            ],
-                            temperature: 0.2,
-                            max_tokens: 500
-                        })
-                    });
+                    const systemContent = 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.';
 
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error?.message || `API Error ${response.status}`);
+                    let rawResponse = null;
+                    let modelUsed = null;
+                    let geminiError = null;
+
+                    // 🆕 V14.68: Gemini 2.5 Flash first when a key is configured
+                    if (geminiKey) {
+                        try {
+                            rawResponse = await callGemini(geminiKey, systemContent, prompt, 'AI Improve');
+                            modelUsed = 'Gemini';
+                            console.log('%c[AI Improve] ✨ Model used: GEMINI (no fallback needed)', 'color:#4ade80;font-weight:bold');
+                        } catch (e) {
+                            geminiError = e;
+                            rawResponse = null;
+                            console.warn(
+                                apiKey
+                                    ? `%c[AI Improve] ↩️ Falling back to GROQ — reason: ${e.message}`
+                                    : `%c[AI Improve] ⛔ Gemini failed and no Groq key is set, cannot fall back — reason: ${e.message}`,
+                                'color:#fb923c;font-weight:bold'
+                            );
+                        }
+                    } else {
+                        console.log('[AI Improve] ℹ️ No Gemini key configured — using Groq directly');
                     }
 
-                    const data = await response.json();
-                    if (!data.choices || !data.choices[0]) {
-                        throw new Error('No response from AI');
+                    // 🆕 V14.68: Groq fallback (unchanged behaviour)
+                    if (rawResponse === null) {
+                        if (!apiKey) {
+                            throw new Error(`Gemini failed and no Groq API key is configured for fallback.\n\n${geminiError ? geminiError.message : ''}`);
+                        }
+
+                        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiKey}`
+                            },
+                            body: JSON.stringify({
+                                model: 'llama-3.3-70b-versatile',
+                                messages: [
+                                    { role: 'system', content: systemContent },
+                                    { role: 'user', content: prompt }
+                                ],
+                                temperature: 0.2,
+                                max_tokens: 500
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error?.message || `API Error ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        if (!data.choices || !data.choices[0]) {
+                            throw new Error('No response from AI');
+                        }
+
+                        rawResponse = data.choices[0].message.content;
+                        modelUsed = 'Groq';
+                        console.log(
+                            `%c[AI Improve] ✨ Model used: GROQ${geminiError ? ' (fallback after Gemini failure)' : ''}`,
+                            'color:#fb923c;font-weight:bold'
+                        );
                     }
-                    
-                    let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    
+
+                    let textResponse = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
                     let result;
                     try {
                         result = JSON.parse(textResponse);
@@ -4039,15 +4083,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     const currentCtx = currentWord.context ? [currentWord.context] : [];
                     const improvedCtx = result.context ? [result.context] : [];
                     
-                    // 🆕 V14.67: tag the suggestions with their source model. AI Improve is Groq-only,
-                    // so this is carried on the data itself rather than reusing magicFillModel,
-                    // which would otherwise show a stale model from an earlier Magic Fill.
-                    console.log('%c[AI Improve] ✨ Model used: GROQ', 'color:#fb923c;font-weight:bold');
-
+                    // 🆕 V14.67: tag the suggestions with the model that actually answered, carried on
+                    // the data itself rather than shared state, so the chip can never show a stale model
+                    // from an earlier Magic Fill run.
                     setImproveData({
                         wordId,
                         vocabulary: word,
-                        model: 'Groq',
+                        model: modelUsed,
                         current: {
                             synonyms: currentWord.synonyms,
                             context: currentWord.context,
@@ -4428,7 +4470,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.67</span>
+                                        English Booster <span className="version-text">v14.68</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5189,7 +5231,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* 🆕 V14.67: which model generated the fields below — pinned to the top of the form */}
                                     {magicFillModel && (
                                         <div className="col-span-2 -mb-1 py-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                                            <ModelBadge model={magicFillModel} note="generated the fields below" prominent />
+                                            <ModelBadge model={magicFillModel} prominent />
                                         </div>
                                     )}
                                     <div className="col-span-2 flex flex-col gap-1">
@@ -5649,7 +5691,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <h3 className="text-green-300 font-bold mb-2 text-center text-lg">🟢 AI SUGGESTIONS</h3>
                                         {/* 🆕 V14.67: which model produced these suggestions */}
                                         <div className="mb-4">
-                                            <ModelBadge model={improveData.model} note="generated these suggestions" prominent />
+                                            <ModelBadge model={improveData.model} prominent />
                                         </div>
 
                                         <div className="mb-6">
