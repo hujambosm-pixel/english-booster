@@ -309,9 +309,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V14.69: gemini-2.0-flash is shut down; 2.5-flash was 404ing, so use a current Flash model
             const GEMINI_MODEL = 'gemini-3.5-flash';
 
-            // `thinkingBudget: 0` is only known-good on the 2.5 family. Newer models express the same
-            // idea as thinking_level, so sending the old field risks a 400 — omit it there and give the
-            // response enough room for thinking tokens PLUS the JSON instead.
+            // 🆕 V14.70: thinking is what made Gemini slow (14-23s vs ~2s for Groq), so it is turned
+            // down to the minimum. The 2.5 family uses the legacy thinkingBudget; 3.x uses thinkingLevel
+            // ("minimal" | "low" | "medium" (default) | "high"). Sending BOTH in one request is a 400,
+            // so exactly one is set, chosen by model family.
             const geminiIs25 = GEMINI_MODEL.startsWith('gemini-2.5');
 
             async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill') {
@@ -320,10 +321,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
                 const generationConfig = {
                     temperature: 0.2,
-                    maxOutputTokens: geminiIs25 ? 800 : 2048,
-                    responseMimeType: 'application/json'
+                    // The JSON payload is short (synonyms + one sentence + family), so 800 is ample
+                    // once thinking is minimised — and it caps how long a slow call can run.
+                    maxOutputTokens: 800,
+                    responseMimeType: 'application/json',
+                    thinkingConfig: geminiIs25 ? { thinkingBudget: 0 } : { thinkingLevel: 'minimal' }
                 };
-                if (geminiIs25) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 
                 try {
                     const requestUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -386,7 +389,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     console.log(
                         `%c[${label}] ✅ Gemini succeeded in ${Date.now() - startedAt}ms`,
                         'color:#4ade80;font-weight:bold',
-                        { finishReason: candidate.finishReason || 'n/a', tokens: data.usageMetadata || null }
+                        {
+                            finishReason: candidate.finishReason || 'n/a',
+                            // thinkingTokens is the number to watch if calls are slow — it should be
+                            // small or 0 now that thinking is minimised
+                            thinkingTokens: data.usageMetadata?.thoughtsTokenCount ?? 0,
+                            thinking: geminiIs25 ? 'budget:0' : 'level:minimal',
+                            tokens: data.usageMetadata || null
+                        }
                     );
                     return text;
 
@@ -4487,7 +4497,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.69</span>
+                                        English Booster <span className="version-text">v14.70</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
