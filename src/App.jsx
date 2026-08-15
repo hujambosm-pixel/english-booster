@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
         const FAMILIES = ["Noun", "Adjective", "Adverb", "Verb", "Phrasal Verb", "Preposition", "Idiom", "Chunk"];
         const DIFFICULTIES = ["Passive", "Emerging", "Active"];
-        const DEFAULT_PROMPT = 'Define the "{word}", with exact synonyms, in context, word family and level of difficulty for language learning, in a concise way.';
 
 
         function App() {
@@ -53,8 +52,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             const [selectedWordForDict, setSelectedWordForDict] = useState(''); // 🆕 V11.55: Selected word for dictionary
             const [editingWord, setEditingWord] = useState(null);
             const [clickAction, setClickAction] = useState(localStorage.getItem('click_action') || 'wordreference');
-            const [aiPrompt, setAiPrompt] = useState(localStorage.getItem('ai_prompt') || DEFAULT_PROMPT);
-            
+
             // 🆕 V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
             const [aiSearchPrompt, setAiSearchPrompt] = useState(
                 localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: Based on corpus frequency (BNC/COCA), classify "{word}" as: very common (top 3000) / common (top 10000) / uncommon / rare / formal / literary. If there is a more commonly used EXACT synonym (truly interchangeable, same meaning), indicate it. Do NOT suggest near-synonyms.'
@@ -460,6 +458,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
             const [geminiQuota, setGeminiQuota] = useState(readGeminiQuota);
+            const [showGeminiInfo, setShowGeminiInfo] = useState(false); // 🆕 V14.73: status modal
 
             function markGeminiQuotaExhausted() {
                 const state = { exhausted: true, since: new Date().toISOString(), pacificDate: pacificDateString() };
@@ -4655,11 +4654,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
             return (
                 <div className="h-screen flex flex-col">
                     <header className="p-4 lg:p-6 bg-slate-900 border-b border-white/10 relative z-30">
+                        {/* 🆕 V14.73: AI provider status. Absolutely positioned in the header's empty
+                            top-right corner so it adds nothing to the flow — no existing element moves
+                            or resizes. Click opens the explainer modal. */}
+                        <button
+                            type="button"
+                            onClick={() => setShowGeminiInfo(true)}
+                            title="Which AI is handling your features — click for details"
+                            className={`absolute top-2 right-3 lg:top-3 lg:right-5 z-40 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] lg:text-xs font-black whitespace-nowrap transition-colors ${
+                                geminiQuota.exhausted
+                                    ? 'bg-orange-500/15 text-orange-300 border-orange-400/50 hover:bg-orange-500/25'
+                                    : 'bg-green-500/15 text-green-300 border-green-400/50 hover:bg-green-500/25'
+                            }`}
+                        >
+                            {geminiQuota.exhausted ? '⚡ Groq' : '✨ Gemini'}
+                        </button>
+
                         <div className="max-w-[1850px] mx-auto flex flex-col gap-4">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.72</span>
+                                        English Booster <span className="version-text">v14.73</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5687,6 +5702,85 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🆕 V14.73: AI PROVIDER STATUS MODAL */}
+                    {showGeminiInfo && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-3 sm:p-6 overflow-y-auto" onClick={() => setShowGeminiInfo(false)}>
+                            <div className="bg-slate-900 rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-white/10 my-4" onClick={e => e.stopPropagation()}>
+
+                                <div className="flex justify-between items-start gap-3 mb-5">
+                                    <h2 className="text-xl sm:text-2xl font-black text-white">AI provider status</h2>
+                                    <button onClick={() => setShowGeminiInfo(false)} className="text-slate-400 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
+                                </div>
+
+                                {/* Current state, in a full sentence */}
+                                <div className={`rounded-2xl p-4 mb-5 border ${
+                                    geminiQuota.exhausted
+                                        ? 'bg-orange-500/10 border-orange-400/40'
+                                        : 'bg-green-500/10 border-green-400/40'
+                                }`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className={`font-black rounded-full border px-2.5 py-1 text-xs whitespace-nowrap ${
+                                            geminiQuota.exhausted
+                                                ? 'bg-orange-500/20 text-orange-300 border-orange-400/50'
+                                                : 'bg-green-500/20 text-green-300 border-green-400/50'
+                                        }`}>{geminiQuota.exhausted ? '⚡ Groq' : '✨ Gemini'}</span>
+                                        <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Right now</span>
+                                    </div>
+                                    <p className={`text-sm leading-relaxed ${geminiQuota.exhausted ? 'text-orange-100' : 'text-green-100'}`}>
+                                        {geminiQuota.exhausted
+                                            ? "Gemini's free daily quota is used up, so Groq is handling the features listed below instead. Everything keeps working exactly as normal — the only difference is which AI answers."
+                                            : 'Gemini is handling the features listed below. If it ever becomes unavailable, Groq takes over automatically and nothing stops working.'}
+                                    </p>
+                                    {geminiQuota.exhausted && (
+                                        <p className="text-orange-200/80 text-xs mt-3 leading-relaxed">
+                                            Gemini should be back in about {Math.max(1, Math.round(msUntilPacificMidnight() / 3600000))} hour{Math.max(1, Math.round(msUntilPacificMidnight() / 3600000)) === 1 ? '' : 's'} — around {new Date(Date.now() + msUntilPacificMidnight()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} your time.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* How the fallback works */}
+                                <div className="mb-5">
+                                    <h3 className="text-white font-black text-sm uppercase tracking-wider mb-2">How this works</h3>
+                                    <p className="text-slate-300 text-sm leading-relaxed">
+                                        Gemini allows a limited number of free requests per day. While those last, it handles the
+                                        features below. When they run out, the app switches to Groq automatically — there is no
+                                        interruption, nothing to click, and no work is lost. The quota resets every 24 hours at
+                                        midnight US Pacific time, and Gemini resumes on its own from the next request onwards.
+                                    </p>
+                                </div>
+
+                                {/* Feature split */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                                        <h3 className="text-green-300 font-black text-xs uppercase tracking-wider mb-1">✨ Uses Gemini</h3>
+                                        <p className="text-slate-500 text-[11px] mb-3">falls back to Groq when the quota runs out</p>
+                                        <ul className="text-slate-300 text-sm space-y-1.5">
+                                            {['Magic Fill', 'AI Improve', 'Writing feedback', 'Dictation feedback', 'Guesswork validation', 'Translation validation', 'Selection explanations'].map(f => (
+                                                <li key={f} className="flex gap-2"><span className="text-green-400">•</span>{f}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+
+                                    <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                                        <h3 className="text-orange-300 font-black text-xs uppercase tracking-wider mb-1">⚡ Always uses Groq</h3>
+                                        <p className="text-slate-500 text-[11px] mb-3">never changes, whatever the badge says</p>
+                                        <ul className="text-slate-300 text-sm space-y-1.5">
+                                            {['Talk to me', 'All audio / TTS', 'AI search', 'Spell check', 'Guesswork hints', 'Selection options', 'Usage frequency badge', 'Find & Merge'].map(f => (
+                                                <li key={f} className="flex gap-2"><span className="text-orange-400">•</span>{f}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <p className="text-slate-500 text-xs mt-5 leading-relaxed">
+                                    The right-hand list never switches provider — those features always run on Groq regardless of
+                                    whether the badge shows Gemini or Groq.
+                                </p>
+
                             </div>
                         </div>
                     )}
