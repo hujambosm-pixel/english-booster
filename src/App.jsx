@@ -650,7 +650,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const MAX_DICTATION_PLAYS = 4;
             
             // 🆕 V14.6: Dictation AI feedback states
-            const [dictationAIFeedback, setDictationAIFeedback] = useState(null);
+            const [dictationDiff, setDictationDiff] = useState(null); // 🆕 V14.75: single source of truth
+            const [dictationExplanations, setDictationExplanations] = useState(null); // 🆕 V14.75: AI text only
             const [dictationAILoading, setDictationAILoading] = useState(false);
             const [dictationPopup, setDictationPopup] = useState(null);
             
@@ -817,7 +818,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                             setDictationDifficulty('');
                             setDictationPlayCount(0);
                             setDictationPlaySpeed('normal');
-                            setDictationAIFeedback(null);
+                            setDictationExplanations(null); setDictationDiff(null); setDictationNoticeCount(0);
                             setDictationPopup(null);
                             
                             // Auto-play the next word after a short delay
@@ -1703,6 +1704,22 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 accent: 'Accents/diacritics'
             };
 
+            // 🆕 V14.75: distinguishes a misspelling from a genuinely different word
+            function editDistance(a, b) {
+                const m = a.length, n = b.length;
+                if (!m) return n;
+                if (!n) return m;
+                let prev = Array.from({ length: n + 1 }, (_, j) => j);
+                for (let i = 1; i <= m; i++) {
+                    const cur = [i];
+                    for (let j = 1; j <= n; j++) {
+                        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                    }
+                    prev = cur;
+                }
+                return prev[n];
+            }
+
             // Only called when two words share a dictationKey, so one of these always applies.
             function noticeKind(userWord, correctWord) {
                 const u = stripEdgePunctuation(userWord), c = stripEdgePunctuation(correctWord);
@@ -1721,11 +1738,15 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 if (!correctAnswer) return { highlighted: '', errorCount: 0, noticeCount: 0 };
 
                 // 🆕 V11.6: Empty input should be marked as error
+                // 🆕 V14.75: returns the same token shape as the main path, so the renderer works
                 if (!userInput || userInput.trim() === '') {
-                    const correctWords = correctAnswer.trim().split(/\s+/);
+                    const missing = correctAnswer.trim().split(/\s+/).map((w, idx) => ({
+                        id: idx + 1, kind: 'missing-word', typed: '', expected: w
+                    }));
                     return {
-                        highlighted: <span className="text-red-400 italic">(No answer provided)</span>,
-                        errorCount: correctWords.length,
+                        tokens: missing.map(e => ({ type: 'error', ...e })),
+                        errors: missing,
+                        errorCount: missing.length,
                         noticeCount: 0
                     };
                 }
@@ -1773,34 +1794,79 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     k = end;
                 }
 
+                // 🆕 V14.75: returns plain data, not JSX. This result is the single source of truth
+                // for the counters, the annotations and the difficulty written to Supabase — the AI
+                // only ever explains these findings, it never produces or alters them.
                 let errorCount = 0, noticeCount = 0;
-                const highlighted = merged.map((o, k) => {
+                const errors = [];
+                const tokens = merged.map(o => {
                     if (o.op === 'equal') {
-                        const u = userWords[o.i], c = correctWords[o.j];
-                        if (u === c) return <span key={k} className="text-green-300">{u} </span>;
-                        const kind = noticeKind(u, c);
+                        const typed = userWords[o.i], expected = correctWords[o.j];
+                        if (typed === expected) return { type: 'match', typed };
                         noticeCount++;
-                        return (
-                            <span
-                                key={k}
-                                className="text-amber-300 border-b border-dashed border-amber-400/70 cursor-help"
-                                title={`${NOTICE_LABELS[kind]} — accepted variant, not counted as an error (expected: "${c}")`}
-                            >{u}<sup className="text-[9px] text-amber-400 ml-0.5">▵</sup>{' '}</span>
-                        );
+                        return { type: 'notice', typed, expected, kind: noticeKind(typed, expected) };
                     }
+
+                    const id = ++errorCount;
+                    let entry;
                     if (o.op === 'wrong') {
-                        errorCount++;
-                        return <span key={k} className="text-red-400 font-bold line-through" title={`Expected: "${correctWords[o.j]}"`}>{userWords[o.i]} </span>;
+                        const typed = userWords[o.i], expected = correctWords[o.j];
+                        // Near-identical LONG words are misspellings; short ones (was/is, cat/car)
+                        // are distinct words even at a small edit distance, so they stay wrong-word.
+                        const longEnough = Math.max(typed.length, expected.length) >= 5;
+                        const kind = longEnough && editDistance(typed.toLowerCase(), expected.toLowerCase()) <= 2
+                            ? 'spelling' : 'wrong-word';
+                        entry = { id, kind, typed, expected };
+                    } else if (o.op === 'extra') {
+                        entry = { id, kind: 'extra-word', typed: userWords[o.i], expected: '' };
+                    } else {
+                        entry = { id, kind: 'missing-word', typed: '', expected: correctWords[o.j] };
                     }
-                    if (o.op === 'extra') {
-                        errorCount++;
-                        return <span key={k} className="text-red-400 font-bold line-through" title="Extra word">{userWords[o.i]} </span>;
-                    }
-                    errorCount++;
-                    return <span key={k} className="text-red-400 font-bold" title="Missing word">[{correctWords[o.j]}] </span>;
+                    errors.push(entry);
+                    return { type: 'error', ...entry };
                 });
 
-                return { highlighted, errorCount, noticeCount };
+                return { tokens, errors, errorCount, noticeCount };
+            }
+
+            // 🆕 V14.75: fixed annotation format, identical on every run:
+            //   wrong word   → typed struck through, correct word in green
+            //   missing word → [+word] in green
+            //   extra word   → [-word] struck through
+            //   notice       → amber with the ▵ marker, never counted
+            function renderDictationDiff(diff, onErrorClick) {
+                if (!diff || !diff.tokens) return null;
+                return diff.tokens.map((t, k) => {
+                    if (t.type === 'match') return <span key={k} className="text-green-300">{t.typed} </span>;
+
+                    if (t.type === 'notice') return (
+                        <span
+                            key={k}
+                            className="text-amber-300 border-b border-dashed border-amber-400/70 cursor-help"
+                            title={`${NOTICE_LABELS[t.kind] || 'Accepted variant'} — accepted variant, not counted as an error (expected: "${t.expected}")`}
+                        >{t.typed}<sup className="text-[9px] text-amber-400 ml-0.5">▵</sup>{' '}</span>
+                    );
+
+                    const wrap = 'cursor-pointer border-b-2 border-dashed border-red-400/60 hover:border-red-300';
+                    const click = e => { e.stopPropagation(); if (onErrorClick) onErrorClick(t, e.currentTarget); };
+
+                    if (t.kind === 'missing-word') return (
+                        <span key={k} onClick={click} className={wrap} title="Missing word — click for details">
+                            <span className="text-green-400 font-bold">[+{t.expected}]</span>{' '}
+                        </span>
+                    );
+                    if (t.kind === 'extra-word') return (
+                        <span key={k} onClick={click} className={wrap} title="Extra word — click for details">
+                            <span className="text-red-400 font-bold line-through">[-{t.typed}]</span>{' '}
+                        </span>
+                    );
+                    return (
+                        <span key={k} onClick={click} className={wrap} title="Click for details">
+                            <span className="text-red-400 font-bold line-through opacity-80">{t.typed}</span>
+                            <span className="text-green-400 font-bold"> {t.expected}</span>{' '}
+                        </span>
+                    );
+                });
             }
 
             // 🆕 V11.5: Calculate difficulty based on error count
@@ -3183,87 +3249,75 @@ Return ONLY the JSON object.`;
                 }
             }
 
-            // 🆕 V14.6: Evaluate dictation with AI — DeepSeek R1 + fallback
-            async function evaluateDictation(userInput, correctText) {
+            // 🆕 V14.75: EXPLANATION ONLY. The local diff has already decided what the errors are;
+            // this call may only say WHY each one is an error. It never counts, adds, removes or
+            // reclassifies anything, and the exercise renders fully with or without it.
+            async function explainDictationErrors(diff, correctText, userInput) {
                 const apiKey = groqApiKey.trim();
-                if ((!apiKey && !geminiApiKey.trim()) || !userInput.trim()) return;
+                if ((!apiKey && !geminiApiKey.trim()) || !diff || diff.errors.length === 0) return;
                 setDictationAILoading(true);
                 try {
-                    const systemPrompt = `You are a strict Cambridge English teacher correcting a dictation exercise. The student heard a sentence and transcribed it. Compare their transcription to the original word-by-word and character-by-character.
+                    const systemPrompt = `You are a Cambridge English teacher explaining dictation mistakes to a student.
 
-Every difference you find MUST be sorted into exactly ONE of two categories.
+You are given a list of errors that have ALREADY been identified and classified by the application.
+Your ONLY job is to explain, for each one, why it is an error.
 
-━━━ CATEGORY 1 — REAL ERRORS (these count towards the grade) ━━━
-- Wrong word: a different word entirely (e.g. "about" instead of "above")
-- Missing words
-- Extra words added by the student
-- Genuine spelling mistakes (a real misspelling, not a regional variant)
-- Grammatical errors (wrong tense, wrong number, wrong article...)
+━━━ ABSOLUTE RULES ━━━
+- Do NOT count errors. Do NOT add errors. Do NOT remove errors. Do NOT reclassify them.
+- Do NOT comment on anything that is not in the list. Spelling variants (colour/color),
+  punctuation, capitalisation and accents have deliberately been excluded and are NOT errors.
+- Return exactly one explanation per error id you are given, no more and no fewer.
+- Keep each explanation under 20 words, concrete and useful.
 
-━━━ CATEGORY 2 — NOTICES (these DO NOT count and NEVER affect the grade) ━━━
-- Dialect variants: British vs American spelling. prioritise/prioritize, colour/color,
-  centre/center, travelling/traveling, defence/defense are all CORRECT — never a real error.
-- Final punctuation, missing or extra (a missing full stop is a notice, not an error)
-- Initial capitalisation (lower-case first word is a notice, not an error)
-- Accents and diacritics (café/cafe)
-
-If a difference could plausibly sit in either category, put it in NOTICES.
-
-━━━ ABSOLUTE PROHIBITIONS ━━━
-- NEVER produce a correction where <del> and <ins> contain identical text
-- NEVER count a notice in error_count
-- Do NOT add commentary — only mark actual differences
-
-━━━ CAMBRIDGE GRADING (real errors only — ignore notices entirely) ━━━
-- 0 real errors → C2
-- 1 real error  → C1
-- 2 real errors → B2
-- 3+ real errors → B1
+━━━ WHAT MAKES A GOOD EXPLANATION ━━━
+- spelling     → name the rule or letters involved ("double 'l' before -ing")
+- wrong-word   → contrast the meanings ("'above' means higher; 'about' means concerning")
+- missing-word → say what its grammatical job was ("article needed before a singular noun")
+- extra-word   → say why it does not belong ("no preposition needed after this verb")
 
 Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking text:
 {
-  "annotated_text": "Student's text. REAL ERRORS: <del>wrong</del><ins>correct</ins> for substitutions/misspellings, <ins>missing-word</ins> for missing words, <del>extra-word</del> for extra words. NOTICES: wrap the student's word in <var>word</var> and mark NOTHING else on it. Keep all other words exactly as written.",
-  "corrections_list": [
-    {"id": 1, "original": "wrong", "corrected": "correct", "type": "spelling/missing-word/extra-word/wrong-word/grammar", "explanation": "brief explanation"}
-  ],
-  "notices_list": [
-    {"original": "student's word", "expected": "original word", "type": "dialect/punctuation/capitalisation/accent", "explanation": "brief reason this is acceptable"}
-  ],
-  "error_count": 0,
-  "notice_count": 0,
-  "grade": "C2/C1/B2/B1"
-}
-error_count MUST equal the length of corrections_list. notice_count MUST equal the length of notices_list.`;
-                    const userPrompt = `ORIGINAL SENTENCE: "${correctText}"
+  "explanations": [
+    {"id": 1, "explanation": "under 20 words, why this specific error is an error"}
+  ]
+}`;
+                    const errorLines = diff.errors.map(e => {
+                        if (e.kind === 'missing-word') return `id ${e.id} [missing-word] the student omitted "${e.expected}"`;
+                        if (e.kind === 'extra-word') return `id ${e.id} [extra-word] the student added "${e.typed}"`;
+                        return `id ${e.id} [${e.kind}] the student wrote "${e.typed}" instead of "${e.expected}"`;
+                    }).join('\n');
 
+                    const userPrompt = `ORIGINAL SENTENCE: "${correctText}"
 STUDENT'S TRANSCRIPTION: "${userInput}"
 
-Compare every single word and character, then sort each difference into REAL ERRORS or NOTICES.
+ERRORS ALREADY IDENTIFIED (explain these and ONLY these):
+${errorLines}
 
-Think step by step:
-Step 1 — List every difference between original and transcription.
-Step 2 — For each one, decide: is it a dialect variant, final punctuation, initial capitalisation,
-         or an accent? If YES it is a NOTICE. Otherwise classify it as wrong-word, missing-word,
-         extra-word, spelling or grammar, and it is a REAL ERROR.
-Step 3 — Put real errors in corrections_list, notices in notices_list. Never both.
-Step 4 — Build annotated_text: <del>/<ins> for real errors, <var> for notices.
-Step 5 — Set error_count from real errors ONLY, and assign the grade from that number alone.
+Return one explanation for each id listed above. Explain only; change nothing.`;
 
-Return ONLY the JSON object.`;
-                    const feedback = await aiGenerateWithFallback({
+                    const result = await aiGenerateWithFallback({
                         label: 'Dictation',
                         systemContent: systemPrompt,
                         userPrompt,
-                        maxOutputTokens: 1500,
+                        maxOutputTokens: 1200,
                         temperature: 0.0,
                         groqFallback: () => callGroqWithFallback(apiKey, [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
-                        ], 1500)
+                        ], 1200)
                     });
-                    setDictationAIFeedback(feedback);
+
+                    // Keep only explanations matching an error the local diff actually found, so a
+                    // stray or invented item can never reach the screen.
+                    const validIds = new Set(diff.errors.map(e => e.id));
+                    const explanations = (result && Array.isArray(result.explanations) ? result.explanations : [])
+                        .filter(x => x && validIds.has(Number(x.id)))
+                        .map(x => ({ id: Number(x.id), explanation: String(x.explanation || '').trim() }));
+
+                    setDictationExplanations(explanations);
                 } catch (error) {
-                    console.error('Dictation AI evaluation error:', error);
+                    // Explanations are optional — the diff is already on screen either way
+                    console.warn('Dictation explanation unavailable (diff unaffected):', error.message);
                 } finally {
                     setDictationAILoading(false);
                 }
@@ -4792,7 +4846,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.74</span>
+                                        English Booster <span className="version-text">v14.75</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -7021,18 +7075,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         
                                                         if (!showDictationAnswer) {
                                                             // First Enter: Check answer
-                                                            const { errorCount, noticeCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                            // 🆕 V14.75: the local diff decides everything shown and saved
+                                                            const diff = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                            const { errorCount, noticeCount } = diff;
                                                             const difficulty = calculateDifficulty(errorCount);
+                                                            setDictationDiff(diff);
                                                             setDictationErrorCount(errorCount);
                                                             setDictationNoticeCount(noticeCount);
                                                             setDictationDifficulty(difficulty);
                                                             setShowDictationAnswer(true);
-                                                            setDictationAIFeedback(null);
+                                                            setDictationExplanations(null);
                                                             setDictationPopup(null);
-                                                            // 🆕 V14.6: Call AI for precise error analysis
-                                                            if (groqApiKey.trim()) {
-                                                                evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
-                                                            }
+                                                            // 🆕 V14.75: optional explanations only — never changes the counts above
+                                                            explainDictationErrors(diff, dictationWords[dictationIndex].context, dictationInput);
                                                             // Save immediately so closing won't lose data
                                                             try {
                                                                 const w = dictationWords[dictationIndex];
@@ -7085,18 +7140,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <button
                                                     onClick={async () => {
                                                         // 🆕 V11.5: Calculate errors and difficulty
-                                                        const { errorCount, noticeCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                        // 🆕 V14.75: the local diff decides everything shown and saved
+                                                        const diff = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                        const { errorCount, noticeCount } = diff;
                                                         const difficulty = calculateDifficulty(errorCount);
+                                                        setDictationDiff(diff);
                                                         setDictationErrorCount(errorCount);
                                                         setDictationNoticeCount(noticeCount);
                                                         setDictationDifficulty(difficulty);
                                                         setShowDictationAnswer(true);
-                                                        setDictationAIFeedback(null);
+                                                        setDictationExplanations(null);
                                                         setDictationPopup(null);
-                                                        // 🆕 V14.6: Call AI for precise error analysis (if API key available)
-                                                        if (groqApiKey.trim()) {
-                                                            evaluateDictation(dictationInput, dictationWords[dictationIndex].context);
-                                                        }
+                                                        // 🆕 V14.75: optional explanations only — never changes the counts above
+                                                        explainDictationErrors(diff, dictationWords[dictationIndex].context, dictationInput);
                                                         // Save immediately so closing won't lose data
                                                         try {
                                                             const w = dictationWords[dictationIndex];
@@ -7151,33 +7207,29 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 >ℹ️</button>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Errors</p>
-                                                    <p className="text-2xl font-black text-white">{dictationAIFeedback ? dictationAIFeedback.error_count : dictationErrorCount}</p>
+                                                    <p className="text-2xl font-black text-white">{dictationErrorCount}</p>
                                                 </div>
                                                 {/* 🆕 V14.74: notices are shown but never counted as errors */}
-                                                {(dictationAIFeedback ? (dictationAIFeedback.notice_count || 0) : dictationNoticeCount) > 0 && (
+                                                {dictationNoticeCount > 0 && (
                                                     <>
                                                         <div className="h-12 w-px bg-slate-700"></div>
                                                         <div className="text-center cursor-help" title="Accepted variants — British/American spelling, final punctuation, initial capitalisation or accents. These do not affect your grade or the word's difficulty.">
                                                             <p className="text-xs uppercase font-black text-amber-500/80 mb-1">Notices ▵</p>
-                                                            <p className="text-2xl font-black text-amber-300">{dictationAIFeedback ? (dictationAIFeedback.notice_count || 0) : dictationNoticeCount}</p>
+                                                            <p className="text-2xl font-black text-amber-300">{dictationNoticeCount}</p>
                                                         </div>
                                                     </>
                                                 )}
                                                 <div className="h-12 w-px bg-slate-700"></div>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Grade</p>
+                                                    {/* 🆕 V14.75: derived from the local error count, so it never changes between runs */}
                                                     <p className={`text-2xl font-black ${
-                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'C2' ? 'text-green-400' :
-                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'C1' ? 'text-teal-400' :
-                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'B2' ? 'text-yellow-400' :
-                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'Active' ? 'text-green-400' :
-                                                        (dictationAIFeedback?.grade || dictationDifficulty) === 'Emerging' ? 'text-yellow-400' :
+                                                        dictationErrorCount === 0 ? 'text-green-400' :
+                                                        dictationErrorCount === 1 ? 'text-teal-400' :
+                                                        dictationErrorCount === 2 ? 'text-yellow-400' :
                                                         'text-red-400'
                                                     }`}>
-                                                        {dictationAIFeedback?.grade
-                                                            ? (dictationAIFeedback.grade === 'C2' ? '🏆 C2' : dictationAIFeedback.grade === 'C1' ? '⭐ C1' : dictationAIFeedback.grade === 'B2' ? '📝 B2' : '🔴 B1')
-                                                            : (dictationDifficulty === 'Active' ? '🟢 ' : dictationDifficulty === 'Emerging' ? '🟡 ' : '🔴 ') + dictationDifficulty
-                                                        }
+                                                        {dictationErrorCount === 0 ? '🏆 C2' : dictationErrorCount === 1 ? '⭐ C1' : dictationErrorCount === 2 ? '📝 B2' : '🔴 B1'}
                                                     </p>
                                                 </div>
                                             </div>
@@ -7187,60 +7239,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
                                                         <span>📝</span> Your Answer
-                                                        {dictationAILoading && <span className="text-blue-400 text-xs font-normal normal-case animate-pulse">🤖 AI analysing...</span>}
-                                                        {dictationAIFeedback && !dictationAILoading && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
+                                                        {dictationAILoading && <span className="text-blue-400 text-xs font-normal normal-case animate-pulse">🤖 explanations loading...</span>}
+                                                        {dictationDiff && dictationDiff.errorCount > 0 && !dictationAILoading && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
                                                     </h4>
-                                                    {dictationAIFeedback ? (
-                                                        <div
-                                                            className="text-base text-white leading-loose"
-                                                            onClick={(e) => {
-                                                                const target = e.target.closest('[data-dict-correction-id]');
-                                                                if (target && dictationAIFeedback?.corrections_list) {
-                                                                    const id = parseInt(target.dataset.dictCorrectionId);
-                                                                    const correction = dictationAIFeedback.corrections_list.find(c => c.id === id);
-                                                                    if (correction) {
-                                                                        const rect = target.getBoundingClientRect();
-                                                                        setDictationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, yAbove: rect.top - 8, correction });
-                                                                        e.stopPropagation();
-                                                                    }
-                                                                }
-                                                            }}
-                                                            dangerouslySetInnerHTML={{ __html: (() => {
-                                                                let html = (dictationAIFeedback.annotated_text || dictationInput);
-                                                                html = html.replace(/<(?!\/?(?:del|ins|var)(?:\s|>))[^>]*>/g, '');
-                                                                let corrId = 0;
-                                                                html = html.replace(/<del>(.*?)<\/del><ins>(.*?)<\/ins>/g, (match, del_text, ins_text) => {
-                                                                    corrId++;
-                                                                    return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;border-bottom:2px dashed #f87171;padding-bottom:1px"><span style="color:#f87171;text-decoration:line-through;opacity:0.8">' + del_text + '</span><span style="color:#4ade80;font-weight:bold"> ' + ins_text + '</span></span>';
-                                                                });
-                                                                html = html.replace(/<ins>(.*?)<\/ins>/g, (match, ins_text) => {
-                                                                    corrId++;
-                                                                    return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;color:#4ade80;font-weight:bold;border-bottom:2px dashed #4ade80;padding-bottom:1px"> [+' + ins_text + ']</span>';
-                                                                });
-                                                                html = html.replace(/<del>(.*?)<\/del>/g, (match, del_text) => {
-                                                                    corrId++;
-                                                                    return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;color:#f87171;text-decoration:line-through;opacity:0.8;border-bottom:2px dashed #f87171;padding-bottom:1px">' + del_text + '</span>';
-                                                                });
-                                                                // 🆕 V14.74: notices — accepted variants, amber and never counted. Deliberately
-                                                                // not given a correction id: they are not corrections, so they open no popup.
-                                                                html = html.replace(/<var>(.*?)<\/var>/g, (match, var_text) => {
-                                                                    const note = (dictationAIFeedback.notices_list || []).find(nx => nx && nx.original === var_text);
-                                                                    const label = note
-                                                                        ? (NOTICE_LABELS[note.type] || 'Accepted variant') + ' — not counted as an error' + (note.expected ? ' (expected: "' + note.expected + '")' : '')
-                                                                        : 'Accepted variant — not counted as an error';
-                                                                    return '<span title="' + label.replace(/"/g, '&quot;') + '" style="cursor:help;color:#fcd34d;border-bottom:1px dashed rgba(251,191,36,0.7)">' + var_text + '<sup style="font-size:9px;color:#fbbf24;margin-left:2px">▵</sup></span>';
-                                                                });
-                                                                return html;
-                                                            })() }}
-                                                        />
-                                                    ) : (
-                                                        <div className="text-base text-white leading-loose">
-                                                            {dictationInput
-                                                                ? highlightDifferences(dictationInput, dictationWords[dictationIndex].context).highlighted
-                                                                : <span className="text-slate-600 italic">No input</span>
-                                                            }
-                                                        </div>
-                                                    )}
+                                                    {/* 🆕 V14.75: rendered from the local diff only, so the annotations are identical
+                                                        on every run and appear immediately — the AI never touches this. */}
+                                                    <div className="text-base text-white leading-loose">
+                                                        {dictationDiff
+                                                            ? renderDictationDiff(dictationDiff, (token, el) => {
+                                                                const rect = el.getBoundingClientRect();
+                                                                setDictationPopup({ x: rect.left + rect.width / 2, y: rect.bottom + 8, yAbove: rect.top - 8, error: token });
+                                                            })
+                                                            : <span className="text-slate-600 italic">No input</span>
+                                                        }
+                                                    </div>
 
                                                     {/* Correction popup - smart positioning */}
                                                     {dictationPopup && (() => {
@@ -7255,31 +7267,33 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 style={{ left: left + 'px', top: top + 'px', transform: 'translateX(-50%)', width: pw + 'px' }}
                                                                 onClick={(e) => e.stopPropagation()}
                                                             >
+                                                                {/* 🆕 V14.75: the correction itself comes from the local diff and is always
+                                                                    present; the AI explanation is optional extra text below it. */}
                                                                 <div className="flex justify-between items-start mb-2">
                                                                     <span className={`text-xs uppercase font-black ${
-                                                                        dictationPopup.correction.type === 'spelling' ? 'text-red-300' :
-                                                                        dictationPopup.correction.type === 'wrong-word' ? 'text-red-400' :
-                                                                        dictationPopup.correction.type === 'missing-word' ? 'text-yellow-400' :
-                                                                        dictationPopup.correction.type === 'extra-word' ? 'text-orange-400' :
-                                                                        dictationPopup.correction.type === 'punctuation' ? 'text-purple-400' :
-                                                                        'text-blue-400'
+                                                                        dictationPopup.error.kind === 'spelling' ? 'text-red-300' :
+                                                                        dictationPopup.error.kind === 'wrong-word' ? 'text-red-400' :
+                                                                        dictationPopup.error.kind === 'missing-word' ? 'text-yellow-400' :
+                                                                        'text-orange-400'
                                                                     }`}>
-                                                                        {dictationPopup.correction.type === 'spelling' ? '🔤' :
-                                                                         dictationPopup.correction.type === 'wrong-word' ? '❌' :
-                                                                         dictationPopup.correction.type === 'missing-word' ? '➕' :
-                                                                         dictationPopup.correction.type === 'extra-word' ? '➖' :
-                                                                         dictationPopup.correction.type === 'punctuation' ? '📌' : '🔠'} {dictationPopup.correction.type}
+                                                                        {dictationPopup.error.kind === 'spelling' ? '🔤' :
+                                                                         dictationPopup.error.kind === 'wrong-word' ? '❌' :
+                                                                         dictationPopup.error.kind === 'missing-word' ? '➕' : '➖'} {dictationPopup.error.kind}
                                                                     </span>
                                                                     <button onClick={() => setDictationPopup(null)} className="text-slate-400 hover:text-white text-lg leading-none ml-3">&times;</button>
                                                                 </div>
-                                                                {dictationPopup.correction.original && (
-                                                                    <p className="text-sm mb-1">
-                                                                        <span className="text-red-300 line-through">{dictationPopup.correction.original}</span>
-                                                                        <span className="text-white mx-2">→</span>
-                                                                        <span className="text-green-300 font-bold">{dictationPopup.correction.corrected}</span>
-                                                                    </p>
-                                                                )}
-                                                                <p className="text-slate-300 text-sm">{dictationPopup.correction.explanation}</p>
+                                                                <p className="text-sm mb-2">
+                                                                    {dictationPopup.error.typed && <span className="text-red-300 line-through">{dictationPopup.error.typed}</span>}
+                                                                    {dictationPopup.error.typed && dictationPopup.error.expected && <span className="text-white mx-2">→</span>}
+                                                                    {dictationPopup.error.expected && <span className="text-green-300 font-bold">{dictationPopup.error.expected}</span>}
+                                                                    {!dictationPopup.error.expected && <span className="text-slate-400 ml-2 text-xs">(should not be there)</span>}
+                                                                </p>
+                                                                {(() => {
+                                                                    const found = (dictationExplanations || []).find(x => x.id === dictationPopup.error.id);
+                                                                    if (found && found.explanation) return <p className="text-slate-300 text-sm">{found.explanation}</p>;
+                                                                    if (dictationAILoading) return <p className="text-slate-500 text-sm italic">Explanation loading…</p>;
+                                                                    return <p className="text-slate-500 text-sm italic">No explanation available.</p>;
+                                                                })()}
                                                             </div>
                                                         );
                                                     })()}
@@ -7315,7 +7329,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
-                                                            setDictationAIFeedback(null);
+                                                            setDictationExplanations(null); setDictationDiff(null); setDictationNoticeCount(0);
                                                             setDictationPopup(null);
                                                         } else {
                                                             alert('🎉 Exercise completed!');
@@ -7328,7 +7342,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setDictationDifficulty('');
                                                             setDictationPlayCount(0);
                                                             setDictationPlaySpeed('normal');
-                                                            setDictationAIFeedback(null);
+                                                            setDictationExplanations(null); setDictationDiff(null); setDictationNoticeCount(0);
                                                             setDictationPopup(null);
                                                             setShowExercisesModal(true);
                                                         }
