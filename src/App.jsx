@@ -3564,6 +3564,93 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
             }
 
             // 🆕 V14.6: Validate translation — DeepSeek R1 + fallback, same quality as Writing
+            // 🆕 V14.77: rebuild the annotations from corrections_list so what is marked in the text
+            // always corresponds 1:1 to what is listed. Returns null when nothing could be located.
+            function buildAnnotatedFromCorrections(text, corrections) {
+                const lower = text.toLowerCase();
+                const used = new Array(text.length).fill(false);
+                const ranges = [];
+                // longest first, so a short original cannot claim text inside a longer one
+                const ordered = [...corrections].sort((a, b) => (b.original || '').length - (a.original || '').length);
+
+                for (const c of ordered) {
+                    const orig = (c.original || '').trim();
+                    if (!orig) continue;
+                    let from = 0, idx;
+                    while ((idx = lower.indexOf(orig.toLowerCase(), from)) !== -1) {
+                        if (!used.slice(idx, idx + orig.length).some(Boolean)) {
+                            for (let i = idx; i < idx + orig.length; i++) used[i] = true;
+                            ranges.push({ start: idx, end: idx + orig.length, corrected: c.corrected || '', id: c.id });
+                            break;
+                        }
+                        from = idx + 1;
+                    }
+                }
+                if (!ranges.length) return null;
+
+                ranges.sort((a, b) => a.start - b.start);
+                let out = '', pos = 0;
+                for (const r of ranges) {
+                    out += text.slice(pos, r.start) + '<del>' + text.slice(r.start, r.end) + '</del><ins>' + r.corrected + '</ins>';
+                    pos = r.end;
+                }
+                return out + text.slice(pos);
+            }
+
+            // 🆕 V14.77: make grade, summary and annotations agree. corrections_list is the authority:
+            // the model was reporting an error in its feedback and lowering the grade while leaving
+            // the text unmarked, so nothing was clickable.
+            function reconcileTranslationResult(raw, userTranslation) {
+                console.log('[Translation] raw AI response:', raw);
+
+                const listed = Array.isArray(raw?.corrections_list) ? raw.corrections_list : [];
+
+                // Corrections whose "original" appears in the answer can be shown inline. Ones that
+                // cannot (e.g. a missing vocabulary word) are still real, but listed separately.
+                const inline = [], general = [];
+                listed.forEach(c => {
+                    if (!c) return;
+                    const orig = (c.original || '').trim();
+                    const found = orig && userTranslation.toLowerCase().includes(orig.toLowerCase());
+                    (found ? inline : general).push(c);
+                });
+
+                const corrections = [...inline, ...general].map((c, i) => ({ ...c, id: i + 1 }));
+                const errorCount = corrections.length;
+
+                // Grade and percentage derived from the confirmed count, never from the model's own
+                // arithmetic — 0 corrections can no longer produce a marked-down grade.
+                let grade, percentage;
+                if (errorCount === 0) {
+                    grade = raw?.grade === 'C1' ? 'C1' : 'C2';
+                    percentage = Math.max(Number(raw?.percentage) || 0, 95);
+                } else if (errorCount === 1) {
+                    grade = 'C1'; percentage = 85;
+                } else if (errorCount === 2) {
+                    grade = 'B2'; percentage = 75;
+                } else {
+                    grade = 'B1'; percentage = 60;
+                }
+
+                const feedback = errorCount === 0
+                    ? 'Correct translation — it accurately conveys the Spanish sentence.'
+                    : (raw?.feedback || `${errorCount} point${errorCount === 1 ? '' : 's'} to review.`);
+
+                const annotated_text = errorCount === 0
+                    ? null // nothing to mark — render the answer plain
+                    : (buildAnnotatedFromCorrections(userTranslation, corrections) || null);
+
+                if ((raw?.grade && raw.grade !== grade) || (Array.isArray(raw?.corrections_list) && raw.corrections_list.length !== errorCount)) {
+                    console.log('[Translation] reconciled →', {
+                        aiGrade: raw?.grade, finalGrade: grade,
+                        aiCorrections: listed.length, usable: errorCount,
+                        droppedUnlocatable: listed.length - errorCount
+                    });
+                }
+
+                return { ...raw, grade, percentage, feedback, corrections_list: corrections, general_notes: general, annotated_text };
+            }
+
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource, vocabularyWord) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey && !geminiApiKey.trim()) {
@@ -3596,6 +3683,20 @@ and reads naturally, it is CORRECT — even if every single word differs from th
   Example: if the reference says "it can recover" and the student writes "taking over it" in a way
   that correctly renders the Spanish, that is CORRECT — do not "fix" it towards the reference.
 ✗ A different valid synonym, tense choice or sentence structure that still conveys the Spanish
+✗ TENSE CHOICES that accurately render the Spanish. Spanish future ("tendrá que") can legitimately
+  become "will need to", "needs to", "is going to have to" — all correct. Never mark one as wrong
+  because the reference chose another.
+✗ LEXICAL CHOICES within the meaning of the Spanish word. "pérdidas" can be "losses", "deficits"
+  or "shortfalls" — all correct. Never mark a valid synonym because the reference chose another.
+
+━━━ WORKED EXAMPLE — THIS MUST BE MARKED FULLY CORRECT, ZERO ERRORS ━━━
+SPANISH:   "La empresa tendrá que soportar la tormenta de pérdidas financieras antes de poder recuperarse"
+REFERENCE: "The company will need to weather the storm of financial losses before it can recover."
+STUDENT:   "The company needs to weather the storm of financial deficits before it can recover."
+Correct verdict: grade C2, percentage 100, corrections_list EMPTY, annotated_text unmarked.
+Why: "needs to" accurately renders "tendrá que", and "deficits" is a legitimate reading of
+"pérdidas". Neither is an error. Marking either one would be WRONG.
+Any response that flags "needs to" or "deficits" here is a failure.
 ✗ he/she/his/her differences — Spanish often does not specify gender
 ✗ Punctuation-only differences
 ✗ British spellings
@@ -3630,7 +3731,16 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking t
     {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary/meaning", "explanation": "precise reason"}
   ],
   "feedback": "1 sentence. If the translation is correct, say so and note it is a valid alternative wording."
-}`;
+}
+
+━━━ CONSISTENCY — CHECK BEFORE YOU ANSWER ━━━
+Your three outputs must agree with each other:
+- Every error you mention in "feedback" MUST have an entry in corrections_list.
+- Every entry in corrections_list MUST appear marked in annotated_text, and its "original" MUST be
+  text copied EXACTLY from the student's translation so it can be located.
+- If corrections_list is empty, the grade is C1 or C2, the percentage is 95-100, and "feedback"
+  must NOT mention any error, mistake or improvement.
+Never lower the grade for something you did not put in corrections_list.`;
                     const userPrompt = `SPANISH SENTENCE (this is what must be translated): "${spanishSource}"
 REFERENCE ENGLISH (one valid rendering — NOT the required answer, never correct towards it): "${originalEnglish}"
 STUDENT'S ENGLISH TRANSLATION: "${userTranslation}"
@@ -3647,6 +3757,8 @@ Step 4 — Before writing each correction, ask: "am I fixing a real mistake, or 
          more like the reference?" If the latter, discard it.
 Step 5 — Apply the vocabulary-word result given above.
 Step 6 — Assign the grade from the confirmed error count alone.
+Step 7 — Re-read your own feedback. Does it mention anything that is not in corrections_list?
+         If so, either add the correction properly or remove the claim from the feedback.
 
 Return ONLY the JSON object.`;
                     const result = await aiGenerateWithFallback({
@@ -3660,7 +3772,8 @@ Return ONLY the JSON object.`;
                             { role: 'user', content: userPrompt }
                         ], 1500)
                     });
-                    return result;
+                    // 🆕 V14.77: grade, summary and annotations reconciled against corrections_list
+                    return reconcileTranslationResult(result, userTranslation);
                 } catch (error) {
                     console.error('Translation Validation Error:', error);
                     alert(`❌ Translation validation failed.\n\n${error.message}`);
@@ -4905,7 +5018,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.76</span>
+                                        English Booster <span className="version-text">v14.77</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8411,7 +8524,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <div className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5 relative">
                                                     <h4 className="text-slate-300 font-bold uppercase text-xs mb-3 flex items-center gap-2">
                                                         <span>📝</span> Your Translation
-                                                        {translationAIResult.corrections_list?.length > 0 && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
+                                                        {/* 🆕 V14.77: only promise clickable corrections when some are actually marked */}
+                                                        {translationAIResult.annotated_text && <span className="text-slate-500 text-xs font-normal normal-case">(click corrections for details)</span>}
+                                                        {!translationAIResult.corrections_list?.length && <span className="text-green-400 text-xs font-normal normal-case">✓ no corrections</span>}
                                                     </h4>
                                                     {translationAIResult.annotated_text ? (
                                                         <div
@@ -8450,6 +8565,19 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         />
                                                     ) : (
                                                         <p className="text-base text-white leading-loose">{translationInput}</p>
+                                                    )}
+
+                                                    {/* 🆕 V14.77: corrections that could not be located in the text are listed
+                                                        here, so every counted error is visible somewhere. */}
+                                                    {translationAIResult.general_notes?.length > 0 && (
+                                                        <ul className="mt-4 space-y-2">
+                                                            {translationAIResult.general_notes.map((n, i) => (
+                                                                <li key={i} className="text-sm bg-red-900/20 border border-red-500/30 rounded-xl p-3">
+                                                                    <span className="text-red-300 font-black uppercase text-[10px] mr-2">{n.type || 'note'}</span>
+                                                                    <span className="text-slate-200">{n.explanation || n.corrected || ''}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
                                                     )}
 
                                                     {/* Popup - smart positioning */}
