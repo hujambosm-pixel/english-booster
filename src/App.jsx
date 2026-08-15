@@ -3558,7 +3558,10 @@ Return ONLY the JSON object.`;
 
             const handleMagicFill = async (word, targetFields = null, wordId = null) => {
                 if (!word) return;
-                
+
+                // 🆕 V14.68: first line of the flow — confirms the key reached React state AND is in localStorage
+                console.log('[Magic Fill] Gemini key found:', !!geminiApiKey, '| in localStorage:', !!(localStorage.getItem('gemini_api_key') || '').trim(), '| Groq key found:', !!groqApiKey);
+
                 const apiKey = groqApiKey.trim();
                 const geminiKey = geminiApiKey.trim(); // 🆕 V14.67
 
@@ -3866,7 +3869,10 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
 
             const handleImproveWord = async (word, wordId) => {
                 if (!word) return;
-                
+
+                // 🆕 V14.68: first line of the flow — confirms the key reached React state AND is in localStorage
+                console.log('[AI Improve] Gemini key found:', !!geminiApiKey, '| in localStorage:', !!(localStorage.getItem('gemini_api_key') || '').trim(), '| Groq key found:', !!groqApiKey);
+
                 const apiKey = groqApiKey.trim();
                 const geminiKey = geminiApiKey.trim(); // 🆕 V14.68
 
@@ -5688,9 +5694,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
 
                                     {/* RIGHT PANEL - GREEN - AI SUGGESTIONS */}
                                     <div className="bg-green-900/20 border-2 border-green-500 rounded-2xl p-6">
-                                        <h3 className="text-green-300 font-bold mb-2 text-center text-lg">🟢 AI SUGGESTIONS</h3>
-                                        {/* 🆕 V14.67: which model produced these suggestions */}
-                                        <div className="mb-4">
+                                        {/* 🆕 V14.68: header row — title and source-model chip share one line
+                                            (wrapping to a second line only when too narrow), separated from the
+                                            fields below by a rule so the chip never reads as part of Family */}
+                                        <div className="flex items-center justify-center gap-3 flex-wrap mb-4 pb-3 border-b border-green-500/30">
+                                            <h3 className="text-green-300 font-bold text-center text-lg">🟢 AI SUGGESTIONS</h3>
                                             <ModelBadge model={improveData.model} prominent />
                                         </div>
 
