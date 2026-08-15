@@ -3920,6 +3920,12 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                 setMagicLoading(true);
 
                 try {
+                    // 🆕 V14.71: sense anchoring inputs. Without the current synonyms the model only sees
+                    // the word plus one sentence, and the "be COMPLETELY DIFFERENT" pressure further down
+                    // can tip a polysemous word into the wrong sense entirely (peck = kiss vs peck = jab).
+                    const currentSynonyms = (currentWord?.synonyms || '').trim();
+                    const currentContext = (currentWord?.context || '').trim();
+
                     // 🆕 V11.38: Enhanced prompt with strict family enforcement
                     const familyExamples = {
                         'Noun': 'If word is a noun like "house", give noun synonyms like "home, dwelling, residence"',
@@ -3942,31 +3948,42 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     
                     const prompt = `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
 
-CURRENT CONTEXT SENTENCE (the student's existing sentence — you MUST produce something COMPLETELY DIFFERENT):
-"${currentWord?.context || 'none'}"
+IMPORTANT — SENSE ANCHORING:
+The user is learning THIS specific sense of the word:
+- Current synonyms: ${currentSynonyms || '(none recorded)'}
+- Current context: "${currentContext || '(none recorded)'}"
+
+Your improved synonyms and context MUST refer to the SAME sense and meaning as above.
+Do NOT switch to a different meaning of "${word}", even if that other meaning is more common or more frequent.
+If "${word}" has several meanings, IGNORE every meaning except the one shown above.
+The new context sentence must be different from the current one in WORDING and SCENARIO, but must illustrate the SAME meaning.
 
 For the English word/expression "${word}", provide ALTERNATIVE/IMPROVED suggestions:
 
 1. SYNONYMS: 2-4 EXACT British English synonyms (comma-separated)
+   - MANDATORY: All synonyms MUST match the ANCHORED SENSE above — the same meaning as the current synonyms
    - MANDATORY: All synonyms MUST be ${currentFamily}s (same grammatical family as "${word}")
    - MANDATORY: Synonyms must be truly INTERCHANGEABLE drop-in replacements for "${word}" in ANY sentence
-   - TEST: Could you swap "${word}" for the synonym without changing the meaning? If not, do NOT include it
+   - TEST: Could you swap "${word}" for the synonym in the CURRENT CONTEXT SENTENCE above without changing its meaning? If not, do NOT include it
    - DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
+   - DO NOT include synonyms that belong to a different sense of "${word}"
    - Example: ${familyExamples[currentFamily] || 'Provide synonyms of the same type'}
 
-2. CONTEXT: A NEW, COMPLETELY DIFFERENT sentence (12-15 words) in British English
-   ⛔️ CRITICAL: Your sentence MUST be totally different from the current context sentence above — different subject, different situation, different structure
-   ⛔️ DO NOT paraphrase or lightly reword the current sentence — invent an entirely new scenario
+2. CONTEXT: A NEW sentence (12-15 words) in British English, using the SAME meaning anchored above
+   ⛔️ CRITICAL: Your sentence must use a different subject, situation and structure from the current context sentence
+   ⛔️ CRITICAL: "Different" applies to the WORDING and the SCENARIO only — the MEANING of "${word}" must stay exactly the same
+   ⛔️ DO NOT paraphrase or lightly reword the current sentence — invent a new scenario for that SAME meaning
    ⛔️ You MUST use "${word}" as a ${currentFamily} in your sentence
    ⛔️ DO NOT use synonyms instead of "${word}"
    ✅ REQUIRED: ${contextExamples[currentFamily] || ('Use "' + word + '" correctly')}
-   ✅ The sentence should clearly illustrate what "${word}" means in a NEW context
+   ✅ The sentence should clearly illustrate the anchored meaning of "${word}" in a new situation
 
 3. FAMILY: RESPOND WITH "${currentFamily}" - DO NOT CHANGE THIS VALUE
 
 FINAL MANDATORY RULES:
-- Synonyms = EXACT ${currentFamily} synonyms only (interchangeable, same meaning)
-- Context = NEW sentence, completely different scenario from current one, uses "${word}" as a ${currentFamily}
+- Sense = IDENTICAL to the anchored sense above (never a different meaning of "${word}")
+- Synonyms = EXACT ${currentFamily} synonyms only (interchangeable, same meaning, same sense)
+- Context = NEW sentence, different scenario from the current one, SAME meaning, uses "${word}" as a ${currentFamily}
 - Family field in JSON = "${currentFamily}" (DO NOT modify)
 
 Respond ONLY in this exact JSON format (no markdown, no backticks):
@@ -4497,7 +4514,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.70</span>
+                                        English Booster <span className="version-text">v14.71</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
