@@ -363,7 +363,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             message: detail,
                             body: parsed || bodyText.slice(0, 1000)
                         });
-                        throw new Error(`Gemini API Error ${response.status}${detail ? ': ' + detail : ''}`);
+                        // 🆕 V14.73: only a 429 / RESOURCE_EXHAUSTED latches the quota state
+                        const quotaHit = response.status === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
+                        if (quotaHit) markGeminiQuotaExhausted();
+
+                        const err = new Error(`Gemini API Error ${response.status}${detail ? ': ' + detail : ''}`);
+                        err.status = response.status;
+                        err.quotaExhausted = quotaHit;
+                        throw err;
                     }
 
                     const data = await response.json();
@@ -401,6 +408,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             tokens: data.usageMetadata || null
                         }
                     );
+                    markGeminiAvailable(); // 🆕 V14.73: a success clears any stale quota flag
                     return text;
 
                 } catch (err) {
@@ -408,6 +416,68 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     console.error(`[${label}] ❌ Gemini call failed after ${Date.now() - startedAt}ms:`, err);
                     throw err;
                 }
+            }
+
+            // ─── 🆕 V14.73: Gemini free-tier quota tracking ────────────────────────────────────
+            // Only a 429 / RESOURCE_EXHAUSTED means the daily quota is gone. Every other failure is
+            // transient and must NOT latch this state — it just falls back to Groq for that one call.
+            const GEMINI_QUOTA_KEY = 'gemini_quota_state';
+
+            // Google's free tier resets at midnight US Pacific. Comparing the Pacific *date* is
+            // DST-safe, unlike storing a fixed UTC offset.
+            function pacificDateString(d = new Date()) {
+                return new Intl.DateTimeFormat('en-CA', {
+                    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit'
+                }).format(d);
+            }
+
+            function msUntilPacificMidnight() {
+                const now = new Date();
+                const pacNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+                const pacMidnight = new Date(pacNow);
+                pacMidnight.setHours(24, 0, 0, 0);
+                return pacMidnight - pacNow;
+            }
+
+            const GEMINI_QUOTA_OK = { exhausted: false, since: null, pacificDate: null };
+
+            // Reads straight from localStorage so the gate is never stale mid-flow, and self-clears
+            // once the Pacific day has rolled over — that IS the "retry after reset" behaviour.
+            function readGeminiQuota() {
+                try {
+                    const raw = localStorage.getItem(GEMINI_QUOTA_KEY);
+                    if (!raw) return GEMINI_QUOTA_OK;
+                    const parsed = JSON.parse(raw);
+                    if (!parsed || !parsed.exhausted) return GEMINI_QUOTA_OK;
+                    if (parsed.pacificDate && parsed.pacificDate !== pacificDateString()) {
+                        localStorage.removeItem(GEMINI_QUOTA_KEY);
+                        return GEMINI_QUOTA_OK;
+                    }
+                    return parsed;
+                } catch (e) {
+                    return GEMINI_QUOTA_OK;
+                }
+            }
+
+            const [geminiQuota, setGeminiQuota] = useState(readGeminiQuota);
+
+            function markGeminiQuotaExhausted() {
+                const state = { exhausted: true, since: new Date().toISOString(), pacificDate: pacificDateString() };
+                try { localStorage.setItem(GEMINI_QUOTA_KEY, JSON.stringify(state)); } catch (e) {}
+                setGeminiQuota(state);
+                console.warn('%c[Gemini] 🚫 Daily quota exhausted (429) — using Groq until it resets at midnight US Pacific', 'color:#fb923c;font-weight:bold');
+            }
+
+            function markGeminiAvailable() {
+                if (!readGeminiQuota().exhausted) return;
+                try { localStorage.removeItem(GEMINI_QUOTA_KEY); } catch (e) {}
+                setGeminiQuota(GEMINI_QUOTA_OK);
+                console.log('%c[Gemini] ✅ Quota reset — Gemini is available again', 'color:#4ade80;font-weight:bold');
+            }
+
+            // Single gate every Gemini call site consults before spending a request.
+            function geminiReady() {
+                return !!geminiApiKey.trim() && !readGeminiQuota().exhausted;
             }
 
             // 🆕 V14.73: tolerant JSON extraction — strips markdown fences and DeepSeek <think>
@@ -430,7 +500,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             async function aiGenerateWithFallback({ label, systemContent = null, userPrompt, maxOutputTokens = 800, temperature = 0.2, json = true, groqFallback }) {
                 const geminiKey = geminiApiKey.trim();
 
-                if (geminiKey) {
+                if (geminiReady()) {
                     try {
                         const raw = await callGemini(geminiKey, systemContent, userPrompt, label, { maxOutputTokens, temperature, json });
                         console.log(`%c[${label}] ✨ Model used: GEMINI`, 'color:#4ade80;font-weight:bold');
@@ -438,6 +508,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     } catch (e) {
                         console.warn(`%c[${label}] ↩️ Falling back to GROQ — reason: ${e.message}`, 'color:#fb923c;font-weight:bold');
                     }
+                } else if (geminiKey) {
+                    // 🆕 V14.73: quota is gone — skip the attempt entirely rather than burn a failed call
+                    console.log(`[${label}] ⏭️ Gemini skipped (daily quota exhausted) — using Groq`);
                 } else {
                     console.log(`[${label}] ℹ️ No Gemini key configured — using Groq directly`);
                 }
@@ -3710,8 +3783,9 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     let modelUsed = null;
                     let geminiError = null;
 
-                    // 🆕 V14.67: Gemini 2.5 Flash first when a key is configured
-                    if (geminiKey) {
+                    // 🆕 V14.67: Gemini first when a key is configured
+                    // 🆕 V14.73: ...and only while the daily quota holds
+                    if (geminiReady()) {
                         try {
                             textResponse = await callGemini(geminiKey, systemContent, prompt, 'Magic Fill');
                             modelUsed = 'Gemini';
@@ -3726,6 +3800,8 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                 'color:#fb923c;font-weight:bold'
                             );
                         }
+                    } else if (geminiKey) {
+                        console.log('[Magic Fill] ⏭️ Gemini skipped (daily quota exhausted) — using Groq');
                     } else {
                         console.log('[Magic Fill] ℹ️ No Gemini key configured — using Groq directly');
                     }
@@ -4066,8 +4142,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     let modelUsed = null;
                     let geminiError = null;
 
-                    // 🆕 V14.68: Gemini 2.5 Flash first when a key is configured
-                    if (geminiKey) {
+                    // 🆕 V14.68: Gemini first when a key is configured
+                    // 🆕 V14.73: ...and only while the daily quota holds
+                    if (geminiReady()) {
                         try {
                             rawResponse = await callGemini(geminiKey, systemContent, prompt, 'AI Improve');
                             modelUsed = 'Gemini';
@@ -4082,6 +4159,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 'color:#fb923c;font-weight:bold'
                             );
                         }
+                    } else if (geminiKey) {
+                        console.log('[AI Improve] ⏭️ Gemini skipped (daily quota exhausted) — using Groq');
                     } else {
                         console.log('[AI Improve] ℹ️ No Gemini key configured — using Groq directly');
                     }
