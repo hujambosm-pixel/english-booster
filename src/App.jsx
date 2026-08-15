@@ -304,31 +304,38 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             const [magicFillModel, setMagicFillModel] = useState(null); // 🆕 V14.67: 'Gemini' | 'Groq' — which model produced the last fill
 
-            // 🆕 V14.67: Gemini 2.5 Flash call — returns raw text, throws on any failure so the caller can fall back to Groq
+            // 🆕 V14.67: Gemini call — returns raw text, throws on any failure so the caller can fall back to Groq
             // 🆕 V14.68: shared by Magic Fill and AI Improve; `label` only tags the console output
-            const GEMINI_MODEL = 'gemini-2.5-flash';
+            // 🆕 V14.69: gemini-2.0-flash is shut down; 2.5-flash was 404ing, so use a current Flash model
+            const GEMINI_MODEL = 'gemini-3.5-flash';
+
+            // `thinkingBudget: 0` is only known-good on the 2.5 family. Newer models express the same
+            // idea as thinking_level, so sending the old field risks a 400 — omit it there and give the
+            // response enough room for thinking tokens PLUS the JSON instead.
+            const geminiIs25 = GEMINI_MODEL.startsWith('gemini-2.5');
 
             async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill') {
                 const startedAt = Date.now();
                 console.log(`%c[${label}] 🔷 Trying Gemini (${GEMINI_MODEL})...`, 'color:#60a5fa;font-weight:bold');
 
+                const generationConfig = {
+                    temperature: 0.2,
+                    maxOutputTokens: geminiIs25 ? 800 : 2048,
+                    responseMimeType: 'application/json'
+                };
+                if (geminiIs25) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
                 try {
+                    const requestUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
                     const response = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+                        requestUrl,
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                                 systemInstruction: { parts: [{ text: systemContent }] },
-                                generationConfig: {
-                                    temperature: 0.2,
-                                    maxOutputTokens: 800,
-                                    responseMimeType: 'application/json',
-                                    // Thinking off: this is a short structured-output task and thinking tokens
-                                    // would eat the output budget, returning a candidate with no text parts.
-                                    thinkingConfig: { thinkingBudget: 0 }
-                                }
+                                generationConfig
                             })
                         }
                     );
@@ -342,6 +349,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         const detail = parsed?.error?.message || bodyText.slice(0, 300);
                         console.error(`[${label}] ❌ Gemini HTTP ${response.status} ${response.statusText || ''}`.trim(), {
                             status: response.status,
+                            model: GEMINI_MODEL,
+                            // key redacted — a 404 here almost always means the model name or API
+                            // version is wrong for this key, so the exact URL is the useful clue
+                            url: requestUrl.replace(/key=[^&]*/, 'key=REDACTED'),
                             reason: parsed?.error?.status || null,
                             message: detail,
                             body: parsed || bodyText.slice(0, 1000)
@@ -4476,7 +4487,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.68</span>
+                                        English Booster <span className="version-text">v14.69</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
