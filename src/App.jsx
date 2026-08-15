@@ -315,18 +315,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // so exactly one is set, chosen by model family.
             const geminiIs25 = GEMINI_MODEL.startsWith('gemini-2.5');
 
-            async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill') {
+            // 🆕 V14.73: options let other features reuse this — bigger budgets for the long
+            // examiner prompts, and json:false for the one call site that wants prose back.
+            async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill', options = {}) {
+                const { maxOutputTokens = 800, temperature = 0.2, json = true } = options;
                 const startedAt = Date.now();
                 console.log(`%c[${label}] 🔷 Trying Gemini (${GEMINI_MODEL})...`, 'color:#60a5fa;font-weight:bold');
 
                 const generationConfig = {
-                    temperature: 0.2,
-                    // The JSON payload is short (synonyms + one sentence + family), so 800 is ample
-                    // once thinking is minimised — and it caps how long a slow call can run.
-                    maxOutputTokens: 800,
-                    responseMimeType: 'application/json',
+                    temperature,
+                    maxOutputTokens,
                     thinkingConfig: geminiIs25 ? { thinkingBudget: 0 } : { thinkingLevel: 'minimal' }
                 };
+                if (json) generationConfig.responseMimeType = 'application/json';
 
                 try {
                     const requestUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -337,7 +338,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                                systemInstruction: { parts: [{ text: systemContent }] },
+                                // omitted when the call site has no system message, so its prompt
+                                // reaches Gemini exactly as it reaches Groq
+                                ...(systemContent ? { systemInstruction: { parts: [{ text: systemContent }] } } : {}),
                                 generationConfig
                             })
                         }
@@ -405,6 +408,43 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     console.error(`[${label}] ❌ Gemini call failed after ${Date.now() - startedAt}ms:`, err);
                     throw err;
                 }
+            }
+
+            // 🆕 V14.73: tolerant JSON extraction — strips markdown fences and DeepSeek <think>
+            // blocks, then falls back to the outermost {...} if a straight parse fails.
+            function parseLooseJson(text) {
+                let raw = (text || '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+                raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                try {
+                    return JSON.parse(raw);
+                } catch (e) { /* fall through to brace extraction */ }
+                const start = raw.indexOf('{');
+                const end = raw.lastIndexOf('}');
+                if (start === -1 || end === -1) throw new Error('No JSON object in response');
+                return JSON.parse(raw.substring(start, end + 1));
+            }
+
+            // 🆕 V14.73: Gemini-first with automatic Groq fallback — the same pattern Magic Fill and
+            // AI Improve use, packaged so the exercise features can share it. `groqFallback` is the
+            // call site's existing Groq path, untouched, and runs whenever Gemini is unavailable or fails.
+            async function aiGenerateWithFallback({ label, systemContent = null, userPrompt, maxOutputTokens = 800, temperature = 0.2, json = true, groqFallback }) {
+                const geminiKey = geminiApiKey.trim();
+
+                if (geminiKey) {
+                    try {
+                        const raw = await callGemini(geminiKey, systemContent, userPrompt, label, { maxOutputTokens, temperature, json });
+                        console.log(`%c[${label}] ✨ Model used: GEMINI`, 'color:#4ade80;font-weight:bold');
+                        return json ? parseLooseJson(raw) : raw.trim();
+                    } catch (e) {
+                        console.warn(`%c[${label}] ↩️ Falling back to GROQ — reason: ${e.message}`, 'color:#fb923c;font-weight:bold');
+                    }
+                } else {
+                    console.log(`[${label}] ℹ️ No Gemini key configured — using Groq directly`);
+                }
+
+                const result = await groqFallback();
+                console.log(`%c[${label}] ✨ Model used: GROQ`, 'color:#fb923c;font-weight:bold');
+                return result;
             }
 
             // 🆕 V14.67: Shared "which model wrote this" chip
@@ -2873,7 +2913,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
 
             async function evaluateWriting() {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey || !writingText.trim()) return;
+                if ((!apiKey && !geminiApiKey.trim()) || !writingText.trim()) return;
                 setWritingLoading(true);
                 try {
                     const wordList = writingWords.map(w => w.vocabulary).join(', ');
@@ -2949,10 +2989,18 @@ Step 5 — Build annotated_text with confirmed errors only.
 Step 6 — Assign grade based solely on confirmed error count.
 
 Return ONLY the JSON object.`;
-                    const feedback = await callGroqWithFallback(apiKey, [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ], 3000);
+                    const feedback = await aiGenerateWithFallback({
+                        label: 'Writing',
+                        systemContent: systemPrompt,
+                        userPrompt,
+                        // Gemini gets extra headroom because thinking tokens share this budget
+                        maxOutputTokens: 3000,
+                        temperature: 0.0,
+                        groqFallback: () => callGroqWithFallback(apiKey, [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ], 3000)
+                    });
                     setWritingFeedback(feedback);
                 } catch (error) {
                     console.error('Writing evaluation error:', error);
@@ -2965,7 +3013,7 @@ Return ONLY the JSON object.`;
             // 🆕 V14.6: Evaluate dictation with AI — DeepSeek R1 + fallback
             async function evaluateDictation(userInput, correctText) {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey || !userInput.trim()) return;
+                if ((!apiKey && !geminiApiKey.trim()) || !userInput.trim()) return;
                 setDictationAILoading(true);
                 try {
                     const systemPrompt = `You are a strict Cambridge English teacher correcting a dictation exercise. The student heard a sentence and transcribed it. Compare their transcription to the original word-by-word and character-by-character.
@@ -3012,10 +3060,17 @@ Step 3 — Build annotated_text and corrections_list from confirmed errors only.
 Step 4 — Count errors and assign Cambridge grade.
 
 Return ONLY the JSON object.`;
-                    const feedback = await callGroqWithFallback(apiKey, [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ], 1500);
+                    const feedback = await aiGenerateWithFallback({
+                        label: 'Dictation',
+                        systemContent: systemPrompt,
+                        userPrompt,
+                        maxOutputTokens: 1500,
+                        temperature: 0.0,
+                        groqFallback: () => callGroqWithFallback(apiKey, [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ], 1500)
+                    });
                     setDictationAIFeedback(feedback);
                 } catch (error) {
                     console.error('Dictation AI evaluation error:', error);
@@ -3027,8 +3082,8 @@ Return ONLY the JSON object.`;
             // 🆕 V11.16: Validate answer with AI for Guesswork exercise
             async function validateGuessworkWithAI(userAnswer, correctAnswer, context) {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey) {
-                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
+                if (!apiKey && !geminiApiKey.trim()) {
+                    alert('⚠️ Please set your Gemini or Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
 
@@ -3069,42 +3124,36 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
   "synonym_note": "Brief nuance note if is_synonym=true, else empty string"
 }`;
 
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.3,
-                            max_tokens: 300
-                        })
+                    const result = await aiGenerateWithFallback({
+                        label: 'Guesswork',
+                        // this prompt has no system message — it stays a single user prompt on both providers
+                        userPrompt: prompt,
+                        maxOutputTokens: 800,
+                        temperature: 0.3,
+                        groqFallback: async () => {
+                            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${apiKey}`
+                                },
+                                body: JSON.stringify({
+                                    model: 'llama-3.1-8b-instant',
+                                    messages: [{ role: 'user', content: prompt }],
+                                    temperature: 0.3,
+                                    max_tokens: 300
+                                })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`API Error ${response.status}`);
+                            }
+
+                            const data = await response.json();
+                            return parseLooseJson(data.choices[0].message.content);
+                        }
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`API Error ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    
-                    // Parse JSON
-                    let result;
-                    try {
-                        result = JSON.parse(textResponse);
-                    } catch (e) {
-                        const firstBraceIndex = textResponse.indexOf('{');
-                        let braceCount = 0, endIndex = -1;
-                        for (let i = firstBraceIndex; i < textResponse.length; i++) {
-                            if (textResponse[i] === '{') braceCount++;
-                            if (textResponse[i] === '}') braceCount--;
-                            if (braceCount === 0) { endIndex = i + 1; break; }
-                        }
-                        result = JSON.parse(textResponse.substring(firstBraceIndex, endIndex));
-                    }
-                    
                     return result;
                 } catch (error) {
                     console.error('AI Validation Error:', error);
@@ -3180,7 +3229,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
             // 🆕 V11.65: Explain why correct answer is best (only if user made wrong attempts)
             async function explainSelectionAnswer(correctWord, wrongAnswers, context) {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey || !wrongAnswers || wrongAnswers.length === 0) return;
+                if ((!apiKey && !geminiApiKey.trim()) || !wrongAnswers || wrongAnswers.length === 0) return;
                 
                 setSelectionExplLoading(true);
                 try {
@@ -3204,24 +3253,34 @@ While "on the fly" is understandable, "off the cuff" is better here:
 - **Action vs speech**: "On the fly" means quick decisions during a task in progress, not speech delivery.
 Since she is giving a speech, "off the cuff" is the most natural and idiomatic choice.`;
 
-                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
-                            messages: [{ role: 'user', content: prompt }],
-                            temperature: 0.5,
-                            max_tokens: 300
-                        })
+                    const explanation = await aiGenerateWithFallback({
+                        label: 'Selection explanation',
+                        userPrompt: prompt,
+                        maxOutputTokens: 800,
+                        temperature: 0.5,
+                        // this one wants prose back, not JSON
+                        json: false,
+                        groqFallback: async () => {
+                            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${apiKey}`
+                                },
+                                body: JSON.stringify({
+                                    model: 'llama-3.1-8b-instant',
+                                    messages: [{ role: 'user', content: prompt }],
+                                    temperature: 0.5,
+                                    max_tokens: 300
+                                })
+                            });
+
+                            if (!response.ok) throw new Error('API Error');
+
+                            const data = await response.json();
+                            return data.choices[0].message.content.trim();
+                        }
                     });
-                    
-                    if (!response.ok) throw new Error('API Error');
-                    
-                    const data = await response.json();
-                    const explanation = data.choices[0].message.content.trim();
                     setSelectionExplanation(explanation);
                 } catch (error) {
                     console.error('Selection Explanation Error:', error);
@@ -3234,8 +3293,8 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
             // 🆕 V14.6: Validate translation — DeepSeek R1 + fallback, same quality as Writing
             async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey) {
-                    alert('⚠️ Please set your Groq API Key in Settings first!\n\nAI validation requires an API key.');
+                if (!apiKey && !geminiApiKey.trim()) {
+                    alert('⚠️ Please set your Gemini or Groq API Key in Settings first!\n\nAI validation requires an API key.');
                     return null;
                 }
                 setTranslationAIValidating(true);
@@ -3287,10 +3346,17 @@ Step 4 — Build annotated_text with confirmed errors only.
 Step 5 — Assign grade based solely on confirmed error count.
 
 Return ONLY the JSON object.`;
-                    const result = await callGroqWithFallback(apiKey, [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ], 1500);
+                    const result = await aiGenerateWithFallback({
+                        label: 'Translation',
+                        systemContent: systemPrompt,
+                        userPrompt,
+                        maxOutputTokens: 1500,
+                        temperature: 0.0,
+                        groqFallback: () => callGroqWithFallback(apiKey, [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ], 1500)
+                    });
                     return result;
                 } catch (error) {
                     console.error('Translation Validation Error:', error);
