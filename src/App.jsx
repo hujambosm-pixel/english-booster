@@ -705,6 +705,9 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [translationAttempts, setTranslationAttempts] = useState(0);
             const [translationAIValidating, setTranslationAIValidating] = useState(false);
             const [translationAIResult, setTranslationAIResult] = useState(null);
+            const [showTranslationHint, setShowTranslationHint] = useState(false); // 🆕 V14.76
+            const [translationHintMeaning, setTranslationHintMeaning] = useState(''); // 🆕 V14.76
+            const [translationHintLoading, setTranslationHintLoading] = useState(false); // 🆕 V14.76
             const [translationLoading, setTranslationLoading] = useState(false);
             const [translationVoiceListening, setTranslationVoiceListening] = useState(false); // 🆕 V11.38: Voice-to-text
             
@@ -945,7 +948,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                         if (translationIndex < translationWords.length - 1) {
                             const nextIndex = translationIndex + 1;
                             setTranslationIndex(nextIndex);
-                            setTranslationInput('');
+                            setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                             setShowTranslationAnswer(false);
                             setTranslationDifficulty('');
                             setTranslationAttempts(0);
@@ -958,7 +961,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                             setTranslationWords([]);
                             setTranslationIndex(0);
                             setTranslationSpanish('');
-                            setTranslationInput('');
+                            setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                             setShowTranslationAnswer(false);
                             setTranslationDifficulty('');
                             setTranslationAttempts(0);
@@ -2453,7 +2456,7 @@ Return ONLY valid JSON, no explanation.` }],
                         setTranslationWords(sortedWords);
                         setTranslationIndex(0);
                         setTranslationSpanish('');
-                        setTranslationInput('');
+                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                         setShowTranslationAnswer(false);
                         setTranslationDifficulty('');
                         setTranslationAttempts(0);
@@ -2832,15 +2835,12 @@ Return ONLY valid JSON, no explanation.` }],
             }
 
             // 🆕 V11.22: Generate meaning for Guesswork hint with AI
-            async function generateGuessworkHintMeaning(word) {
+            // 🆕 V14.76: shared by the Guesswork and Translation hints
+            async function generateWordMeaning(word) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey || apiKey === '') {
-                    setGuessworkHintMeaning('⚠️ API key not configured. Please set your Groq API Key in Settings.');
-                    return;
+                    return '⚠️ API key not configured. Please set your Groq API Key in Settings.';
                 }
-
-                setGuessworkHintLoading(true);
-
                 try {
                     const prompt = `What does "${word}" mean? Provide ONLY the definition/meaning in British English. Keep it simple and clear, maximum 2 sentences. IMPORTANT: Do NOT mention the word "${word}" itself in your response - just explain what it means. Do NOT include examples, synonyms, or usage notes.`;
 
@@ -2863,14 +2863,43 @@ Return ONLY valid JSON, no explanation.` }],
                     }
 
                     const data = await response.json();
-                    const meaning = data.choices?.[0]?.message?.content || 'Unable to generate meaning.';
-                    setGuessworkHintMeaning(meaning.trim());
+                    return (data.choices?.[0]?.message?.content || 'Unable to generate meaning.').trim();
                 } catch (error) {
                     console.error('Generate meaning error:', error);
-                    setGuessworkHintMeaning('❌ Error generating meaning. Please try again.');
-                } finally {
-                    setGuessworkHintLoading(false);
+                    return '❌ Error generating meaning. Please try again.';
                 }
+            }
+
+            async function generateGuessworkHintMeaning(word) {
+                setGuessworkHintLoading(true);
+                setGuessworkHintMeaning(await generateWordMeaning(word));
+                setGuessworkHintLoading(false);
+            }
+
+            // 🆕 V14.76: Translation hint — same behaviour as the Guesswork one
+            async function generateTranslationHintMeaning(word) {
+                setTranslationHintLoading(true);
+                setTranslationHintMeaning(await generateWordMeaning(word));
+                setTranslationHintLoading(false);
+            }
+
+            // 🆕 V14.76: does the answer contain the vocabulary word being practised? Checked locally
+            // rather than asked of the model, so the one hard requirement is never subject to drift.
+            function containsVocabularyWord(text, vocabulary) {
+                if (!text || !vocabulary) return true;
+                const haystack = ' ' + text.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').replace(/\s+/g, ' ') + ' ';
+                const stopWords = ['a', 'an', 'the', 'in', 'on', 'at', 'to', 'of', 'for', 'with', 'by'];
+                const optionalWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'it'];
+                const keyWords = vocabulary.toLowerCase().split(/\s+/)
+                    .filter(w => !stopWords.includes(w) && !optionalWords.includes(w) && w.length > 2);
+                // nothing substantive to look for (e.g. "in on") — treat as present
+                if (keyWords.length === 0) return haystack.includes(' ' + vocabulary.toLowerCase() + ' ');
+                return keyWords.every(kw => {
+                    const stem = kw.replace(/e$/, '').replace(/y$/, '');
+                    const forms = [kw, kw + 's', kw + 'es', kw + 'ed', kw + 'd', kw + 'ing',
+                                   stem + 'ing', stem + 'ed', stem + 'ies', stem + 'ied'];
+                    return forms.some(f => haystack.includes(' ' + f + ' ') || haystack.includes(' ' + f + "'"));
+                });
             }
 
             // 🆕 V11.16: Load Guesswork Exercise
@@ -2993,7 +3022,7 @@ Return ONLY valid JSON, no explanation.` }],
                         setTranslationWords(sortedData);
                         setTranslationIndex(0);
                         setTranslationSpanish('');
-                        setTranslationInput('');
+                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                         setShowTranslationAnswer(false);
                         setTranslationDifficulty('');
                         setTranslationAttempts(0);
@@ -3535,7 +3564,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
             }
 
             // 🆕 V14.6: Validate translation — DeepSeek R1 + fallback, same quality as Writing
-            async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource) {
+            async function validateTranslationWithAI(userTranslation, originalEnglish, spanishSource, vocabularyWord) {
                 const apiKey = groqApiKey.trim();
                 if (!apiKey && !geminiApiKey.trim()) {
                     alert('⚠️ Please set your Gemini or Groq API Key in Settings first!\n\nAI validation requires an API key.');
@@ -3543,22 +3572,46 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                 }
                 setTranslationAIValidating(true);
                 try {
-                    const systemPrompt = `You are a strict Cambridge English examiner evaluating a Spanish-to-English translation task.
+                    // 🆕 V14.76: checked here, not by the model — this is the one hard requirement
+                    const vocabPresent = containsVocabularyWord(userTranslation, vocabularyWord);
 
-━━━ DECISION TREE — apply this before marking ANYTHING ━━━
-Before flagging any word or phrase, ask these questions in order:
-1. Is it grammatically incorrect in English? If NO → do NOT mark it.
-2. Is it a recognised English idiom, phrasal verb, or set expression? If YES → do NOT mark it.
-3. Would a Cambridge examiner clearly deduct marks for this? If UNSURE → do NOT mark it.
+                    const systemPrompt = `You are a Cambridge English examiner marking a Spanish-to-English translation.
 
-━━━ ABSOLUTE PROHIBITIONS ━━━
-✗ NEVER produce a correction where <del> and <ins> contain identical text.
-✗ NEVER flag he/she/his/her differences — Spanish does not specify gender.
-✗ NEVER flag punctuation-only differences.
-✗ NEVER flag British spellings as errors.
-✗ NEVER penalise unusual but valid collocations.
-✗ NEVER restructure correct sentences.
-✗ Only evaluate the student's ENGLISH — not the Spanish source.
+━━━ WHAT YOU ARE JUDGING ━━━
+You are judging whether the student's English is a CORRECT translation of the SPANISH sentence.
+You are NOT checking whether it matches the reference English sentence.
+
+The reference English is ONE valid way to translate the Spanish. It is NOT the required answer.
+Many different wordings can all be correct. If the student's English accurately conveys the Spanish
+and reads naturally, it is CORRECT — even if every single word differs from the reference.
+
+━━━ MARK AS AN ERROR ONLY ━━━
+1. Wrong meaning — the English does not convey what the Spanish says
+2. Grammar mistakes — wrong tense, agreement, article, word order
+3. Unnatural phrasing — no competent native speaker would say it that way
+4. Misspellings
+
+━━━ NEVER MARK AS AN ERROR ━━━
+✗ A different but accurate and natural wording. This is the most important rule.
+  Example: if the reference says "it can recover" and the student writes "taking over it" in a way
+  that correctly renders the Spanish, that is CORRECT — do not "fix" it towards the reference.
+✗ A different valid synonym, tense choice or sentence structure that still conveys the Spanish
+✗ he/she/his/her differences — Spanish often does not specify gender
+✗ Punctuation-only differences
+✗ British spellings
+✗ Unusual but valid collocations
+✗ NEVER produce a correction where <del> and <ins> contain identical text
+✗ NEVER rewrite a correct sentence to look more like the reference
+
+━━━ THE ONE HARD REQUIREMENT ━━━
+The student is practising a specific vocabulary word. It MUST appear in their translation
+(any inflection is fine). The application pre-checks this and tells you the result.
+- Told PRESENT → never comment on it. The check is reliable here.
+- Told NOT FOUND → the check only understands regular inflections, so verify yourself first.
+  If the student DID use the word in any form, including an irregular one ("took" for "take",
+  "brought" for "bring"), treat it as PRESENT and say nothing.
+  Only if it is genuinely absent, add exactly one error of type "vocabulary" saying the practised
+  word is missing, and cap the grade at B2 — however good the rest of the translation is.
 
 ━━━ CAMBRIDGE GRADE CALIBRATION ━━━
 Count ONLY confirmed errors from corrections_list:
@@ -3572,22 +3625,28 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking t
 {
   "grade": "C2/C1/B2/B1",
   "percentage": 0-100,
-  "annotated_text": "Student's FULL English translation with inline markup. Use <del>wrong</del><ins>correct</ins> for confirmed errors. Use <note>3-8 words max</note> for style notes only. Keep ALL correct text exactly as written.",
+  "annotated_text": "Student's FULL English translation with inline markup. Use <del>wrong</del><ins>correct</ins> for confirmed errors ONLY. Use <note>3-8 words max</note> for style notes only. Keep ALL correct text exactly as written — if there are no errors, return the student's text completely unmarked.",
   "corrections_list": [
-    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary", "explanation": "precise reason"}
+    {"id": 1, "original": "wrong text", "corrected": "correct text", "type": "grammar/spelling/vocabulary/meaning", "explanation": "precise reason"}
   ],
-  "feedback": "1-sentence factual summary of errors found"
+  "feedback": "1 sentence. If the translation is correct, say so and note it is a valid alternative wording."
 }`;
-                    const userPrompt = `ORIGINAL ENGLISH: "${originalEnglish}"
-SPANISH VERSION: "${spanishSource}"
+                    const userPrompt = `SPANISH SENTENCE (this is what must be translated): "${spanishSource}"
+REFERENCE ENGLISH (one valid rendering — NOT the required answer, never correct towards it): "${originalEnglish}"
 STUDENT'S ENGLISH TRANSLATION: "${userTranslation}"
 
+PRACTISED VOCABULARY WORD: "${vocabularyWord || '(none)'}"
+PRE-CHECK BY THE APPLICATION — the practised word is: ${vocabPresent ? 'PRESENT (reliable — do not comment on it)' : 'NOT FOUND (verify yourself: if the student used any form of it, including an irregular one, treat it as PRESENT; only flag it if genuinely absent)'}
+
 Think step by step:
-Step 1 — List every candidate error in the student's English.
-Step 2 — Apply the decision tree to each: grammatically wrong? Known idiom? Cambridge would penalise?
-Step 3 — Only include confirmed errors in corrections_list.
-Step 4 — Build annotated_text with confirmed errors only.
-Step 5 — Assign grade based solely on confirmed error count.
+Step 1 — Read the SPANISH. What does it actually mean?
+Step 2 — Does the student's English convey that meaning? If yes, it is correct so far, no matter how
+         differently it is worded from the reference.
+Step 3 — Now check ONLY for: wrong meaning, grammar mistakes, unnatural phrasing, misspellings.
+Step 4 — Before writing each correction, ask: "am I fixing a real mistake, or just making it look
+         more like the reference?" If the latter, discard it.
+Step 5 — Apply the vocabulary-word result given above.
+Step 6 — Assign the grade from the confirmed error count alone.
 
 Return ONLY the JSON object.`;
                     const result = await aiGenerateWithFallback({
@@ -4846,7 +4905,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.75</span>
+                                        English Booster <span className="version-text">v14.76</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8126,7 +8185,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         setTranslationWords([]);
                                         setTranslationIndex(0);
                                         setTranslationSpanish('');
-                                        setTranslationInput('');
+                                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                                         setShowTranslationAnswer(false);
                                         setTranslationDifficulty('');
                                         setTranslationAttempts(0);
@@ -8152,7 +8211,20 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 />
 
                                 {/* Spanish translation panel */}
-                                <div className="bg-gradient-to-br from-pink-600 to-purple-600 rounded-3xl p-8 mb-6 shadow-2xl">
+                                {/* 🆕 V14.76: Hint button in the top-right corner, same as Guesswork.
+                                    Opt-in only — the Spanish prompt itself is never altered or highlighted. */}
+                                <div className="bg-gradient-to-br from-pink-600 to-purple-600 rounded-3xl p-8 mb-6 shadow-2xl relative">
+                                    <button
+                                        onClick={async () => {
+                                            setShowTranslationHint(true);
+                                            await generateTranslationHintMeaning(translationWords[translationIndex].vocabulary);
+                                        }}
+                                        className="absolute top-4 right-4 bg-yellow-500 hover:bg-yellow-400 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg transition-all hover:scale-110"
+                                        title="Show hint"
+                                    >
+                                        💡 Hint
+                                    </button>
+
                                     <div className="text-center">
                                         <h3 className="text-white/70 text-sm font-bold uppercase mb-4">Translate to English:</h3>
                                         {translationLoading ? (
@@ -8167,6 +8239,41 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         )}
                                     </div>
                                 </div>
+
+                                {/* 🆕 V14.76: Hint panel — first letter of the practised word plus its meaning */}
+                                {showTranslationHint && (
+                                    <div className="bg-slate-800/70 border-2 border-yellow-500/40 rounded-3xl p-6 mb-6 shadow-xl">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <h3 className="text-yellow-400 font-black uppercase text-sm">💡 Hint</h3>
+                                            <button
+                                                onClick={() => setShowTranslationHint(false)}
+                                                className="text-slate-400 hover:text-white text-2xl leading-none"
+                                            >×</button>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                            <div>
+                                                <p className="text-xs uppercase font-black text-slate-500 mb-2">First Letter</p>
+                                                <p className="text-5xl font-black text-white">
+                                                    {translationWords[translationIndex].vocabulary[0].toUpperCase()}
+                                                    <span className="text-slate-700">______</span>
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs uppercase font-black text-slate-500 mb-2">Meaning</p>
+                                                {translationHintLoading ? (
+                                                    <div className="flex items-center gap-2 text-yellow-400">
+                                                        <i className="fas fa-spinner fa-spin"></i>
+                                                        <span className="text-sm">Generating meaning...</span>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-base text-yellow-300 leading-relaxed">
+                                                        {translationHintMeaning || 'Click the Hint button to generate meaning.'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {!showTranslationAnswer ? (
                                     <>
@@ -8184,7 +8291,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             const aiResult = await validateTranslationWithAI(
                                                                 translationInput,
                                                                 translationWords[translationIndex].context,
-                                                                translationSpanish
+                                                                translationSpanish,
+                                                                translationWords[translationIndex].vocabulary
                                                             );
                                                             if (aiResult) {
                                                                 setTranslationAIResult(aiResult);
@@ -8224,7 +8332,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     const aiResult = await validateTranslationWithAI(
                                                         translationInput,
                                                         translationWords[translationIndex].context,
-                                                        translationSpanish
+                                                        translationSpanish,
+                                                        translationWords[translationIndex].vocabulary
                                                     );
                                                     if (aiResult) {
                                                         setTranslationAIResult(aiResult);
@@ -8245,7 +8354,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     if (translationIndex < translationWords.length - 1) {
                                                         const nextIndex = translationIndex + 1;
                                                         setTranslationIndex(nextIndex);
-                                                        setTranslationInput('');
+                                                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                                                         setShowTranslationAnswer(false);
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
@@ -8258,7 +8367,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setTranslationWords([]);
                                                         setTranslationIndex(0);
                                                         setTranslationSpanish('');
-                                                        setTranslationInput('');
+                                                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                                                         setShowTranslationAnswer(false);
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
@@ -8380,13 +8489,34 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     })()}
                                                 </div>
 
-                                                {/* Original English reference */}
-                                                <div>
-                                                    <h4 className="text-xs uppercase font-black text-indigo-400 mb-2">Original English:</h4>
-                                                    <div className="bg-indigo-900/20 border border-indigo-500/30 p-4 rounded-xl text-base text-indigo-100">
-                                                        {translationWords[translationIndex].context}
-                                                    </div>
-                                                </div>
+                                                {/* 🆕 V14.76: when the answer is correct but worded differently, the stored
+                                                    sentence is an ALTERNATIVE, not a correction. Decided here rather than by
+                                                    the model, so the label can't contradict the marking. */}
+                                                {(() => {
+                                                    const stored = translationWords[translationIndex].context;
+                                                    const norm = s => (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+                                                    const noErrors = !(translationAIResult?.corrections_list?.length);
+                                                    const isAlternative = noErrors && norm(translationInput) !== norm(stored);
+                                                    return (
+                                                        <div>
+                                                            <h4 className={`text-xs uppercase font-black mb-2 ${isAlternative ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                                                                {isAlternative ? '💡 Another way to say it:' : 'Original English:'}
+                                                            </h4>
+                                                            <div className={`p-4 rounded-xl text-base ${
+                                                                isAlternative
+                                                                    ? 'bg-emerald-900/20 border border-emerald-500/30 text-emerald-100'
+                                                                    : 'bg-indigo-900/20 border border-indigo-500/30 text-indigo-100'
+                                                            }`}>
+                                                                {stored}
+                                                            </div>
+                                                            {isAlternative && (
+                                                                <p className="text-slate-500 text-xs mt-2">
+                                                                    Your translation is correct — this is simply another valid way to express the same sentence.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         )}
                                         
@@ -8413,7 +8543,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     if (translationIndex < translationWords.length - 1) {
                                                         const nextIndex = translationIndex + 1;
                                                         setTranslationIndex(nextIndex);
-                                                        setTranslationInput('');
+                                                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                                                         setShowTranslationAnswer(false);
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
@@ -8426,7 +8556,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         setTranslationWords([]);
                                                         setTranslationIndex(0);
                                                         setTranslationSpanish('');
-                                                        setTranslationInput('');
+                                                        setTranslationInput(''); setShowTranslationHint(false); setTranslationHintMeaning('');
                                                         setShowTranslationAnswer(false);
                                                         setTranslationDifficulty('');
                                                         setTranslationAttempts(0);
