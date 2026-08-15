@@ -4514,7 +4514,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.71</span>
+                                        English Booster <span className="version-text">v14.72</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5590,8 +5590,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
                                     {/* LEFT PANEL - RED - CURRENT DATA */}
                                     <div className="bg-red-900/20 border-2 border-red-500 rounded-2xl p-6">
-                                        <h3 className="text-red-300 font-bold mb-4 text-center text-lg">🔴 CURRENT DATA</h3>
-                                        
+                                        {/* 🆕 V14.72: header block mirrors the right panel exactly (same rule,
+                                            same min-height) so FAMILY / SYNONYMS / CONTEXT line up across both */}
+                                        <div className="flex items-center justify-center gap-3 flex-wrap mb-4 pb-3 border-b border-red-500/30 min-h-[3rem]">
+                                            <h3 className="text-red-300 font-bold text-center text-lg">🔴 CURRENT DATA</h3>
+                                        </div>
 
                                         <div className="mb-6">
                                             <div className="text-xs font-bold uppercase text-red-400 mb-2">Family</div>
@@ -5734,8 +5737,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <div className="bg-green-900/20 border-2 border-green-500 rounded-2xl p-6">
                                         {/* 🆕 V14.68: header row — title and source-model chip share one line
                                             (wrapping to a second line only when too narrow), separated from the
-                                            fields below by a rule so the chip never reads as part of Family */}
-                                        <div className="flex items-center justify-center gap-3 flex-wrap mb-4 pb-3 border-b border-green-500/30">
+                                            fields below by a rule so the chip never reads as part of Family
+                                            🆕 V14.72: min-height matches the left panel so the chip cannot push
+                                            this panel's fields out of alignment with the ones opposite */}
+                                        <div className="flex items-center justify-center gap-3 flex-wrap mb-4 pb-3 border-b border-green-500/30 min-h-[3rem]">
                                             <h3 className="text-green-300 font-bold text-center text-lg">🟢 AI SUGGESTIONS</h3>
                                             <ModelBadge model={improveData.model} prominent />
                                         </div>
