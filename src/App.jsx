@@ -641,6 +641,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [dictationInput, setDictationInput] = useState('');
             const [showDictationAnswer, setShowDictationAnswer] = useState(false);
             const [dictationErrorCount, setDictationErrorCount] = useState(0); // 🆕 V11.5
+            const [dictationNoticeCount, setDictationNoticeCount] = useState(0); // 🆕 V14.74: variants, never counted as errors
             const [dictationDifficulty, setDictationDifficulty] = useState(''); // 🆕 V11.5
             
             // 🆕 V11.12: Dictation playback control
@@ -1655,51 +1656,151 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             }
 
             // 🆕 V11.5: Compare user input with correct answer and highlight differences
+            // ─── 🆕 V14.74: dictation comparison ──────────────────────────────────────────────
+            // Irregular British/American pairs. Regex rules below cover the productive endings;
+            // these are the ones no rule catches.
+            const DIALECT_VARIANTS = [
+                ['grey', 'gray'], ['tyre', 'tire'], ['aluminium', 'aluminum'], ['programme', 'program'],
+                ['cheque', 'check'], ['plough', 'plow'], ['mould', 'mold'], ['smoulder', 'smolder'],
+                ['draught', 'draft'], ['kerb', 'curb'], ['storey', 'story'], ['pyjamas', 'pajamas'],
+                ['jewellery', 'jewelry'], ['jeweller', 'jeweler'], ['sceptic', 'skeptic'],
+                ['defence', 'defense'], ['licence', 'license'], ['offence', 'offense'],
+                ['pretence', 'pretense'], ['practise', 'practice'], ['travelling', 'traveling'],
+                ['travelled', 'traveled'], ['traveller', 'traveler'], ['cancelled', 'canceled'],
+                ['cancelling', 'canceling'], ['labelled', 'labeled'], ['modelling', 'modeling'],
+                ['marvellous', 'marvelous'], ['counsellor', 'counselor'], ['woollen', 'woolen'],
+                ['enrol', 'enroll'], ['fulfil', 'fulfill'], ['instalment', 'installment'],
+                ['skilful', 'skillful'], ['wilful', 'willful'], ['speciality', 'specialty'],
+                ['moustache', 'mustache'], ['doughnut', 'donut'], ['dialled', 'dialed']
+            ];
+            const DIALECT_MAP = DIALECT_VARIANTS.reduce((m, [a, b]) => { m[a] = b; m[b] = b; return m; }, {});
+
+            // Collapses British and American spellings onto one form. Length guards stop short,
+            // unrelated words being mangled ("four" → "for", "rise" → "rize").
+            function canonicalSpelling(word) {
+                if (DIALECT_MAP[word]) return DIALECT_MAP[word];
+                let s = word;
+                if (s.length >= 7) s = s.replace(/isations?$/, m => m.replace('isation', 'ization'));
+                if (s.length >= 5) s = s.replace(/is(e|es|ed|ing)$/, 'iz$1').replace(/ys(e|es|ed|ing)$/, 'yz$1');
+                if (s.length >= 6) s = s.replace(/ourite(s?)$/, 'orite$1').replace(/ours?$/, m => m.replace('our', 'or'));
+                s = s.replace(/([tb])res?$/, m => m.replace('re', 'er'));
+                s = s.replace(/ogues?$/, m => m.replace('ogue', 'og'));
+                return s;
+            }
+
+            const stripEdgePunctuation = s => s.replace(/^[¡¿"'“‘(\[]+/, '').replace(/[.,;:!?"'”’)\]]+$/, '');
+            const stripAccents = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+            // One key per word. Two words sharing a key differ only in ways that are NOT real errors.
+            function dictationKey(word) {
+                return canonicalSpelling(stripAccents(stripEdgePunctuation(word)).toLowerCase());
+            }
+
+            const NOTICE_LABELS = {
+                dialect: 'Spelling variant (British/American)',
+                punctuation: 'Punctuation',
+                capitalisation: 'Capitalisation',
+                accent: 'Accents/diacritics'
+            };
+
+            // Only called when two words share a dictationKey, so one of these always applies.
+            function noticeKind(userWord, correctWord) {
+                const u = stripEdgePunctuation(userWord), c = stripEdgePunctuation(correctWord);
+                if (u === c) return 'punctuation';
+                if (stripAccents(u) === stripAccents(c)) return 'accent';
+                if (u.toLowerCase() === c.toLowerCase()) return 'capitalisation';
+                if (stripAccents(u).toLowerCase() === stripAccents(c).toLowerCase()) return 'accent';
+                return 'dialect';
+            }
+
+            // 🆕 V14.74: aligned word diff. The previous version compared userWords[i] to
+            // correctWords[i] positionally, so a single missing or extra word shifted every later
+            // word and struck through perfectly correct ones — and that inflated count was written
+            // to Supabase. LCS alignment fixes it; notices are reported but never counted.
             function highlightDifferences(userInput, correctAnswer) {
-                if (!correctAnswer) return { highlighted: '', errorCount: 0 };
-                
+                if (!correctAnswer) return { highlighted: '', errorCount: 0, noticeCount: 0 };
+
                 // 🆕 V11.6: Empty input should be marked as error
                 if (!userInput || userInput.trim() === '') {
-                    // Count all words as errors
-                    const correctWords = correctAnswer.toLowerCase().trim().split(/\s+/);
-                    return { 
-                        highlighted: <span className="text-red-400 italic">(No answer provided)</span>, 
-                        errorCount: correctWords.length 
+                    const correctWords = correctAnswer.trim().split(/\s+/);
+                    return {
+                        highlighted: <span className="text-red-400 italic">(No answer provided)</span>,
+                        errorCount: correctWords.length,
+                        noticeCount: 0
                     };
                 }
-                
-                // Normalize: lowercase and split into words
-                const userWords = userInput.toLowerCase().trim().split(/\s+/);
-                const correctWords = correctAnswer.toLowerCase().trim().split(/\s+/);
-                
-                let errorCount = 0;
-                
-                // Compare word by word
-                const highlighted = userWords.map((word, index) => {
-                    const correctWord = correctWords[index];
-                    
-                    if (!correctWord) {
-                        // Extra word that shouldn't be there
-                        errorCount++;
-                        return <span key={index} className="text-red-400 font-bold">{word} </span>;
+
+                const userWords = userInput.trim().split(/\s+/);
+                const correctWords = correctAnswer.trim().split(/\s+/);
+                const uKey = userWords.map(dictationKey);
+                const cKey = correctWords.map(dictationKey);
+
+                // Longest common subsequence, so an insertion/deletion cannot cascade
+                const n = uKey.length, m = cKey.length;
+                const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+                for (let i = n - 1; i >= 0; i--) {
+                    for (let j = m - 1; j >= 0; j--) {
+                        dp[i][j] = uKey[i] === cKey[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
                     }
-                    
-                    if (word === correctWord) {
-                        // Correct word
-                        return <span key={index} className="text-green-300">{word} </span>;
-                    } else {
-                        // Incorrect word
-                        errorCount++;
-                        return <span key={index} className="text-red-400 font-bold line-through">{word} </span>;
-                    }
-                });
-                
-                // Check for missing words
-                if (correctWords.length > userWords.length) {
-                    errorCount += (correctWords.length - userWords.length);
                 }
-                
-                return { highlighted, errorCount };
+
+                const ops = [];
+                let i = 0, j = 0;
+                while (i < n && j < m) {
+                    if (uKey[i] === cKey[j]) { ops.push({ op: 'equal', i, j }); i++; j++; }
+                    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ op: 'extra', i }); i++; }
+                    else { ops.push({ op: 'missing', j }); j++; }
+                }
+                while (i < n) { ops.push({ op: 'extra', i }); i++; }
+                while (j < m) { ops.push({ op: 'missing', j }); j++; }
+
+                // Within each run of differences, pair up extras with missings: a swapped word is
+                // ONE error, not an extra plus a missing. Whatever is left over is a genuine
+                // insertion or omission. Pairing across the whole run (not just adjacent ops) keeps
+                // two consecutive wrong words at two errors rather than three.
+                const merged = [];
+                for (let k = 0; k < ops.length; ) {
+                    if (ops[k].op === 'equal') { merged.push(ops[k]); k++; continue; }
+                    let end = k;
+                    while (end < ops.length && ops[end].op !== 'equal') end++;
+                    const block = ops.slice(k, end);
+                    const extras = block.filter(o => o.op === 'extra');
+                    const missings = block.filter(o => o.op === 'missing');
+                    const pairs = Math.min(extras.length, missings.length);
+                    for (let p = 0; p < pairs; p++) merged.push({ op: 'wrong', i: extras[p].i, j: missings[p].j });
+                    for (let p = pairs; p < extras.length; p++) merged.push(extras[p]);
+                    for (let p = pairs; p < missings.length; p++) merged.push(missings[p]);
+                    k = end;
+                }
+
+                let errorCount = 0, noticeCount = 0;
+                const highlighted = merged.map((o, k) => {
+                    if (o.op === 'equal') {
+                        const u = userWords[o.i], c = correctWords[o.j];
+                        if (u === c) return <span key={k} className="text-green-300">{u} </span>;
+                        const kind = noticeKind(u, c);
+                        noticeCount++;
+                        return (
+                            <span
+                                key={k}
+                                className="text-amber-300 border-b border-dashed border-amber-400/70 cursor-help"
+                                title={`${NOTICE_LABELS[kind]} — accepted variant, not counted as an error (expected: "${c}")`}
+                            >{u}<sup className="text-[9px] text-amber-400 ml-0.5">▵</sup>{' '}</span>
+                        );
+                    }
+                    if (o.op === 'wrong') {
+                        errorCount++;
+                        return <span key={k} className="text-red-400 font-bold line-through" title={`Expected: "${correctWords[o.j]}"`}>{userWords[o.i]} </span>;
+                    }
+                    if (o.op === 'extra') {
+                        errorCount++;
+                        return <span key={k} className="text-red-400 font-bold line-through" title="Extra word">{userWords[o.i]} </span>;
+                    }
+                    errorCount++;
+                    return <span key={k} className="text-red-400 font-bold" title="Missing word">[{correctWords[o.j]}] </span>;
+                });
+
+                return { highlighted, errorCount, noticeCount };
             }
 
             // 🆕 V11.5: Calculate difficulty based on error count
@@ -3090,46 +3191,63 @@ Return ONLY the JSON object.`;
                 try {
                     const systemPrompt = `You are a strict Cambridge English teacher correcting a dictation exercise. The student heard a sentence and transcribed it. Compare their transcription to the original word-by-word and character-by-character.
 
-━━━ WHAT TO FLAG ━━━
-- Misspelt words (even one wrong letter)
-- Wrong words (substituted with a different word)
+Every difference you find MUST be sorted into exactly ONE of two categories.
+
+━━━ CATEGORY 1 — REAL ERRORS (these count towards the grade) ━━━
+- Wrong word: a different word entirely (e.g. "about" instead of "above")
 - Missing words
 - Extra words added by the student
-- Wrong punctuation (missing period, wrong comma, etc.)
-- Wrong capitalisation
+- Genuine spelling mistakes (a real misspelling, not a regional variant)
+- Grammatical errors (wrong tense, wrong number, wrong article...)
 
-━━━ WHAT NOT TO FLAG ━━━
-- Acceptable spelling variants unless clearly wrong
-- Do NOT add commentary — only mark actual transcription errors
+━━━ CATEGORY 2 — NOTICES (these DO NOT count and NEVER affect the grade) ━━━
+- Dialect variants: British vs American spelling. prioritise/prioritize, colour/color,
+  centre/center, travelling/traveling, defence/defense are all CORRECT — never a real error.
+- Final punctuation, missing or extra (a missing full stop is a notice, not an error)
+- Initial capitalisation (lower-case first word is a notice, not an error)
+- Accents and diacritics (café/cafe)
+
+If a difference could plausibly sit in either category, put it in NOTICES.
+
+━━━ ABSOLUTE PROHIBITIONS ━━━
 - NEVER produce a correction where <del> and <ins> contain identical text
+- NEVER count a notice in error_count
+- Do NOT add commentary — only mark actual differences
 
-━━━ CAMBRIDGE GRADING ━━━
-Based on error count:
-- 0 errors → C2
-- 1 error  → C1
-- 2 errors → B2
-- 3+ errors → B1
+━━━ CAMBRIDGE GRADING (real errors only — ignore notices entirely) ━━━
+- 0 real errors → C2
+- 1 real error  → C1
+- 2 real errors → B2
+- 3+ real errors → B1
 
 Return ONLY valid JSON — no markdown, no backticks, no preamble, no thinking text:
 {
-  "annotated_text": "Student's text with: <del>wrong</del><ins>correct</ins> for substitutions/misspellings. For missing words: <ins>missing-word</ins>. For extra words: <del>extra-word</del>. Keep ALL correct words exactly as written.",
+  "annotated_text": "Student's text. REAL ERRORS: <del>wrong</del><ins>correct</ins> for substitutions/misspellings, <ins>missing-word</ins> for missing words, <del>extra-word</del> for extra words. NOTICES: wrap the student's word in <var>word</var> and mark NOTHING else on it. Keep all other words exactly as written.",
   "corrections_list": [
-    {"id": 1, "original": "wrong", "corrected": "correct", "type": "spelling/missing-word/extra-word/wrong-word/punctuation/capitalisation", "explanation": "brief explanation"}
+    {"id": 1, "original": "wrong", "corrected": "correct", "type": "spelling/missing-word/extra-word/wrong-word/grammar", "explanation": "brief explanation"}
+  ],
+  "notices_list": [
+    {"original": "student's word", "expected": "original word", "type": "dialect/punctuation/capitalisation/accent", "explanation": "brief reason this is acceptable"}
   ],
   "error_count": 0,
+  "notice_count": 0,
   "grade": "C2/C1/B2/B1"
-}`;
+}
+error_count MUST equal the length of corrections_list. notice_count MUST equal the length of notices_list.`;
                     const userPrompt = `ORIGINAL SENTENCE: "${correctText}"
 
 STUDENT'S TRANSCRIPTION: "${userInput}"
 
-Compare every single word and character. Flag every difference.
+Compare every single word and character, then sort each difference into REAL ERRORS or NOTICES.
 
 Think step by step:
 Step 1 — List every difference between original and transcription.
-Step 2 — Classify each: misspelling, wrong-word, missing-word, extra-word, punctuation, capitalisation.
-Step 3 — Build annotated_text and corrections_list from confirmed errors only.
-Step 4 — Count errors and assign Cambridge grade.
+Step 2 — For each one, decide: is it a dialect variant, final punctuation, initial capitalisation,
+         or an accent? If YES it is a NOTICE. Otherwise classify it as wrong-word, missing-word,
+         extra-word, spelling or grammar, and it is a REAL ERROR.
+Step 3 — Put real errors in corrections_list, notices in notices_list. Never both.
+Step 4 — Build annotated_text: <del>/<ins> for real errors, <var> for notices.
+Step 5 — Set error_count from real errors ONLY, and assign the grade from that number alone.
 
 Return ONLY the JSON object.`;
                     const feedback = await aiGenerateWithFallback({
@@ -4674,7 +4792,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.73</span>
+                                        English Booster <span className="version-text">v14.74</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6903,9 +7021,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         
                                                         if (!showDictationAnswer) {
                                                             // First Enter: Check answer
-                                                            const { errorCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                            const { errorCount, noticeCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
                                                             const difficulty = calculateDifficulty(errorCount);
                                                             setDictationErrorCount(errorCount);
+                                                            setDictationNoticeCount(noticeCount);
                                                             setDictationDifficulty(difficulty);
                                                             setShowDictationAnswer(true);
                                                             setDictationAIFeedback(null);
@@ -6966,9 +7085,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <button
                                                     onClick={async () => {
                                                         // 🆕 V11.5: Calculate errors and difficulty
-                                                        const { errorCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
+                                                        const { errorCount, noticeCount } = highlightDifferences(dictationInput, dictationWords[dictationIndex].context);
                                                         const difficulty = calculateDifficulty(errorCount);
                                                         setDictationErrorCount(errorCount);
+                                                        setDictationNoticeCount(noticeCount);
                                                         setDictationDifficulty(difficulty);
                                                         setShowDictationAnswer(true);
                                                         setDictationAIFeedback(null);
@@ -7025,7 +7145,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {/* 🆕 V14.6: Score bar with Cambridge grade + Info icon */}
                                             <div className="flex justify-center items-center gap-4 mb-6 p-4 bg-slate-800/50 rounded-2xl relative">
                                                 <button
-                                                    onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🤖 AI ANALYSIS (requires Groq API key):\nPrecise teacher-level correction:\n• Spelling mistakes\n• Missing or extra words\n• Wrong words\n• Punctuation errors\n• Capitalisation errors\n\nClick on highlighted errors to see details.')}
+                                                    onClick={() => alert('🎤 DICTATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS (real errors only):\n🏆 C2: Perfect transcription — 0 errors\n⭐ C1: Excellent — 1 error\n📝 B2: Good — 2 errors\n🔴 B1: Needs practice — 3+ errors\n\n🔴 REAL ERRORS (counted, affect grade and difficulty):\n• Wrong words\n• Missing or extra words\n• Genuine spelling mistakes\n• Grammatical errors\n\n▵ NOTICES (shown in amber, NOT counted):\n• British vs American spelling (colour/color)\n• Final punctuation, missing or extra\n• Initial capitalisation\n• Accents and diacritics\n\nNotices never affect your grade or the difficulty saved for the word.\n\nClick on highlighted errors to see details.')}
                                                     className="absolute right-3 top-3 text-blue-400 hover:text-blue-300 text-base leading-none"
                                                     title="Grading criteria"
                                                 >ℹ️</button>
@@ -7033,6 +7153,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Errors</p>
                                                     <p className="text-2xl font-black text-white">{dictationAIFeedback ? dictationAIFeedback.error_count : dictationErrorCount}</p>
                                                 </div>
+                                                {/* 🆕 V14.74: notices are shown but never counted as errors */}
+                                                {(dictationAIFeedback ? (dictationAIFeedback.notice_count || 0) : dictationNoticeCount) > 0 && (
+                                                    <>
+                                                        <div className="h-12 w-px bg-slate-700"></div>
+                                                        <div className="text-center cursor-help" title="Accepted variants — British/American spelling, final punctuation, initial capitalisation or accents. These do not affect your grade or the word's difficulty.">
+                                                            <p className="text-xs uppercase font-black text-amber-500/80 mb-1">Notices ▵</p>
+                                                            <p className="text-2xl font-black text-amber-300">{dictationAIFeedback ? (dictationAIFeedback.notice_count || 0) : dictationNoticeCount}</p>
+                                                        </div>
+                                                    </>
+                                                )}
                                                 <div className="h-12 w-px bg-slate-700"></div>
                                                 <div className="text-center">
                                                     <p className="text-xs uppercase font-black text-slate-500 mb-1">Grade</p>
@@ -7077,7 +7207,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             }}
                                                             dangerouslySetInnerHTML={{ __html: (() => {
                                                                 let html = (dictationAIFeedback.annotated_text || dictationInput);
-                                                                html = html.replace(/<(?!\/?(?:del|ins)(?:\s|>))[^>]*>/g, '');
+                                                                html = html.replace(/<(?!\/?(?:del|ins|var)(?:\s|>))[^>]*>/g, '');
                                                                 let corrId = 0;
                                                                 html = html.replace(/<del>(.*?)<\/del><ins>(.*?)<\/ins>/g, (match, del_text, ins_text) => {
                                                                     corrId++;
@@ -7090,6 +7220,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 html = html.replace(/<del>(.*?)<\/del>/g, (match, del_text) => {
                                                                     corrId++;
                                                                     return '<span data-dict-correction-id="' + corrId + '" style="cursor:pointer;color:#f87171;text-decoration:line-through;opacity:0.8;border-bottom:2px dashed #f87171;padding-bottom:1px">' + del_text + '</span>';
+                                                                });
+                                                                // 🆕 V14.74: notices — accepted variants, amber and never counted. Deliberately
+                                                                // not given a correction id: they are not corrections, so they open no popup.
+                                                                html = html.replace(/<var>(.*?)<\/var>/g, (match, var_text) => {
+                                                                    const note = (dictationAIFeedback.notices_list || []).find(nx => nx && nx.original === var_text);
+                                                                    const label = note
+                                                                        ? (NOTICE_LABELS[note.type] || 'Accepted variant') + ' — not counted as an error' + (note.expected ? ' (expected: "' + note.expected + '")' : '')
+                                                                        : 'Accepted variant — not counted as an error';
+                                                                    return '<span title="' + label.replace(/"/g, '&quot;') + '" style="cursor:help;color:#fcd34d;border-bottom:1px dashed rgba(251,191,36,0.7)">' + var_text + '<sup style="font-size:9px;color:#fbbf24;margin-left:2px">▵</sup></span>';
                                                                 });
                                                                 return html;
                                                             })() }}
