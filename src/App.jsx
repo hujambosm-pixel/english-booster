@@ -4213,12 +4213,24 @@ Return ONLY the JSON object.`;
                         .select('id', { count: 'exact', head: true })
                         .is('deleted_at', null);
 
-                    // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate,
-                    // blanks or not — otherwise "pending" still means missing at least one field.
-                    if (isGroqFilledFilter) query = query.eq('ai_source', 'groq');
-                    else query = query.or('synonyms.is.null,synonyms.eq.,context.is.null,context.eq.,family.is.null,family.eq.');
+                    // 🆕 V14.83: apply the SAME emptyFilter constraint the list uses. Without this the
+                    // count ranged over the whole table, so "No Context" could report more pending
+                    // than the filter contains — records that have a context but lack family were
+                    // being counted even though the batch would never see them.
+                    if (emptyFilter === 'Synonyms') query = query.or('synonyms.is.null,synonyms.eq.');
+                    else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
+                    else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
+                    else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
+                    else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
+                    else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
 
-                    if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
+                    // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate, blanks
+                    // or not. Everywhere else "pending" still means missing at least one field, which
+                    // is ANDed with the filter above so the count can never exceed the filtered rows.
+                    if (!isGroqFilledFilter) {
+                        query = query.or('synonyms.is.null,synonyms.eq.,context.is.null,context.eq.,family.is.null,family.eq.');
+                    }
+
                     if (search.trim()) query = query.ilike('vocabulary', `%${search.trim()}%`);
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
@@ -4432,7 +4444,7 @@ Return ONLY the JSON object.`;
                 batchStopRef.current = false;
                 setBatchRunning(true);
                 setBatchSummary(null);
-                setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0, unavailable: 0, status: '' });
+                setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0, unavailable: 0, status: '', model });
 
                 let filled = 0, failed = 0, skipped = 0, unavailable = 0, stoppedBy = null;
                 const failures = []; // 🆕 V14.79: per-record reasons, surfaced in the summary
@@ -4456,7 +4468,7 @@ Return ONLY the JSON object.`;
                         });
                     }
 
-                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped, unavailable, status: '' });
+                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped, unavailable, status: '', model });
 
                     // Throttle between records — a full batch takes 2-3 minutes by design
                     if (i < queue.length - 1 && !batchStopRef.current) {
@@ -5446,7 +5458,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.82</span>
+                                        English Booster <span className="version-text">v14.83</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6594,9 +6606,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     {batchProgress && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4">
                             <div className="bg-slate-900 rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-purple-500/30">
-                                <h2 className="text-xl font-black text-white mb-1">✨ Filling with Gemini</h2>
+                                {/* 🆕 V14.83: title and note follow the model actually running */}
+                                <h2 className="text-xl font-black text-white mb-1">
+                                    {batchProgress.model === 'groq' ? '⚡ Filling with Groq' : '✨ Filling with Gemini'}
+                                </h2>
                                 <p className="text-slate-500 text-xs mb-5">
-                                    Requests are spaced ~6s apart to stay inside the per-minute limit — a full batch takes 2-3 minutes.
+                                    {batchProgress.model === 'groq'
+                                        ? 'Requests are spaced ~6s apart to keep the load steady — a full batch takes 2-3 minutes.'
+                                        : "Requests are spaced ~6s apart to stay inside Gemini's per-minute limit — a full batch takes 2-3 minutes."}
                                 </p>
 
                                 <div className="flex justify-between items-end mb-2">
