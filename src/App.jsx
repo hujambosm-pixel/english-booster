@@ -316,7 +316,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V14.73: options let other features reuse this — bigger budgets for the long
             // examiner prompts, and json:false for the one call site that wants prose back.
             async function callGemini(apiKey, systemContent, prompt, label = 'Magic Fill', options = {}) {
-                const { maxOutputTokens = 800, temperature = 0.2, json = true } = options;
+                // 🆕 V14.80: timeoutMs — a real run saw a call sit for 34.8s before returning 503,
+                // so an unbounded request could stall a whole batch.
+                const { maxOutputTokens = 800, temperature = 0.2, json = true, timeoutMs = 45000 } = options;
                 const startedAt = Date.now();
                 console.log(`%c[${label}] 🔷 Trying Gemini (${GEMINI_MODEL})...`, 'color:#60a5fa;font-weight:bold');
 
@@ -327,6 +329,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 };
                 if (json) generationConfig.responseMimeType = 'application/json';
 
+                const abortController = new AbortController();
+                const timeoutHandle = setTimeout(() => abortController.abort(), timeoutMs);
+
                 try {
                     const requestUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
                     const response = await fetch(
@@ -334,6 +339,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
+                            signal: abortController.signal,
                             body: JSON.stringify({
                                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                                 // omitted when the call site has no system message, so its prompt
@@ -368,6 +374,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         const err = new Error(`Gemini API Error ${response.status}${detail ? ': ' + detail : ''}`);
                         err.status = response.status;
                         err.quotaExhausted = quotaHit;
+                        // 🆕 V14.80: 5xx means Google is busy, not that the request is wrong —
+                        // transient and worth retrying. 429 is deliberately NOT retriable.
+                        err.retriable = !quotaHit && [500, 502, 503, 504].includes(response.status);
                         throw err;
                     }
 
@@ -411,9 +420,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     return text;
 
                 } catch (err) {
+                    // 🆕 V14.80: an aborted request is a timeout, and is retriable like a 5xx
+                    if (err.name === 'AbortError') {
+                        const timeoutErr = new Error(`Gemini request timed out after ${timeoutMs}ms`);
+                        timeoutErr.timedOut = true;
+                        timeoutErr.retriable = true;
+                        console.error(`[${label}] ⏱ ${timeoutErr.message}`);
+                        throw timeoutErr;
+                    }
                     // Single place where every Gemini failure surfaces, network errors included
                     console.error(`[${label}] ❌ Gemini call failed after ${Date.now() - startedAt}ms:`, err);
                     throw err;
+                } finally {
+                    clearTimeout(timeoutHandle);
                 }
             }
 
@@ -515,10 +534,41 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 try {
                     return JSON.parse(raw);
                 } catch (e) { /* fall through to brace extraction */ }
+
+                // 🆕 V14.80: count braces to find the FIRST balanced object, the same recovery the
+                // interactive Magic Fill uses. The previous lastIndexOf('}') spanned past the valid
+                // object into any trailing content, so a model that appended prose after the JSON
+                // produced "Unexpected non-whitespace character after JSON" from the retry as well.
                 const start = raw.indexOf('{');
-                const end = raw.lastIndexOf('}');
-                if (start === -1 || end === -1) throw new Error('No JSON object in response');
-                return JSON.parse(raw.substring(start, end + 1));
+                if (start === -1) {
+                    console.error('[parseLooseJson] no JSON object found. Raw response:', raw);
+                    throw new Error('No JSON object in response');
+                }
+
+                let depth = 0, inString = false, escaped = false, end = -1;
+                for (let i = start; i < raw.length; i++) {
+                    const ch = raw[i];
+                    if (escaped) { escaped = false; continue; }
+                    if (ch === '\\') { escaped = true; continue; }
+                    if (ch === '"') { inString = !inString; continue; }
+                    if (inString) continue;          // braces inside strings are not structure
+                    if (ch === '{') depth++;
+                    else if (ch === '}') {
+                        depth--;
+                        if (depth === 0) { end = i + 1; break; }
+                    }
+                }
+                if (end === -1) {
+                    console.error('[parseLooseJson] unbalanced JSON object. Raw response:', raw);
+                    throw new Error('No balanced JSON object in response');
+                }
+
+                try {
+                    return JSON.parse(raw.substring(start, end));
+                } catch (e) {
+                    console.error('[parseLooseJson] extracted object still invalid:', raw.substring(start, end), '| full raw:', raw);
+                    throw e;
+                }
             }
 
             // 🆕 V14.73: Gemini-first with automatic Groq fallback — the same pattern Magic Fill and
@@ -4095,6 +4145,8 @@ Return ONLY the JSON object.`;
             // ─── 🆕 V14.78: batch AI fill ─────────────────────────────────────────────────────
             const BATCH_SIZE = 25;
             const BATCH_DELAY_MS = 6000; // ~10 requests/minute, inside Gemini's free per-minute limit
+            // 🆕 V14.80: backoff for transient 5xx / timeouts. 429 is never retried — it stops the batch.
+            const BATCH_RETRY_DELAYS = [5000, 15000, 40000];
 
             const isRecordPending = w => !w.synonyms?.trim() || !w.context?.trim() || !w.family?.trim();
 
@@ -4145,16 +4197,43 @@ Return ONLY the JSON object.`;
                 const tag = `[Batch fill] "${record.vocabulary}"`;
                 console.log(`${tag} → requesting. Missing:`, Object.keys(missing).filter(k => missing[k]).join(', '));
 
-                // ── 1. API call ────────────────────────────────────────────────────────────────
+                // ── 1. API call, with backoff on transient 5xx / timeouts ──────────────────────
                 let raw;
-                try {
-                    const prompt = buildMagicFillPrompt(record.vocabulary, record.family || '');
-                    raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
-                    console.log(`${tag} raw Gemini response:`, raw);
-                } catch (e) {
-                    if (e.quotaExhausted || e.status === 429) return { outcome: 'quota', reason: 'quota exhausted' };
-                    console.error(`${tag} ✗ API call failed:`, e.message, e);
-                    return { outcome: 'failed', reason: 'API error', detail: e.message };
+                let retries = 0;
+                const prompt = buildMagicFillPrompt(record.vocabulary, record.family || '');
+
+                for (let attempt = 0; ; attempt++) {
+                    try {
+                        raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
+                        console.log(`${tag} raw Gemini response:`, raw);
+                        break;
+                    } catch (e) {
+                        // 429 still stops the whole batch immediately — never retried
+                        if (e.quotaExhausted || e.status === 429) return { outcome: 'quota', reason: 'quota exhausted' };
+
+                        const canRetry = e.retriable && attempt < BATCH_RETRY_DELAYS.length && !batchStopRef.current;
+                        if (canRetry) {
+                            const wait = BATCH_RETRY_DELAYS[attempt];
+                            retries++;
+                            const why = e.timedOut ? 'timed out' : `HTTP ${e.status}`;
+                            console.warn(`${tag} ⏳ ${why} — retry ${retries}/${BATCH_RETRY_DELAYS.length} in ${wait / 1000}s`);
+                            setBatchProgress(p => p ? { ...p, status: `${why}, retrying in ${wait / 1000}s (${retries}/${BATCH_RETRY_DELAYS.length})` } : p);
+                            await new Promise(r => setTimeout(r, wait));
+                            setBatchProgress(p => p ? { ...p, status: '' } : p);
+                            continue;
+                        }
+
+                        console.error(`${tag} ✗ API call failed after ${retries} retr${retries === 1 ? 'y' : 'ies'}:`, e.message, e);
+                        // Google capacity problems are reported separately from genuine errors
+                        if (e.retriable) {
+                            return {
+                                outcome: 'unavailable', retries,
+                                reason: `temporarily unavailable (retried ${retries}×)`,
+                                detail: e.timedOut ? 'request timed out' : `HTTP ${e.status}`
+                            };
+                        }
+                        return { outcome: 'failed', reason: 'API error', detail: e.message };
+                    }
                 }
 
                 // ── 2. Parse ───────────────────────────────────────────────────────────────────
@@ -4225,7 +4304,8 @@ Return ONLY the JSON object.`;
                 }
             }
 
-            async function runBatchFill() {
+            // 🆕 V14.80: retryRecords lets the summary re-run just the ones that did not succeed
+            async function runBatchFill(retryRecords = null) {
                 if (batchRunning) return;
                 if (!geminiApiKey.trim()) {
                     alert('⚠️ Batch fill needs a Gemini API key.\n\nSet it in Settings — batch fill deliberately does not fall back to Groq.');
@@ -4237,7 +4317,9 @@ Return ONLY the JSON object.`;
                     return;
                 }
 
-                const queue = words.filter(isRecordPending).slice(0, BATCH_SIZE);
+                const queue = Array.isArray(retryRecords) && retryRecords.length
+                    ? retryRecords.slice(0, BATCH_SIZE)
+                    : words.filter(isRecordPending).slice(0, BATCH_SIZE);
                 if (queue.length === 0) {
                     alert('✅ Nothing pending in the current filter.\n\nEvery loaded record already has synonyms, context and family.');
                     return;
@@ -4246,9 +4328,9 @@ Return ONLY the JSON object.`;
                 batchStopRef.current = false;
                 setBatchRunning(true);
                 setBatchSummary(null);
-                setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0 });
+                setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0, unavailable: 0, status: '' });
 
-                let filled = 0, failed = 0, skipped = 0, stoppedBy = null;
+                let filled = 0, failed = 0, skipped = 0, unavailable = 0, stoppedBy = null;
                 const failures = []; // 🆕 V14.79: per-record reasons, surfaced in the summary
 
                 for (let i = 0; i < queue.length; i++) {
@@ -4262,11 +4344,15 @@ Return ONLY the JSON object.`;
                     else if (outcome === 'skipped') skipped++;
                     else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
                     else {
-                        failed++;
-                        failures.push({ word: record.vocabulary, reason: reason || 'unknown', detail: detail || '' });
+                        // 🆕 V14.80: Google capacity problems counted apart from genuine errors
+                        if (outcome === 'unavailable') unavailable++; else failed++;
+                        failures.push({
+                            word: record.vocabulary, reason: reason || 'unknown',
+                            detail: detail || '', kind: outcome, record
+                        });
                     }
 
-                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
+                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped, unavailable, status: '' });
 
                     // Throttle between records — a full batch takes 2-3 minutes by design
                     if (i < queue.length - 1 && !batchStopRef.current) {
@@ -4277,7 +4363,7 @@ Return ONLY the JSON object.`;
                 setBatchRunning(false);
                 setBatchProgress(null);
                 if (failures.length) console.table(failures);
-                setBatchSummary({ filled, failed, skipped, stoppedBy, attempted: filled + failed + skipped, failures });
+                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, attempted: filled + failed + skipped + unavailable, failures });
                 await refreshPendingTotal();
             }
 
@@ -5248,7 +5334,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.79</span>
+                                        English Booster <span className="version-text">v14.80</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6328,19 +6414,29 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 mb-5">
                                     <p className="text-[10px] uppercase font-black text-slate-500 mb-1">Currently processing</p>
                                     <p className="text-indigo-300 font-bold truncate">{batchProgress.word || '—'}</p>
+                                    {/* 🆕 V14.80: a retry in progress is not a hang — say so */}
+                                    {batchProgress.status && (
+                                        <p className="text-amber-400 text-xs mt-1.5 flex items-center gap-2">
+                                            <i className="fas fa-spinner fa-spin"></i>{batchProgress.status}
+                                        </p>
+                                    )}
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-3 mb-6 text-center">
+                                <div className="grid grid-cols-4 gap-2 mb-6 text-center">
                                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl py-2">
-                                        <p className="text-[10px] uppercase font-black text-green-500/80">Filled</p>
+                                        <p className="text-[9px] uppercase font-black text-green-500/80">Filled</p>
                                         <p className="text-2xl font-black text-green-400">{batchProgress.filled}</p>
                                     </div>
+                                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl py-2" title="Google returned a temporary capacity error after all retries">
+                                        <p className="text-[9px] uppercase font-black text-amber-500/80">Busy</p>
+                                        <p className="text-2xl font-black text-amber-400">{batchProgress.unavailable || 0}</p>
+                                    </div>
                                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl py-2">
-                                        <p className="text-[10px] uppercase font-black text-red-500/80">Failed</p>
+                                        <p className="text-[9px] uppercase font-black text-red-500/80">Failed</p>
                                         <p className="text-2xl font-black text-red-400">{batchProgress.failed}</p>
                                     </div>
                                     <div className="bg-slate-700/40 border border-slate-600/40 rounded-xl py-2">
-                                        <p className="text-[10px] uppercase font-black text-slate-500">Skipped</p>
+                                        <p className="text-[9px] uppercase font-black text-slate-500">Skipped</p>
                                         <p className="text-2xl font-black text-slate-300">{batchProgress.skipped}</p>
                                     </div>
                                 </div>
@@ -6375,20 +6471,41 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             : 'All records in this batch have been processed.'}
                                 </p>
 
-                                <div className="grid grid-cols-3 gap-3 mb-5 text-center">
+                                <div className="grid grid-cols-4 gap-2 mb-4 text-center">
                                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl py-3">
-                                        <p className="text-[10px] uppercase font-black text-green-500/80">Filled</p>
+                                        <p className="text-[9px] uppercase font-black text-green-500/80">Filled</p>
                                         <p className="text-3xl font-black text-green-400">{batchSummary.filled}</p>
                                     </div>
+                                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl py-3">
+                                        <p className="text-[9px] uppercase font-black text-amber-500/80">Busy</p>
+                                        <p className="text-3xl font-black text-amber-400">{batchSummary.unavailable || 0}</p>
+                                    </div>
                                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl py-3">
-                                        <p className="text-[10px] uppercase font-black text-red-500/80">Failed</p>
+                                        <p className="text-[9px] uppercase font-black text-red-500/80">Failed</p>
                                         <p className="text-3xl font-black text-red-400">{batchSummary.failed}</p>
                                     </div>
                                     <div className="bg-slate-700/40 border border-slate-600/40 rounded-xl py-3">
-                                        <p className="text-[10px] uppercase font-black text-slate-500">Skipped</p>
+                                        <p className="text-[9px] uppercase font-black text-slate-500">Skipped</p>
                                         <p className="text-3xl font-black text-slate-300">{batchSummary.skipped}</p>
                                     </div>
                                 </div>
+
+                                {/* 🆕 V14.80: separate Google capacity problems from genuine errors */}
+                                {(batchSummary.unavailable > 0 || batchSummary.failed > 0) && (
+                                    <p className="text-slate-400 text-xs mb-4 leading-relaxed">
+                                        {batchSummary.unavailable > 0 && (
+                                            <>
+                                                <span className="text-amber-400 font-bold">{batchSummary.unavailable}</span> could not be processed because
+                                                Google's servers were busy (HTTP 503) even after retrying — these are temporary and usually succeed later.{' '}
+                                            </>
+                                        )}
+                                        {batchSummary.failed > 0 && (
+                                            <>
+                                                <span className="text-red-400 font-bold">{batchSummary.failed}</span> hit a real error and need attention.
+                                            </>
+                                        )}
+                                    </p>
+                                )}
 
                                 {/* 🆕 V14.79: why each record failed — "Failed: 4" alone is not actionable */}
                                 {batchSummary.failures?.length > 0 && (
@@ -6396,10 +6513,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-[10px] uppercase font-black text-red-400/80 mb-2">Why they failed</p>
                                         <div className="max-h-48 overflow-y-auto custom-scroll space-y-1.5">
                                             {batchSummary.failures.map((f, i) => (
-                                                <div key={i} className="bg-red-900/15 border border-red-500/25 rounded-lg px-3 py-2 text-xs">
+                                                <div key={i} className={`rounded-lg px-3 py-2 text-xs border ${
+                                                    f.kind === 'unavailable'
+                                                        ? 'bg-amber-900/15 border-amber-500/25'
+                                                        : 'bg-red-900/15 border-red-500/25'
+                                                }`}>
                                                     <span className="text-indigo-300 font-bold">{f.word}</span>
                                                     <span className="text-slate-500 mx-1.5">—</span>
-                                                    <span className="text-red-300">{f.reason}</span>
+                                                    <span className={f.kind === 'unavailable' ? 'text-amber-300' : 'text-red-300'}>{f.reason}</span>
                                                     {f.detail && <span className="text-slate-500 block mt-0.5">{f.detail}</span>}
                                                 </div>
                                             ))}
@@ -6414,10 +6535,25 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 </div>
                                 <p className="text-slate-500 text-xs mb-5">{geminiDailyCount.toLocaleString()} Gemini calls processed today.</p>
 
-                                <button
-                                    onClick={() => setBatchSummary(null)}
-                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black uppercase text-sm"
-                                >Close</button>
+                                <div className="flex gap-3">
+                                    {/* 🆕 V14.80: re-run only the records that did not succeed */}
+                                    {batchSummary.failures?.length > 0 && batchSummary.stoppedBy !== 'quota' && (
+                                        <button
+                                            onClick={() => {
+                                                const retryRecords = batchSummary.failures.map(f => f.record).filter(Boolean);
+                                                setBatchSummary(null);
+                                                runBatchFill(retryRecords);
+                                            }}
+                                            className="flex-1 bg-amber-600/20 border border-amber-500/40 text-amber-300 hover:bg-amber-600/30 py-3 rounded-2xl font-black uppercase text-sm"
+                                        >
+                                            ↻ Retry {batchSummary.failures.length}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setBatchSummary(null)}
+                                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black uppercase text-sm"
+                                    >Close</button>
+                                </div>
                             </div>
                         </div>
                     )}
