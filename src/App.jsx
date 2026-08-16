@@ -597,6 +597,20 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return result;
             }
 
+            // 🆕 V14.81: provenance dot. Deliberately not a table column — the list is dense and
+            // mostly used on mobile, so this rides alongside the word itself.
+            const AiSourceDot = ({ source }) => {
+                if (source !== 'gemini' && source !== 'groq') return null;
+                return (
+                    <span
+                        title={AI_SOURCE_LABELS[source]}
+                        className={`inline-block w-2 h-2 rounded-full align-middle ml-1.5 flex-shrink-0 ${
+                            source === 'gemini' ? 'bg-blue-400' : 'bg-orange-400'
+                        }`}
+                    />
+                );
+            };
+
             // 🆕 V14.67: Shared "which model wrote this" chip
             // 🆕 V14.68: filled rather than translucent — the AI Improve panel is itself green,
             // so a tinted green chip would disappear into its background
@@ -1090,7 +1104,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             // 🆕 V14.78: keep the batch button's pending total in step with the active filters
             useEffect(() => {
                 refreshPendingTotal();
-            }, [search, familyFilter, difficultyFilter, favouriteLevel, supabaseUrl, supabaseKey]);
+            }, [search, familyFilter, difficultyFilter, favouriteLevel, emptyFilter, supabaseUrl, supabaseKey]);
 
             // Auto-scroll voice modal conversation to bottom on new messages or live transcript
             useEffect(() => {
@@ -2023,6 +2037,9 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
                     else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
                     else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
+                    // 🆕 V14.81: provenance filters — the Groq one drives the Gemini upgrade path
+                    else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
+                    else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
 
                     const { data, count, error } = await query
                         .order('created_at', { ascending: false })
@@ -2649,6 +2666,9 @@ Return ONLY valid JSON, no explanation.` }],
                     else if (emptyFilter === 'Context') query = query.or('context.is.null,context.eq.');
                     else if (emptyFilter === 'Family') query = query.or('family.is.null,family.eq.');
                     else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
+                    // 🆕 V14.81: provenance filters — the Groq one drives the Gemini upgrade path
+                    else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
+                    else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
 
                     const { data, error } = await query.order('created_at', { ascending: false });
                     
@@ -4156,15 +4176,29 @@ Return ONLY the JSON object.`;
             const [batchPendingTotal, setBatchPendingTotal] = useState(0);
             const batchStopRef = React.useRef(false);
 
+            // 🆕 V14.81: model chooser. Remembered for the session, defaulting to whatever is configured.
+            const [showBatchChooser, setShowBatchChooser] = useState(false);
+            const [batchModelChoice, setBatchModelChoice] = useState(null);
+
+            // 'Filled with Groq' + Gemini is the upgrade path: it REPLACES existing content
+            const isGroqFilledFilter = emptyFilter === 'GroqFilled';
+
+            const AI_SOURCE_LABELS = { gemini: 'Filled by Gemini', groq: 'Filled by Groq' };
+
             // Total pending across the WHOLE current filter, not just the rows loaded so far
             async function refreshPendingTotal() {
                 if (!supabase) return;
                 try {
                     let query = supabase.from('vocabulary_v4')
                         .select('id', { count: 'exact', head: true })
-                        .is('deleted_at', null)
-                        .or('synonyms.is.null,synonyms.eq.,context.is.null,context.eq.,family.is.null,family.eq.');
+                        .is('deleted_at', null);
 
+                    // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate,
+                    // blanks or not — otherwise "pending" still means missing at least one field.
+                    if (isGroqFilledFilter) query = query.eq('ai_source', 'groq');
+                    else query = query.or('synonyms.is.null,synonyms.eq.,context.is.null,context.eq.,family.is.null,family.eq.');
+
+                    if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
                     if (search.trim()) query = query.ilike('vocabulary', `%${search.trim()}%`);
                     if (familyFilter !== 'All') query = query.eq('family', familyFilter);
                     if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
@@ -4182,13 +4216,47 @@ Return ONLY the JSON object.`;
             // One record, Gemini only. Returns 'filled' | 'skipped' | 'failed' | 'quota'.
             // Deliberately NO Groq fallback: the point of batching is Gemini quality, and quietly
             // filling thousands of records with the weaker model is worse than stopping.
+            // 🆕 V14.81: Groq path for batch fill. Same prompt, different transport.
+            async function callGroqForBatch(prompt) {
+                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
+                    body: JSON.stringify({
+                        model: 'llama-3.3-70b-versatile',
+                        messages: [
+                            { role: 'system', content: MAGIC_FILL_SYSTEM },
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.2,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!response.ok) {
+                    const bodyText = await response.text().catch(() => '');
+                    const err = new Error(`Groq API Error ${response.status}: ${bodyText.slice(0, 200)}`);
+                    err.status = response.status;
+                    // Groq 5xx is transient in the same way Gemini's is; 429 is rate limiting,
+                    // which for Groq recovers quickly, so it is retriable here unlike Gemini's quota.
+                    err.retriable = [429, 500, 502, 503, 504].includes(response.status);
+                    throw err;
+                }
+
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content || '';
+                if (!text.trim()) throw new Error('Empty Groq response');
+                return text;
+            }
+
             // 🆕 V14.79: returns { outcome, reason, detail } so every failure is explainable.
             // "Failed: 4" with no cause was not actionable — each stage now reports why it stopped.
-            async function batchFillRecord(record) {
+            // 🆕 V14.81: `model` selects the provider and is recorded in ai_source; `overwrite`
+            // replaces existing content instead of only filling blanks (the Gemini upgrade path).
+            async function batchFillRecord(record, model = 'gemini', overwrite = false) {
                 const missing = {
-                    synonyms: !record.synonyms?.trim(),
-                    context: !record.context?.trim(),
-                    family: !record.family?.trim()
+                    synonyms: overwrite || !record.synonyms?.trim(),
+                    context: overwrite || !record.context?.trim(),
+                    family: overwrite || !record.family?.trim()
                 };
                 if (!missing.synonyms && !missing.context && !missing.family) {
                     return { outcome: 'skipped', reason: 'already complete' };
@@ -4204,12 +4272,17 @@ Return ONLY the JSON object.`;
 
                 for (let attempt = 0; ; attempt++) {
                     try {
-                        raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
-                        console.log(`${tag} raw Gemini response:`, raw);
+                        raw = model === 'groq'
+                            ? await callGroqForBatch(prompt)
+                            : await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
+                        console.log(`${tag} raw ${model} response:`, raw);
                         break;
                     } catch (e) {
-                        // 429 still stops the whole batch immediately — never retried
-                        if (e.quotaExhausted || e.status === 429) return { outcome: 'quota', reason: 'quota exhausted' };
+                        // Gemini 429 means the daily quota is gone — stop the batch, never retry.
+                        // Groq 429 is short-term rate limiting and falls through to the retry path.
+                        if (model === 'gemini' && (e.quotaExhausted || e.status === 429)) {
+                            return { outcome: 'quota', reason: 'quota exhausted' };
+                        }
 
                         const canRetry = e.retriable && attempt < BATCH_RETRY_DELAYS.length && !batchStopRef.current;
                         if (canRetry) {
@@ -4273,6 +4346,7 @@ Return ONLY the JSON object.`;
                 }
 
                 update.modified_at = new Date().toISOString();
+                update.ai_source = model; // 🆕 V14.81: provenance — which model actually wrote this
                 update.previous_version = JSON.stringify({
                     vocabulary: record.vocabulary, synonyms: record.synonyms,
                     context: record.context, family: record.family, favourite: record.favourite
@@ -4305,21 +4379,30 @@ Return ONLY the JSON object.`;
             }
 
             // 🆕 V14.80: retryRecords lets the summary re-run just the ones that did not succeed
-            async function runBatchFill(retryRecords = null) {
+            // 🆕 V14.81: model chosen by the user; overwrite is the Groq→Gemini upgrade path
+            async function runBatchFill(retryRecords = null, model = 'gemini', overwrite = false) {
                 if (batchRunning) return;
-                if (!geminiApiKey.trim()) {
-                    alert('⚠️ Batch fill needs a Gemini API key.\n\nSet it in Settings — batch fill deliberately does not fall back to Groq.');
+
+                if (model === 'gemini') {
+                    if (!geminiApiKey.trim()) {
+                        alert('⚠️ Gemini batch fill needs a Gemini API key.\n\nSet it in Settings, or choose Groq instead.');
+                        setShowSettings(true);
+                        return;
+                    }
+                    if (readGeminiQuota().exhausted) {
+                        alert("⚠️ Gemini's daily quota is exhausted.\n\nChoose Groq, or wait for the reset at midnight US Pacific.");
+                        return;
+                    }
+                } else if (!groqApiKey.trim()) {
+                    alert('⚠️ Groq batch fill needs a Groq API key.\n\nSet it in Settings, or choose Gemini instead.');
                     setShowSettings(true);
-                    return;
-                }
-                if (readGeminiQuota().exhausted) {
-                    alert("⚠️ Gemini's daily quota is exhausted.\n\nBatch fill will be available again after the quota resets at midnight US Pacific.");
                     return;
                 }
 
                 const queue = Array.isArray(retryRecords) && retryRecords.length
                     ? retryRecords.slice(0, BATCH_SIZE)
-                    : words.filter(isRecordPending).slice(0, BATCH_SIZE);
+                    // on the upgrade path every loaded record is a candidate, blanks or not
+                    : (overwrite ? words : words.filter(isRecordPending)).slice(0, BATCH_SIZE);
                 if (queue.length === 0) {
                     alert('✅ Nothing pending in the current filter.\n\nEvery loaded record already has synonyms, context and family.');
                     return;
@@ -4339,7 +4422,7 @@ Return ONLY the JSON object.`;
                     const record = queue[i];
                     setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
 
-                    const { outcome, reason, detail } = await batchFillRecord(record);
+                    const { outcome, reason, detail } = await batchFillRecord(record, model, overwrite);
                     if (outcome === 'filled') filled++;
                     else if (outcome === 'skipped') skipped++;
                     else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
@@ -4363,7 +4446,7 @@ Return ONLY the JSON object.`;
                 setBatchRunning(false);
                 setBatchProgress(null);
                 if (failures.length) console.table(failures);
-                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, attempted: filled + failed + skipped + unavailable, failures });
+                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, model, overwrite, attempted: filled + failed + skipped + unavailable, failures });
                 await refreshPendingTotal();
             }
 
@@ -4624,6 +4707,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         // 🆕 V11.22: Save previous version for change history
                         const updateDataWithHistory = {
                             ...updateData,
+                            ai_source: (modelUsed || '').toLowerCase() || null, // 🆕 V14.81
                             previous_version: JSON.stringify({
                                 vocabulary: currentData?.vocabulary,
                                 synonyms: currentData?.synonyms,
@@ -5122,8 +5206,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 const wordData = Object.fromEntries(formData);
-                
+
                 wordData.favourite = parseInt(formData.get('favourite')) || 0;
+
+                // 🆕 V14.81: content saved through the form is the user's own, so provenance clears.
+                // The exception is a modal the user just Magic Filled — those fields ARE AI-written,
+                // and magicFillModel records which model produced them.
+                wordData.ai_source = magicFillModel ? magicFillModel.toLowerCase() : null;
                 
                 if (editingWord) {
                     
@@ -5334,7 +5423,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.80</span>
+                                        English Booster <span className="version-text">v14.81</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5469,13 +5558,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="Synonyms">No Synonyms</option><option value="Context">No Context</option>
                                     <option value="Family">No Family</option>
                                     <option value="Difficulty">No Difficulty</option>
+                                    {/* 🆕 V14.81: provenance — 'Filled with Groq' is the Gemini upgrade path */}
+                                    <option value="GroqFilled">⚡ Filled with Groq</option>
+                                    <option value="GeminiFilled">✨ Filled with Gemini</option>
                                 </select>
                                 {/* 🆕 V14.78: batch AI fill for the current filtered list
                                     🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
                                 {batchPendingTotal > 0 && (
                                     <div className="flex items-center gap-2 flex-1 sm:flex-initial">
                                         <button
-                                            onClick={runBatchFill}
+                                            onClick={() => {
+                                                // 🆕 V14.81: choose the model before spending any quota
+                                                setBatchModelChoice(batchModelChoice
+                                                    || (geminiApiKey.trim() ? 'gemini' : 'groq'));
+                                                setShowBatchChooser(true);
+                                            }}
                                             disabled={batchRunning}
                                             title={`Fill up to ${BATCH_SIZE} records with Gemini, about 6 seconds apart (2-3 minutes)`}
                                             className={`p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-colors ${
@@ -5525,7 +5622,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
                                                 onClick={() => speakText(w.vocabulary, 1.0)}
                                                 title="Click to hear pronunciation"
-                                            >{search ? highlightMatch(w.vocabulary, search) : w.vocabulary}</td>
+                                            >{search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} /></td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || '—'}</span></td>
                                             <td className="p-5 font-bold text-slate-100 text-sm italic">{search ? (w.synonyms ? highlightMatch(w.synonyms, search) : '—') : (w.synonyms || '—')}</td>
                                             <td 
@@ -5612,7 +5709,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             onClick={() => speakText(w.vocabulary, 1.0)}
                                             title="Click to hear pronunciation"
                                         >
-                                            {search ? highlightMatch(w.vocabulary, search) : w.vocabulary}
+                                            {search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} />
                                         </div>
                                         
                                         {w.synonyms && (
@@ -6391,6 +6488,84 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         </div>
                     )}
 
+                    {/* 🆕 V14.81: MODEL CHOOSER */}
+                    {showBatchChooser && (() => {
+                        const count = Math.min(BATCH_SIZE, batchPendingTotal);
+                        const isUpgrade = isGroqFilledFilter && batchModelChoice === 'gemini';
+                        const mins = t => t < 60 ? `${Math.round(t)}s` : `${Math.round(t / 60)}-${Math.ceil(t / 60) + 1} min`;
+                        return (
+                            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4" onClick={() => setShowBatchChooser(false)}>
+                                <div className="bg-slate-900 rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <h2 className="text-xl font-black text-white">{isUpgrade ? '⬆️ Upgrade to Gemini' : '✨ Fill with AI'}</h2>
+                                        <button onClick={() => setShowBatchChooser(false)} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+                                    </div>
+                                    <p className="text-slate-400 text-sm mb-5">
+                                        {count} record{count === 1 ? '' : 's'} from the current filter, of {batchPendingTotal.toLocaleString()} pending.
+                                    </p>
+
+                                    <div className="space-y-3 mb-5">
+                                        <button
+                                            onClick={() => setBatchModelChoice('gemini')}
+                                            className={`w-full text-left p-4 rounded-2xl border-2 transition-colors ${
+                                                batchModelChoice === 'gemini'
+                                                    ? 'bg-blue-500/15 border-blue-400'
+                                                    : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="font-black text-blue-300">✨ Gemini</span>
+                                                <span className="text-[10px] text-slate-500">~{mins(count * 6)}</span>
+                                            </div>
+                                            <p className="text-slate-400 text-xs">Best quality. Free quota is small (~15 requests/day) — {geminiDailyCount} used today.</p>
+                                            {readGeminiQuota().exhausted && <p className="text-orange-400 text-xs mt-1 font-bold">Quota currently exhausted.</p>}
+                                        </button>
+
+                                        <button
+                                            onClick={() => setBatchModelChoice('groq')}
+                                            className={`w-full text-left p-4 rounded-2xl border-2 transition-colors ${
+                                                batchModelChoice === 'groq'
+                                                    ? 'bg-orange-500/15 border-orange-400'
+                                                    : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="font-black text-orange-300">⚡ Groq</span>
+                                                <span className="text-[10px] text-slate-500">~{mins(count * 6)}</span>
+                                            </div>
+                                            <p className="text-slate-400 text-xs">Lower quality, but no practical daily limit — use it for bulk filling.</p>
+                                        </button>
+                                    </div>
+
+                                    {/* The upgrade path replaces content, so say so plainly */}
+                                    {isUpgrade ? (
+                                        <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-3 mb-5">
+                                            <p className="text-amber-300 text-xs font-bold mb-1">⚠️ This is an upgrade — existing content will be replaced</p>
+                                            <p className="text-amber-200/80 text-xs">
+                                                These records were filled by Groq. Gemini will rewrite their synonyms, context and family,
+                                                overwriting what is there now. The previous values are kept in change history.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-slate-500 text-xs mb-5">Only empty fields are filled — existing content is never overwritten.</p>
+                                    )}
+
+                                    <button
+                                        onClick={() => {
+                                            setShowBatchChooser(false);
+                                            runBatchFill(null, batchModelChoice, isUpgrade);
+                                        }}
+                                        className={`w-full py-3 rounded-2xl font-black uppercase text-sm text-white ${
+                                            batchModelChoice === 'gemini' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-orange-600 hover:bg-orange-500'
+                                        }`}
+                                    >
+                                        {isUpgrade ? `⬆️ Upgrade ${count}` : `Start — ${count} with ${batchModelChoice === 'gemini' ? 'Gemini' : 'Groq'}`}
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* 🆕 V14.78: BATCH FILL PROGRESS */}
                     {batchProgress && (
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4">
@@ -6541,8 +6716,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <button
                                             onClick={() => {
                                                 const retryRecords = batchSummary.failures.map(f => f.record).filter(Boolean);
+                                                const { model, overwrite } = batchSummary;
                                                 setBatchSummary(null);
-                                                runBatchFill(retryRecords);
+                                                runBatchFill(retryRecords, model, overwrite);
                                             }}
                                             className="flex-1 bg-amber-600/20 border border-amber-500/40 text-amber-300 hover:bg-amber-600/30 py-3 rounded-2xl font-black uppercase text-sm"
                                         >
@@ -6973,6 +7149,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             // 🆕 V11.22: Save previous version for change history
                                             const updateDataWithHistory = {
                                                 ...updateData,
+                                                ai_source: (improveData.model || '').toLowerCase() || null, // 🆕 V14.81
                                                 previous_version: JSON.stringify({
                                                     vocabulary: improveData.vocabulary,
                                                     synonyms: improveData.current.synonyms,
