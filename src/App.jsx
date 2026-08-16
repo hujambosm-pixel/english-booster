@@ -416,7 +416,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         }
                     );
                     markGeminiAvailable(); // 🆕 V14.73: a success clears any stale quota flag
-                    bumpGeminiDaily();     // 🆕 V14.78: measured usage, across every feature
+                    bumpAiDaily('gemini'); // 🆕 V14.82: counted against Gemini specifically
                     return text;
 
                 } catch (err) {
@@ -499,31 +499,50 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return !!geminiApiKey.trim() && !readGeminiQuota().exhausted;
             }
 
-            // 🆕 V14.78: real count of successful Gemini calls today. Google's published limits are
-            // not guaranteed, so we measure actual usage instead of assuming a fixed daily allowance.
-            // Same Pacific-date reset as the quota state.
-            const GEMINI_DAILY_KEY = 'gemini_daily_count';
+            // 🆕 V14.78: real count of successful AI content calls today. Published limits are not
+            // guaranteed, so we measure actual usage instead of assuming a fixed daily allowance.
+            // 🆕 V14.82: counted PER MODEL. One shared number was misattributed — a Groq-only batch
+            // reported "N Gemini calls today", which is the one number that has a meaningful limit.
+            const AI_DAILY_KEY = 'ai_daily_counts';
+            const GEMINI_DAILY_KEY_LEGACY = 'gemini_daily_count'; // pre-V14.82, migrated below
 
-            function readGeminiDaily() {
+            const EMPTY_DAILY = { gemini: 0, groq: 0 };
+
+            function readAiDaily() {
+                const today = pacificDateString();
                 try {
-                    const raw = localStorage.getItem(GEMINI_DAILY_KEY);
-                    if (!raw) return 0;
-                    const parsed = JSON.parse(raw);
-                    if (!parsed || parsed.pacificDate !== pacificDateString()) return 0;
-                    return Number(parsed.count) || 0;
+                    const raw = localStorage.getItem(AI_DAILY_KEY);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed && parsed.pacificDate === today) {
+                            return { gemini: Number(parsed.gemini) || 0, groq: Number(parsed.groq) || 0 };
+                        }
+                        return EMPTY_DAILY;
+                    }
+                    // carry today's pre-V14.82 Gemini tally across rather than resetting it mid-day
+                    const legacy = localStorage.getItem(GEMINI_DAILY_KEY_LEGACY);
+                    if (legacy) {
+                        const parsed = JSON.parse(legacy);
+                        if (parsed && parsed.pacificDate === today) {
+                            return { gemini: Number(parsed.count) || 0, groq: 0 };
+                        }
+                    }
+                    return EMPTY_DAILY;
                 } catch (e) {
-                    return 0;
+                    return EMPTY_DAILY;
                 }
             }
 
-            const [geminiDailyCount, setGeminiDailyCount] = useState(readGeminiDaily);
+            const [aiDailyCounts, setAiDailyCounts] = useState(readAiDaily);
 
-            function bumpGeminiDaily() {
-                const next = readGeminiDaily() + 1;
+            function bumpAiDaily(model) {
+                const key = model === 'groq' ? 'groq' : 'gemini';
+                const current = readAiDaily();
+                const next = { ...current, [key]: current[key] + 1 };
                 try {
-                    localStorage.setItem(GEMINI_DAILY_KEY, JSON.stringify({ pacificDate: pacificDateString(), count: next }));
+                    localStorage.setItem(AI_DAILY_KEY, JSON.stringify({ pacificDate: pacificDateString(), ...next }));
                 } catch (e) { /* storage full or blocked */ }
-                setGeminiDailyCount(next);
+                setAiDailyCounts(next);
             }
 
             // 🆕 V14.73: tolerant JSON extraction — strips markdown fences and DeepSeek <think>
@@ -3273,6 +3292,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             continue;
                         }
                         console.log('✅ Groq model used:', model);
+                        bumpAiDaily('groq'); // 🆕 V14.82
                         return JSON.parse(raw.substring(start, end + 1));
                     } catch (err) {
                         lastError = `${model}: ${err.message}`;
@@ -4245,6 +4265,7 @@ Return ONLY the JSON object.`;
                 const data = await response.json();
                 const text = data.choices?.[0]?.message?.content || '';
                 if (!text.trim()) throw new Error('Empty Groq response');
+                bumpAiDaily('groq'); // 🆕 V14.82
                 return text;
             }
 
@@ -4593,6 +4614,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         }
 
                         textResponse = data.choices[0].message.content;
+                        bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
                             `%c[Magic Fill] ✨ Model used: GROQ${geminiError ? ' (fallback after Gemini failure)' : ''}`,
@@ -4942,6 +4964,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         }
 
                         rawResponse = data.choices[0].message.content;
+                        bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
                             `%c[AI Improve] ✨ Model used: GROQ${geminiError ? ' (fallback after Gemini failure)' : ''}`,
@@ -5423,7 +5446,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.81</span>
+                                        English Booster <span className="version-text">v14.82</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5585,9 +5608,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 ? '✨ Filling…'
                                                 : `✨ Fill ${Math.min(BATCH_SIZE, batchPendingTotal)} of ${batchPendingTotal.toLocaleString()} pending`}
                                         </button>
-                                        {geminiDailyCount > 0 && (
-                                            <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Successful Gemini calls today, across all features. Resets at midnight US Pacific.">
-                                                {geminiDailyCount.toLocaleString()} processed today
+                                        {/* 🆕 V14.82: Gemini specifically — it is the one with a real daily limit */}
+                                        {aiDailyCounts.gemini > 0 && (
+                                            <span className="text-[10px] text-blue-400/70 whitespace-nowrap" title="Successful Gemini calls today, across all features. Gemini has a small free daily quota; Groq does not. Resets at midnight US Pacific.">
+                                                ✨ {aiDailyCounts.gemini.toLocaleString()} Gemini today
                                             </span>
                                         )}
                                     </div>
@@ -6517,7 +6541,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 <span className="font-black text-blue-300">✨ Gemini</span>
                                                 <span className="text-[10px] text-slate-500">~{mins(count * 6)}</span>
                                             </div>
-                                            <p className="text-slate-400 text-xs">Best quality. Free quota is small (~15 requests/day) — {geminiDailyCount} used today.</p>
+                                            <p className="text-slate-400 text-xs">Best quality. Free quota is small (~15 requests/day) — {aiDailyCounts.gemini} used today.</p>
                                             {readGeminiQuota().exhausted && <p className="text-orange-400 text-xs mt-1 font-bold">Quota currently exhausted.</p>}
                                         </button>
 
@@ -6708,7 +6732,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <span className="text-slate-400">Still pending in this filter</span>
                                     <span className="text-white font-black">{batchPendingTotal.toLocaleString()}</span>
                                 </div>
-                                <p className="text-slate-500 text-xs mb-5">{geminiDailyCount.toLocaleString()} Gemini calls processed today.</p>
+                                {/* 🆕 V14.82: report the counter for the model this batch actually used */}
+                                <p className="text-slate-500 text-xs mb-5">
+                                    {batchSummary.model === 'groq'
+                                        ? `⚡ ${aiDailyCounts.groq.toLocaleString()} Groq calls today.`
+                                        : `✨ ${aiDailyCounts.gemini.toLocaleString()} Gemini calls today (quota is limited).`}
+                                </p>
 
                                 <div className="flex gap-3">
                                     {/* 🆕 V14.80: re-run only the records that did not succeed */}
