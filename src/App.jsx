@@ -4130,47 +4130,98 @@ Return ONLY the JSON object.`;
             // One record, Gemini only. Returns 'filled' | 'skipped' | 'failed' | 'quota'.
             // Deliberately NO Groq fallback: the point of batching is Gemini quality, and quietly
             // filling thousands of records with the weaker model is worse than stopping.
+            // 🆕 V14.79: returns { outcome, reason, detail } so every failure is explainable.
+            // "Failed: 4" with no cause was not actionable — each stage now reports why it stopped.
             async function batchFillRecord(record) {
                 const missing = {
                     synonyms: !record.synonyms?.trim(),
                     context: !record.context?.trim(),
                     family: !record.family?.trim()
                 };
-                if (!missing.synonyms && !missing.context && !missing.family) return 'skipped';
+                if (!missing.synonyms && !missing.context && !missing.family) {
+                    return { outcome: 'skipped', reason: 'already complete' };
+                }
 
+                const tag = `[Batch fill] "${record.vocabulary}"`;
+                console.log(`${tag} → requesting. Missing:`, Object.keys(missing).filter(k => missing[k]).join(', '));
+
+                // ── 1. API call ────────────────────────────────────────────────────────────────
+                let raw;
                 try {
                     const prompt = buildMagicFillPrompt(record.vocabulary, record.family || '');
-                    const raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
-                    const result = parseLooseJson(raw);
+                    raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
+                    console.log(`${tag} raw Gemini response:`, raw);
+                } catch (e) {
+                    if (e.quotaExhausted || e.status === 429) return { outcome: 'quota', reason: 'quota exhausted' };
+                    console.error(`${tag} ✗ API call failed:`, e.message, e);
+                    return { outcome: 'failed', reason: 'API error', detail: e.message };
+                }
 
-                    // Same guard the interactive flow uses: the context must really use the word
-                    if (result.context && !containsVocabularyWord(result.context, record.vocabulary)) {
-                        console.warn(`[Batch fill] "${record.vocabulary}" — context did not use the word, skipping context`);
-                        result.context = '';
+                // ── 2. Parse ───────────────────────────────────────────────────────────────────
+                let result;
+                try {
+                    result = parseLooseJson(raw);
+                    console.log(`${tag} parsed result:`, result);
+                } catch (e) {
+                    console.error(`${tag} ✗ could not parse response as JSON:`, e.message, '| raw was:', raw);
+                    return { outcome: 'failed', reason: 'unparseable response', detail: e.message };
+                }
+
+                // ── 3. Context guard — drops ONLY the context, never the whole record ──────────
+                let contextRejected = false;
+                if (result.context && !containsVocabularyWord(result.context, record.vocabulary)) {
+                    contextRejected = true;
+                    console.warn(`${tag} ⚠ context did not contain the word, dropping context only:`, result.context);
+                    result.context = '';
+                }
+
+                // ── 4. Field selection — never overwrite existing content ──────────────────────
+                const update = {};
+                if (missing.synonyms && result.synonyms) update.synonyms = String(result.synonyms).trim();
+                if (missing.context && result.context) update.context = String(result.context).trim();
+                if (missing.family && result.family) update.family = String(result.family).trim();
+                console.log(`${tag} fields selected for writing:`, Object.keys(update).join(', ') || '(none)');
+
+                if (Object.keys(update).length === 0) {
+                    // Distinguish "the AI never returned it" from "we rejected what it returned"
+                    const absent = Object.keys(missing).filter(k => missing[k] && !result[k] && !(k === 'context' && contextRejected));
+                    const parts = [];
+                    if (contextRejected) parts.push("context rejected (didn't use the word)");
+                    if (absent.length) parts.push(`AI returned nothing for: ${absent.join(', ')}`);
+                    const reason = parts.join('; ') || 'AI returned nothing usable';
+                    console.error(`${tag} ✗ nothing writable. ${reason}. Parsed keys:`, Object.keys(result || {}));
+                    return { outcome: 'failed', reason, detail: `parsed keys: ${Object.keys(result || {}).join(', ') || 'none'}` };
+                }
+
+                update.modified_at = new Date().toISOString();
+                update.previous_version = JSON.stringify({
+                    vocabulary: record.vocabulary, synonyms: record.synonyms,
+                    context: record.context, family: record.family, favourite: record.favourite
+                });
+
+                // ── 5. Supabase write ──────────────────────────────────────────────────────────
+                try {
+                    const { data, error } = await supabase.from('vocabulary_v4')
+                        .update(update).eq('id', record.id).select('id');
+
+                    if (error) {
+                        console.error(`${tag} ✗ Supabase rejected the update:`, error, '| payload:', update);
+                        return { outcome: 'failed', reason: `database: ${error.message || 'update rejected'}`, detail: error.code || '' };
+                    }
+                    if (!data || data.length === 0) {
+                        console.error(`${tag} ✗ Supabase matched no row for id`, record.id, '— check RLS/permissions');
+                        return { outcome: 'failed', reason: 'database: no row updated (RLS or id mismatch)', detail: `id ${record.id}` };
                     }
 
-                    // Never overwrite existing content — only fill what is actually empty
-                    const update = {};
-                    if (missing.synonyms && result.synonyms) update.synonyms = String(result.synonyms).trim();
-                    if (missing.context && result.context) update.context = String(result.context).trim();
-                    if (missing.family && result.family) update.family = String(result.family).trim();
-                    if (Object.keys(update).length === 0) return 'failed';
-
-                    update.modified_at = new Date().toISOString();
-                    update.previous_version = JSON.stringify({
-                        vocabulary: record.vocabulary, synonyms: record.synonyms,
-                        context: record.context, family: record.family, favourite: record.favourite
-                    });
-
-                    const { error } = await supabase.from('vocabulary_v4').update(update).eq('id', record.id);
-                    if (error) throw new Error(error.message);
-
+                    console.log(`${tag} ✓ written:`, Object.keys(update).filter(k => k !== 'modified_at' && k !== 'previous_version').join(', '));
                     setWords(prev => prev.map(w => w.id === record.id ? { ...w, ...update } : w));
-                    return 'filled';
+                    return {
+                        outcome: 'filled',
+                        reason: contextRejected ? 'filled, but context was rejected' : 'filled'
+                    };
                 } catch (e) {
-                    if (e.quotaExhausted || e.status === 429) return 'quota';
-                    console.warn(`[Batch fill] "${record.vocabulary}" failed:`, e.message);
-                    return 'failed';
+                    console.error(`${tag} ✗ Supabase threw:`, e);
+                    return { outcome: 'failed', reason: `database: ${e.message}`, detail: '' };
                 }
             }
 
@@ -4198,6 +4249,7 @@ Return ONLY the JSON object.`;
                 setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0 });
 
                 let filled = 0, failed = 0, skipped = 0, stoppedBy = null;
+                const failures = []; // 🆕 V14.79: per-record reasons, surfaced in the summary
 
                 for (let i = 0; i < queue.length; i++) {
                     if (batchStopRef.current) { stoppedBy = 'user'; break; }
@@ -4205,11 +4257,14 @@ Return ONLY the JSON object.`;
                     const record = queue[i];
                     setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
 
-                    const outcome = await batchFillRecord(record);
+                    const { outcome, reason, detail } = await batchFillRecord(record);
                     if (outcome === 'filled') filled++;
                     else if (outcome === 'skipped') skipped++;
                     else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
-                    else failed++;
+                    else {
+                        failed++;
+                        failures.push({ word: record.vocabulary, reason: reason || 'unknown', detail: detail || '' });
+                    }
 
                     setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
 
@@ -4221,7 +4276,8 @@ Return ONLY the JSON object.`;
 
                 setBatchRunning(false);
                 setBatchProgress(null);
-                setBatchSummary({ filled, failed, skipped, stoppedBy, attempted: filled + failed + skipped });
+                if (failures.length) console.table(failures);
+                setBatchSummary({ filled, failed, skipped, stoppedBy, attempted: filled + failed + skipped, failures });
                 await refreshPendingTotal();
             }
 
@@ -5192,7 +5248,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.78</span>
+                                        English Booster <span className="version-text">v14.79</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5328,32 +5384,31 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="Family">No Family</option>
                                     <option value="Difficulty">No Difficulty</option>
                                 </select>
-                                {/* 🆕 V14.78: batch AI fill for the current filtered list */}
-                                <div className="flex items-center gap-2 flex-1 sm:flex-initial">
-                                    <button
-                                        onClick={runBatchFill}
-                                        disabled={batchRunning || batchPendingTotal === 0}
-                                        title={batchPendingTotal === 0
-                                            ? 'Nothing pending in this filter'
-                                            : `Fill up to ${BATCH_SIZE} records with Gemini, about 6 seconds apart (2-3 minutes)`}
-                                        className={`p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-colors ${
-                                            batchRunning
-                                                ? 'bg-purple-600/40 text-purple-200 cursor-wait'
-                                                : batchPendingTotal === 0
-                                                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                                {/* 🆕 V14.78: batch AI fill for the current filtered list
+                                    🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
+                                {batchPendingTotal > 0 && (
+                                    <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+                                        <button
+                                            onClick={runBatchFill}
+                                            disabled={batchRunning}
+                                            title={`Fill up to ${BATCH_SIZE} records with Gemini, about 6 seconds apart (2-3 minutes)`}
+                                            className={`p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-colors ${
+                                                batchRunning
+                                                    ? 'bg-purple-600/40 text-purple-200 cursor-wait'
                                                     : 'bg-purple-600/20 text-purple-300 border border-purple-500/40 hover:bg-purple-600/30'
-                                        }`}
-                                    >
-                                        {batchRunning
-                                            ? '✨ Filling…'
-                                            : `✨ Fill ${Math.min(BATCH_SIZE, batchPendingTotal)} of ${batchPendingTotal.toLocaleString()} pending`}
-                                    </button>
-                                    {geminiDailyCount > 0 && (
-                                        <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Successful Gemini calls today, across all features. Resets at midnight US Pacific.">
-                                            {geminiDailyCount.toLocaleString()} processed today
-                                        </span>
-                                    )}
-                                </div>
+                                            }`}
+                                        >
+                                            {batchRunning
+                                                ? '✨ Filling…'
+                                                : `✨ Fill ${Math.min(BATCH_SIZE, batchPendingTotal)} of ${batchPendingTotal.toLocaleString()} pending`}
+                                        </button>
+                                        {geminiDailyCount > 0 && (
+                                            <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Successful Gemini calls today, across all features. Resets at midnight US Pacific.">
+                                                {geminiDailyCount.toLocaleString()} processed today
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                                 <select value={familyFilter} onChange={e => setFamilyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[80px] sm:flex-initial"><option value="All">Family</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select>
                                 <select value={difficultyFilter} onChange={e => setDifficultyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[100px] sm:flex-initial"><option value="All">Difficulty</option>{DIFFICULTIES.map(eff => <option key={eff} value={eff}>{eff}</option>)}</select>
                             </div>
@@ -6334,6 +6389,24 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <p className="text-3xl font-black text-slate-300">{batchSummary.skipped}</p>
                                     </div>
                                 </div>
+
+                                {/* 🆕 V14.79: why each record failed — "Failed: 4" alone is not actionable */}
+                                {batchSummary.failures?.length > 0 && (
+                                    <div className="mb-5">
+                                        <p className="text-[10px] uppercase font-black text-red-400/80 mb-2">Why they failed</p>
+                                        <div className="max-h-48 overflow-y-auto custom-scroll space-y-1.5">
+                                            {batchSummary.failures.map((f, i) => (
+                                                <div key={i} className="bg-red-900/15 border border-red-500/25 rounded-lg px-3 py-2 text-xs">
+                                                    <span className="text-indigo-300 font-bold">{f.word}</span>
+                                                    <span className="text-slate-500 mx-1.5">—</span>
+                                                    <span className="text-red-300">{f.reason}</span>
+                                                    {f.detail && <span className="text-slate-500 block mt-0.5">{f.detail}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-slate-600 text-[10px] mt-2">Full details, including the raw responses, are in the browser console.</p>
+                                    </div>
+                                )}
 
                                 <div className="flex items-center justify-between bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 mb-5 text-sm">
                                     <span className="text-slate-400">Still pending in this filter</span>
