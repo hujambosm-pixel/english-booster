@@ -407,6 +407,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         }
                     );
                     markGeminiAvailable(); // 🆕 V14.73: a success clears any stale quota flag
+                    bumpGeminiDaily();     // 🆕 V14.78: measured usage, across every feature
                     return text;
 
                 } catch (err) {
@@ -477,6 +478,33 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // Single gate every Gemini call site consults before spending a request.
             function geminiReady() {
                 return !!geminiApiKey.trim() && !readGeminiQuota().exhausted;
+            }
+
+            // 🆕 V14.78: real count of successful Gemini calls today. Google's published limits are
+            // not guaranteed, so we measure actual usage instead of assuming a fixed daily allowance.
+            // Same Pacific-date reset as the quota state.
+            const GEMINI_DAILY_KEY = 'gemini_daily_count';
+
+            function readGeminiDaily() {
+                try {
+                    const raw = localStorage.getItem(GEMINI_DAILY_KEY);
+                    if (!raw) return 0;
+                    const parsed = JSON.parse(raw);
+                    if (!parsed || parsed.pacificDate !== pacificDateString()) return 0;
+                    return Number(parsed.count) || 0;
+                } catch (e) {
+                    return 0;
+                }
+            }
+
+            const [geminiDailyCount, setGeminiDailyCount] = useState(readGeminiDaily);
+
+            function bumpGeminiDaily() {
+                const next = readGeminiDaily() + 1;
+                try {
+                    localStorage.setItem(GEMINI_DAILY_KEY, JSON.stringify({ pacificDate: pacificDateString(), count: next }));
+                } catch (e) { /* storage full or blocked */ }
+                setGeminiDailyCount(next);
             }
 
             // 🆕 V14.73: tolerant JSON extraction — strips markdown fences and DeepSeek <think>
@@ -1008,6 +1036,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 }, search ? 150 : 0);
                 return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
             }, [search, familyFilter, emptyFilter, difficultyFilter, favouriteLevel, searchMode]);
+
+            // 🆕 V14.78: keep the batch button's pending total in step with the active filters
+            useEffect(() => {
+                refreshPendingTotal();
+            }, [search, familyFilter, difficultyFilter, favouriteLevel, supabaseUrl, supabaseKey]);
 
             // Auto-scroll voice modal conversation to bottom on new messages or live transcript
             useEffect(() => {
@@ -4059,6 +4092,169 @@ Return ONLY the JSON object.`;
                 }
             };
 
+            // ─── 🆕 V14.78: batch AI fill ─────────────────────────────────────────────────────
+            const BATCH_SIZE = 25;
+            const BATCH_DELAY_MS = 6000; // ~10 requests/minute, inside Gemini's free per-minute limit
+
+            const isRecordPending = w => !w.synonyms?.trim() || !w.context?.trim() || !w.family?.trim();
+
+            const [batchRunning, setBatchRunning] = useState(false);
+            const [batchProgress, setBatchProgress] = useState(null);
+            const [batchSummary, setBatchSummary] = useState(null);
+            const [batchPendingTotal, setBatchPendingTotal] = useState(0);
+            const batchStopRef = React.useRef(false);
+
+            // Total pending across the WHOLE current filter, not just the rows loaded so far
+            async function refreshPendingTotal() {
+                if (!supabase) return;
+                try {
+                    let query = supabase.from('vocabulary_v4')
+                        .select('id', { count: 'exact', head: true })
+                        .is('deleted_at', null)
+                        .or('synonyms.is.null,synonyms.eq.,context.is.null,context.eq.,family.is.null,family.eq.');
+
+                    if (search.trim()) query = query.ilike('vocabulary', `%${search.trim()}%`);
+                    if (familyFilter !== 'All') query = query.eq('family', familyFilter);
+                    if (difficultyFilter !== 'All') query = query.eq('difficulty', difficultyFilter);
+                    if (favouriteLevel === 1) query = query.eq('favourite', 1);
+                    else if (favouriteLevel === 2) query = query.eq('favourite', 2);
+                    else if (favouriteLevel === 3) query = query.in('favourite', [1, 2]);
+
+                    const { count, error } = await query;
+                    if (!error) setBatchPendingTotal(count || 0);
+                } catch (e) {
+                    console.warn('[Batch fill] pending count unavailable:', e.message);
+                }
+            }
+
+            // One record, Gemini only. Returns 'filled' | 'skipped' | 'failed' | 'quota'.
+            // Deliberately NO Groq fallback: the point of batching is Gemini quality, and quietly
+            // filling thousands of records with the weaker model is worse than stopping.
+            async function batchFillRecord(record) {
+                const missing = {
+                    synonyms: !record.synonyms?.trim(),
+                    context: !record.context?.trim(),
+                    family: !record.family?.trim()
+                };
+                if (!missing.synonyms && !missing.context && !missing.family) return 'skipped';
+
+                try {
+                    const prompt = buildMagicFillPrompt(record.vocabulary, record.family || '');
+                    const raw = await callGemini(geminiApiKey.trim(), MAGIC_FILL_SYSTEM, prompt, 'Batch fill');
+                    const result = parseLooseJson(raw);
+
+                    // Same guard the interactive flow uses: the context must really use the word
+                    if (result.context && !containsVocabularyWord(result.context, record.vocabulary)) {
+                        console.warn(`[Batch fill] "${record.vocabulary}" — context did not use the word, skipping context`);
+                        result.context = '';
+                    }
+
+                    // Never overwrite existing content — only fill what is actually empty
+                    const update = {};
+                    if (missing.synonyms && result.synonyms) update.synonyms = String(result.synonyms).trim();
+                    if (missing.context && result.context) update.context = String(result.context).trim();
+                    if (missing.family && result.family) update.family = String(result.family).trim();
+                    if (Object.keys(update).length === 0) return 'failed';
+
+                    update.modified_at = new Date().toISOString();
+                    update.previous_version = JSON.stringify({
+                        vocabulary: record.vocabulary, synonyms: record.synonyms,
+                        context: record.context, family: record.family, favourite: record.favourite
+                    });
+
+                    const { error } = await supabase.from('vocabulary_v4').update(update).eq('id', record.id);
+                    if (error) throw new Error(error.message);
+
+                    setWords(prev => prev.map(w => w.id === record.id ? { ...w, ...update } : w));
+                    return 'filled';
+                } catch (e) {
+                    if (e.quotaExhausted || e.status === 429) return 'quota';
+                    console.warn(`[Batch fill] "${record.vocabulary}" failed:`, e.message);
+                    return 'failed';
+                }
+            }
+
+            async function runBatchFill() {
+                if (batchRunning) return;
+                if (!geminiApiKey.trim()) {
+                    alert('⚠️ Batch fill needs a Gemini API key.\n\nSet it in Settings — batch fill deliberately does not fall back to Groq.');
+                    setShowSettings(true);
+                    return;
+                }
+                if (readGeminiQuota().exhausted) {
+                    alert("⚠️ Gemini's daily quota is exhausted.\n\nBatch fill will be available again after the quota resets at midnight US Pacific.");
+                    return;
+                }
+
+                const queue = words.filter(isRecordPending).slice(0, BATCH_SIZE);
+                if (queue.length === 0) {
+                    alert('✅ Nothing pending in the current filter.\n\nEvery loaded record already has synonyms, context and family.');
+                    return;
+                }
+
+                batchStopRef.current = false;
+                setBatchRunning(true);
+                setBatchSummary(null);
+                setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0 });
+
+                let filled = 0, failed = 0, skipped = 0, stoppedBy = null;
+
+                for (let i = 0; i < queue.length; i++) {
+                    if (batchStopRef.current) { stoppedBy = 'user'; break; }
+
+                    const record = queue[i];
+                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
+
+                    const outcome = await batchFillRecord(record);
+                    if (outcome === 'filled') filled++;
+                    else if (outcome === 'skipped') skipped++;
+                    else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
+                    else failed++;
+
+                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
+
+                    // Throttle between records — a full batch takes 2-3 minutes by design
+                    if (i < queue.length - 1 && !batchStopRef.current) {
+                        await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+                    }
+                }
+
+                setBatchRunning(false);
+                setBatchProgress(null);
+                setBatchSummary({ filled, failed, skipped, stoppedBy, attempted: filled + failed + skipped });
+                await refreshPendingTotal();
+            }
+
+            // 🆕 V14.78: single definition of the Magic Fill prompt, shared by the ✨ button and the
+            // batch filler so both produce identical results.
+            const MAGIC_FILL_SYSTEM = 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.';
+
+            function buildMagicFillPrompt(word, currentFamily) {
+                // 🆕 V11.38: Enhance prompt with current family if available
+                const base = magicFillPrompt.replace(/{word}/g, word);
+                if (!currentFamily) return base;
+
+                return `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
+
+${base}
+
+MANDATORY RULES FOR "${word}" (${currentFamily}):
+- Synonyms MUST be EXACT synonyms: truly interchangeable drop-in replacements for "${word}" in ANY sentence
+- Each synonym must share the SAME core meaning AND same grammatical family (${currentFamily})
+- TEST: Could you swap "${word}" for the synonym in any sentence without changing the meaning? If not, do NOT include it
+- DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
+- If ${currentFamily} = "Noun": Synonyms MUST be nouns. Context MUST use "${word}" as a noun.
+- If ${currentFamily} = "Verb": Synonyms MUST be verbs. Context MUST use "${word}" as a verb (conjugate if needed: ${word}, ${word}s, ${word}ed, ${word}ing).
+- If ${currentFamily} = "Adjective": Synonyms MUST be adjectives. Context MUST use "${word}" as an adjective describing a noun.
+- If ${currentFamily} = "Adverb": Synonyms MUST be adverbs. Context MUST use "${word}" as an adverb modifying a verb/adjective.
+- If ${currentFamily} = "Phrasal Verb": Synonyms MUST be phrasal verbs. Context MUST use "${word}" as a phrasal verb.
+- If ${currentFamily} = "Idiom": Synonyms MUST be idioms/expressions. Context MUST use "${word}" as an idiomatic expression.
+- If ${currentFamily} = "Preposition": Synonyms MUST be prepositions. Context MUST use "${word}" as a preposition.
+- Context sentence MUST help understand the meaning of "${word}" — a reader should be able to infer what it means from context.
+
+RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
+            }
+
             const handleMagicFill = async (word, targetFields = null, wordId = null) => {
                 if (!word) return;
 
@@ -4095,32 +4291,10 @@ Return ONLY the JSON object.`;
                 setMagicLoading(true);
 
                 try {
-                    // 🆕 V11.38: Enhance prompt with current family if available
-                    let prompt = magicFillPrompt.replace(/{word}/g, word);
-                    
-                    if (currentFamily) {
-                        prompt = `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
+                    // 🆕 V14.78: shared with batch fill so both use the identical prompt
+                    const prompt = buildMagicFillPrompt(word, currentFamily);
 
-${prompt}
-
-MANDATORY RULES FOR "${word}" (${currentFamily}):
-- Synonyms MUST be EXACT synonyms: truly interchangeable drop-in replacements for "${word}" in ANY sentence
-- Each synonym must share the SAME core meaning AND same grammatical family (${currentFamily})
-- TEST: Could you swap "${word}" for the synonym in any sentence without changing the meaning? If not, do NOT include it
-- DO NOT include near-synonyms, loosely related words, or words with merely overlapping meaning
-- If ${currentFamily} = "Noun": Synonyms MUST be nouns. Context MUST use "${word}" as a noun.
-- If ${currentFamily} = "Verb": Synonyms MUST be verbs. Context MUST use "${word}" as a verb (conjugate if needed: ${word}, ${word}s, ${word}ed, ${word}ing).
-- If ${currentFamily} = "Adjective": Synonyms MUST be adjectives. Context MUST use "${word}" as an adjective describing a noun.
-- If ${currentFamily} = "Adverb": Synonyms MUST be adverbs. Context MUST use "${word}" as an adverb modifying a verb/adjective.
-- If ${currentFamily} = "Phrasal Verb": Synonyms MUST be phrasal verbs. Context MUST use "${word}" as a phrasal verb.
-- If ${currentFamily} = "Idiom": Synonyms MUST be idioms/expressions. Context MUST use "${word}" as an idiomatic expression.
-- If ${currentFamily} = "Preposition": Synonyms MUST be prepositions. Context MUST use "${word}" as a preposition.
-- Context sentence MUST help understand the meaning of "${word}" — a reader should be able to infer what it means from context.
-
-RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
-                    }
-
-                    const systemContent = 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.';
+                    const systemContent = MAGIC_FILL_SYSTEM;
 
                     let textResponse = null;
                     let modelUsed = null;
@@ -5018,7 +5192,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.77</span>
+                                        English Booster <span className="version-text">v14.78</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5154,6 +5328,32 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="Family">No Family</option>
                                     <option value="Difficulty">No Difficulty</option>
                                 </select>
+                                {/* 🆕 V14.78: batch AI fill for the current filtered list */}
+                                <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+                                    <button
+                                        onClick={runBatchFill}
+                                        disabled={batchRunning || batchPendingTotal === 0}
+                                        title={batchPendingTotal === 0
+                                            ? 'Nothing pending in this filter'
+                                            : `Fill up to ${BATCH_SIZE} records with Gemini, about 6 seconds apart (2-3 minutes)`}
+                                        className={`p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap transition-colors ${
+                                            batchRunning
+                                                ? 'bg-purple-600/40 text-purple-200 cursor-wait'
+                                                : batchPendingTotal === 0
+                                                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                                                    : 'bg-purple-600/20 text-purple-300 border border-purple-500/40 hover:bg-purple-600/30'
+                                        }`}
+                                    >
+                                        {batchRunning
+                                            ? '✨ Filling…'
+                                            : `✨ Fill ${Math.min(BATCH_SIZE, batchPendingTotal)} of ${batchPendingTotal.toLocaleString()} pending`}
+                                    </button>
+                                    {geminiDailyCount > 0 && (
+                                        <span className="text-[10px] text-slate-500 whitespace-nowrap" title="Successful Gemini calls today, across all features. Resets at midnight US Pacific.">
+                                            {geminiDailyCount.toLocaleString()} processed today
+                                        </span>
+                                    )}
+                                </div>
                                 <select value={familyFilter} onChange={e => setFamilyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[80px] sm:flex-initial"><option value="All">Family</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select>
                                 <select value={difficultyFilter} onChange={e => setDifficultyFilter(e.target.value)} className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase flex-1 min-w-[100px] sm:flex-initial"><option value="All">Difficulty</option>{DIFFICULTIES.map(eff => <option key={eff} value={eff}>{eff}</option>)}</select>
                             </div>
@@ -6046,6 +6246,105 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🆕 V14.78: BATCH FILL PROGRESS */}
+                    {batchProgress && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4">
+                            <div className="bg-slate-900 rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-purple-500/30">
+                                <h2 className="text-xl font-black text-white mb-1">✨ Filling with Gemini</h2>
+                                <p className="text-slate-500 text-xs mb-5">
+                                    Requests are spaced ~6s apart to stay inside the per-minute limit — a full batch takes 2-3 minutes.
+                                </p>
+
+                                <div className="flex justify-between items-end mb-2">
+                                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Progress</span>
+                                    <span className="text-white font-black">{batchProgress.current} / {batchProgress.total}</span>
+                                </div>
+                                <div className="h-3 bg-slate-800 rounded-full overflow-hidden mb-5">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-500"
+                                        style={{ width: `${Math.round((batchProgress.current / batchProgress.total) * 100)}%` }}
+                                    />
+                                </div>
+
+                                <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 mb-5">
+                                    <p className="text-[10px] uppercase font-black text-slate-500 mb-1">Currently processing</p>
+                                    <p className="text-indigo-300 font-bold truncate">{batchProgress.word || '—'}</p>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-3 mb-6 text-center">
+                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl py-2">
+                                        <p className="text-[10px] uppercase font-black text-green-500/80">Filled</p>
+                                        <p className="text-2xl font-black text-green-400">{batchProgress.filled}</p>
+                                    </div>
+                                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl py-2">
+                                        <p className="text-[10px] uppercase font-black text-red-500/80">Failed</p>
+                                        <p className="text-2xl font-black text-red-400">{batchProgress.failed}</p>
+                                    </div>
+                                    <div className="bg-slate-700/40 border border-slate-600/40 rounded-xl py-2">
+                                        <p className="text-[10px] uppercase font-black text-slate-500">Skipped</p>
+                                        <p className="text-2xl font-black text-slate-300">{batchProgress.skipped}</p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={() => { batchStopRef.current = true; }}
+                                    className="w-full bg-red-600/20 border border-red-500/40 text-red-300 hover:bg-red-600/30 py-3 rounded-2xl font-black uppercase text-sm"
+                                >
+                                    {batchStopRef.current ? 'Stopping after this record…' : '⏹ Stop'}
+                                </button>
+                                <p className="text-slate-600 text-[10px] text-center mt-2">
+                                    Records already filled are saved — stopping never loses work.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🆕 V14.78: BATCH FILL SUMMARY */}
+                    {batchSummary && (
+                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4" onClick={() => setBatchSummary(null)}>
+                            <div className="bg-slate-900 rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+                                <h2 className="text-xl font-black text-white mb-1">
+                                    {batchSummary.stoppedBy === 'quota' ? '🚫 Stopped — Gemini quota reached'
+                                        : batchSummary.stoppedBy === 'user' ? '⏹ Batch stopped'
+                                        : '✅ Batch complete'}
+                                </h2>
+                                <p className="text-slate-400 text-sm mb-5">
+                                    {batchSummary.stoppedBy === 'quota'
+                                        ? `Gemini's daily quota ran out mid-batch. ${batchSummary.filled} record${batchSummary.filled === 1 ? '' : 's'} were filled before stopping. Nothing was filled with Groq — batch fill is Gemini-only by design.`
+                                        : batchSummary.stoppedBy === 'user'
+                                            ? `Stopped at your request after ${batchSummary.attempted} record${batchSummary.attempted === 1 ? '' : 's'}.`
+                                            : 'All records in this batch have been processed.'}
+                                </p>
+
+                                <div className="grid grid-cols-3 gap-3 mb-5 text-center">
+                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl py-3">
+                                        <p className="text-[10px] uppercase font-black text-green-500/80">Filled</p>
+                                        <p className="text-3xl font-black text-green-400">{batchSummary.filled}</p>
+                                    </div>
+                                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl py-3">
+                                        <p className="text-[10px] uppercase font-black text-red-500/80">Failed</p>
+                                        <p className="text-3xl font-black text-red-400">{batchSummary.failed}</p>
+                                    </div>
+                                    <div className="bg-slate-700/40 border border-slate-600/40 rounded-xl py-3">
+                                        <p className="text-[10px] uppercase font-black text-slate-500">Skipped</p>
+                                        <p className="text-3xl font-black text-slate-300">{batchSummary.skipped}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 mb-5 text-sm">
+                                    <span className="text-slate-400">Still pending in this filter</span>
+                                    <span className="text-white font-black">{batchPendingTotal.toLocaleString()}</span>
+                                </div>
+                                <p className="text-slate-500 text-xs mb-5">{geminiDailyCount.toLocaleString()} Gemini calls processed today.</p>
+
+                                <button
+                                    onClick={() => setBatchSummary(null)}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black uppercase text-sm"
+                                >Close</button>
                             </div>
                         </div>
                     )}
