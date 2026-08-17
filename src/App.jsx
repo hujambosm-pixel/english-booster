@@ -3,6 +3,26 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
         const FAMILIES = ["Noun", "Adjective", "Adverb", "Verb", "Phrasal Verb", "Preposition", "Idiom", "Chunk"];
         const DIFFICULTIES = ["Passive", "Emerging", "Active"];
 
+        // 🆕 V14.85: Groq model ids in ONE place, so the next deprecation is a one-line change.
+        // Groq shut down the Llama models on 16 Aug 2026 (announced 17 Jun 2026), which is why every
+        // Groq call started returning 404 model_not_found:
+        //   llama-3.3-70b-versatile      → openai/gpt-oss-120b
+        //   llama-3.1-8b-instant         → openai/gpt-oss-20b
+        //   deepseek-r1-distill-llama-70b → openai/gpt-oss-120b (shut down 2 Oct 2025)
+        const GROQ_MODEL_LARGE = 'openai/gpt-oss-120b';  // quality-sensitive work
+        const GROQ_MODEL_FAST  = 'openai/gpt-oss-20b';   // short, latency-sensitive helpers
+
+        // Verified against Groq's deprecations page: Orpheus is NOT deprecated — it is itself the
+        // replacement for playai-tts (shut down 31 Dec 2025). Unchanged.
+        const GROQ_MODEL_TTS = 'canopylabs/orpheus-v1-english';
+
+        // gpt-oss are reasoning models. Groq normally returns reasoning separately, but if any leaks
+        // into the message content it must not reach a parser or the UI.
+        const stripReasoningBlocks = t => String(t || '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+            .trim();
+
 
         function App() {
             // 🆕 V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
@@ -124,7 +144,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             const resp = await fetch('https://api.groq.com/openai/v1/audio/speech', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
-                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: inputText, voice: preferredVoice.replace('groq-', ''), response_format: 'wav' })
+                                body: JSON.stringify({ model: GROQ_MODEL_TTS, input: inputText, voice: preferredVoice.replace('groq-', ''), response_format: 'wav' })
                             });
                             if (!resp.ok) throw new Error('Groq TTS failed');
                             const blob = await resp.blob();
@@ -172,7 +192,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
                         body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
+                            model: GROQ_MODEL_LARGE,
                             messages: [{ role: 'system', content: systemPrompt }, ...history],
                             temperature: 0.8,
                             max_tokens: 120
@@ -180,7 +200,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     });
                     if (!resp.ok) return null;
                     const data = await resp.json();
-                    return data.choices?.[0]?.message?.content?.trim() || null;
+                    return stripReasoningBlocks(data.choices?.[0]?.message?.content) || null;
                 } catch (e) { return null; }
             }
 
@@ -548,7 +568,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V14.73: tolerant JSON extraction — strips markdown fences and DeepSeek <think>
             // blocks, then falls back to the outermost {...} if a straight parse fails.
             function parseLooseJson(text) {
-                let raw = (text || '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+                let raw = stripReasoningBlocks(text);
                 raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
                 try {
                     return JSON.parse(raw);
@@ -697,7 +717,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
+                            model: GROQ_MODEL_LARGE,
                             messages: [{ 
                                 role: 'system', 
                                 content: 'You are an expert corpus linguist. You classify English words by their real-world usage frequency based on major English corpora (BNC, COCA). Reply ONLY with valid JSON, nothing else.' 
@@ -726,7 +746,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     });
                     if (!resp.ok) { console.warn('Usage API error:', resp.status); return; }
                     const data = await resp.json();
-                    let raw = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content);
                     raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                     const braceStart = raw.indexOf('{');
                     const braceEnd = raw.lastIndexOf('}');
@@ -1782,7 +1802,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                             const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: inputText, voice: voiceName, response_format: 'wav' })
+                                body: JSON.stringify({ model: GROQ_MODEL_TTS, input: inputText, voice: voiceName, response_format: 'wav' })
                             });
                             
                             if (!response.ok) {
@@ -2155,7 +2175,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                             'Authorization': `Bearer ${apiKey}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: GROQ_MODEL_FAST,
                             messages: [{
                                 role: 'user',
                                 content: `You are a precise English vocabulary assistant. For the word/expression "${word}" (if it is in Spanish or another language, treat it as if you were given its English equivalent), provide two categories:
@@ -2184,7 +2204,7 @@ Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"
                     if (!response.ok) return [];
 
                     const data = await response.json();
-                    let raw = data.choices?.[0]?.message?.content || '[]';
+                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '[]';
                     raw = raw.replace(/```json|```/g, '').trim();
                     
                     try {
@@ -2225,7 +2245,7 @@ Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: `You are a British English spell checker. Check ONLY for spelling mistakes (NOT grammar, style, or meaning) in these three fields. Use British English spelling (colour not color, organise not organize, etc.).
 
 VOCABULARY: "${vocab}"
@@ -2242,7 +2262,7 @@ Return ONLY valid JSON, no explanation.` }],
                     });
                     
                     const data = await response.json();
-                    let raw = data.choices?.[0]?.message?.content || '{}';
+                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '{}';
                     raw = raw.replace(/```json|```/g, '').trim();
                     const result = JSON.parse(raw);
                     setSpellCheckResult(result);
@@ -3015,7 +3035,7 @@ Return ONLY valid JSON, no explanation.` }],
                             'Authorization': `Bearer ${apiKey}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.5,
                             max_tokens: 150
@@ -3027,7 +3047,7 @@ Return ONLY valid JSON, no explanation.` }],
                     }
 
                     const data = await response.json();
-                    return (data.choices?.[0]?.message?.content || 'Unable to generate meaning.').trim();
+                    return stripReasoningBlocks(data.choices?.[0]?.message?.content) || 'Unable to generate meaning.';
                 } catch (error) {
                     console.error('Generate meaning error:', error);
                     return '❌ Error generating meaning. Please try again.';
@@ -3229,7 +3249,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             'Authorization': `Bearer ${apiKey}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.3,
                             max_tokens: 200
@@ -3239,7 +3259,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                     if (!response.ok) throw new Error('Translation failed');
 
                     const data = await response.json();
-                    const translation = data.choices?.[0]?.message?.content?.trim() || '';
+                    const translation = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '';
                     setTranslationSpanish(translation);
                 } catch (error) {
                     console.error('Translation error:', error);
@@ -3306,7 +3326,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
             // 🆕 V14.6: Shared Groq helper — DeepSeek R1 first, auto-fallback to LLaMA 70b
             // Strips <think> blocks, handles all error cases, returns parsed JSON or throws
             async function callGroqWithFallback(apiKey, messages, maxTokens = 2000) {
-                const modelsToTry = ['deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
+                const modelsToTry = [GROQ_MODEL_LARGE, GROQ_MODEL_FAST];
                 let lastError = '';
                 for (const model of modelsToTry) {
                     try {
@@ -3322,9 +3342,9 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             continue;
                         }
                         const data = await res.json();
-                        let raw = data.choices?.[0]?.message?.content || '';
-                        // Strip DeepSeek R1 reasoning block
-                        raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '');
+                        let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content);
+                        // 🆕 V14.85: strip any reasoning the model emits into the content
+                        raw = stripReasoningBlocks(raw);
                         raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                         const start = raw.indexOf('{');
                         const end = raw.lastIndexOf('}');
@@ -3576,7 +3596,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     'Authorization': `Bearer ${apiKey}`
                                 },
                                 body: JSON.stringify({
-                                    model: 'llama-3.1-8b-instant',
+                                    model: GROQ_MODEL_FAST,
                                     messages: [{ role: 'user', content: prompt }],
                                     temperature: 0.3,
                                     max_tokens: 300
@@ -3639,7 +3659,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                             'Authorization': `Bearer ${apiKey}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.7,
                             max_tokens: 200
@@ -3649,8 +3669,8 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     if (!response.ok) throw new Error('API Error');
                     
                     const data = await response.json();
-                    let textResponse = data.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    const result = JSON.parse(textResponse);
+                    // 🆕 V14.85: reasoning-safe, and brace-recovery instead of a bare JSON.parse
+                    const result = parseLooseJson(data.choices[0].message.content);
                     
                     // Convert distractors to word objects like the correct word
                     return (result.distractors || []).map(word => ({
@@ -3706,7 +3726,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                                     'Authorization': `Bearer ${apiKey}`
                                 },
                                 body: JSON.stringify({
-                                    model: 'llama-3.1-8b-instant',
+                                    model: GROQ_MODEL_FAST,
                                     messages: [{ role: 'user', content: prompt }],
                                     temperature: 0.5,
                                     max_tokens: 300
@@ -3716,7 +3736,7 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                             if (!response.ok) throw new Error('API Error');
 
                             const data = await response.json();
-                            return data.choices[0].message.content.trim();
+                            return stripReasoningBlocks(data.choices[0].message.content);
                         }
                     });
                     setSelectionExplanation(explanation);
@@ -4305,7 +4325,7 @@ Return ONLY the JSON object.`;
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
                     body: JSON.stringify({
-                        model: 'llama-3.3-70b-versatile',
+                        model: GROQ_MODEL_LARGE,
                         messages: [
                             { role: 'system', content: MAGIC_FILL_SYSTEM },
                             { role: 'user', content: prompt }
@@ -4326,7 +4346,7 @@ Return ONLY the JSON object.`;
                 }
 
                 const data = await response.json();
-                const text = data.choices?.[0]?.message?.content || '';
+                const text = stripReasoningBlocks(data.choices?.[0]?.message?.content);
                 if (!text.trim()) throw new Error('Empty Groq response');
                 bumpAiDaily('groq'); // 🆕 V14.82
                 return text;
@@ -4667,7 +4687,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                     'Authorization': `Bearer ${apiKey}`
                                 },
                                 body: JSON.stringify({
-                                    model: 'llama-3.3-70b-versatile',
+                                    model: GROQ_MODEL_LARGE,
                                     messages: [
                                         {
                                             role: 'system',
@@ -4696,7 +4716,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             throw new Error('No response from AI');
                         }
 
-                        textResponse = data.choices[0].message.content;
+                        textResponse = stripReasoningBlocks(data.choices[0].message.content);
                         bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
@@ -5031,7 +5051,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 'Authorization': `Bearer ${apiKey}`
                             },
                             body: JSON.stringify({
-                                model: 'llama-3.3-70b-versatile',
+                                model: GROQ_MODEL_LARGE,
                                 messages: [
                                     { role: 'system', content: systemContent },
                                     { role: 'user', content: prompt }
@@ -5051,7 +5071,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             throw new Error('No response from AI');
                         }
 
-                        rawResponse = data.choices[0].message.content;
+                        rawResponse = stripReasoningBlocks(data.choices[0].message.content);
                         bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
@@ -5215,7 +5235,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqApiKey.trim()}` },
                             body: JSON.stringify({
-                                model: 'llama-3.3-70b-versatile',
+                                model: GROQ_MODEL_LARGE,
                                 messages: [{ 
                                     role: 'system', 
                                     content: 'You are a vocabulary deduplication assistant. Given a reference word and a list of candidates, return ONLY those that should be merged because they are: (a) exact synonyms, (b) near-synonyms with essentially the same meaning, (c) different grammatical forms of the same word (e.g. run/running/ran), or (d) variant expressions of the same concept (e.g. "fed up" / "fed up with"). Exclude words that merely share a word but have different meanings (e.g. "break down" vs "sit down"). Reply ONLY with a JSON array of the matching words, e.g. ["word1","word2"].'
@@ -5230,7 +5250,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         
                         if (filterResp.ok) {
                             const filterData = await filterResp.json();
-                            let raw = (filterData.choices?.[0]?.message?.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                            let raw = stripReasoningBlocks(filterData.choices?.[0]?.message?.content).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                             const bracketStart = raw.indexOf('[');
                             const bracketEnd = raw.lastIndexOf(']');
                             if (bracketStart !== -1 && bracketEnd !== -1) {
@@ -5535,7 +5555,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.84</span>
+                                        English Booster <span className="version-text">v14.85</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6077,7 +6097,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             const resp = await fetch('https://api.groq.com/openai/v1/audio/speech', {
                                                                 method: 'POST',
                                                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                                                                body: JSON.stringify({ model: 'canopylabs/orpheus-v1-english', input: testText, voice: voiceName, response_format: 'wav' })
+                                                                body: JSON.stringify({ model: GROQ_MODEL_TTS, input: testText, voice: voiceName, response_format: 'wav' })
                                                             });
                                                             if (!resp.ok) {
                                                                 const errText = await resp.text().catch(() => '');
