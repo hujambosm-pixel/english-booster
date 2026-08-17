@@ -616,6 +616,44 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return result;
             }
 
+            // 🆕 V14.84: the synonyms field must be a comma-separated list of terms and nothing else.
+            // Groq returned prose for "overturn" — "upset, reverse, overturn is often used as a verb,
+            // so other synonyms are overturn's verb forms: capsize, topple" — and with ~4,300 records
+            // to generate, a systematic tendency would be expensive to undo later.
+            function sanitiseSynonyms(rawSynonyms, vocabularyWord) {
+                const entries = String(rawSynonyms || '').split(',').map(s => s.trim()).filter(Boolean);
+                const word = String(vocabularyWord || '').trim().toLowerCase();
+                const kept = [], dropped = [];
+
+                for (const entry of entries) {
+                    const lower = entry.toLowerCase();
+                    let reason = null;
+
+                    if (word && (lower === word || new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lower))) {
+                        reason = 'contains the vocabulary word';
+                    } else if (entry.split(/\s+/).length > 5) {
+                        reason = 'too long to be a term';
+                    } else if (/:\s/.test(entry) || /\bis\b/.test(lower) || /\bare\b/.test(lower)) {
+                        reason = 'reads as a sentence';
+                    }
+
+                    if (reason) dropped.push({ entry, reason }); else kept.push(entry);
+                }
+
+                return { clean: kept.join(', '), kept, dropped };
+            }
+
+            // Keeps the valid entries and drops the rest, rather than failing the whole record.
+            function cleanSynonymsField(rawSynonyms, vocabularyWord, tag = '[Synonyms]') {
+                const { clean, dropped } = sanitiseSynonyms(rawSynonyms, vocabularyWord);
+                if (dropped.length) {
+                    console.warn(`${tag} dropped ${dropped.length} invalid synonym entr${dropped.length === 1 ? 'y' : 'ies'} for "${vocabularyWord}":`,
+                        dropped.map(d => `"${d.entry}" (${d.reason})`).join(' | '),
+                        clean ? `→ kept: "${clean}"` : '→ nothing valid left, leaving synonyms empty');
+                }
+                return clean;
+            }
+
             // 🆕 V14.81: provenance dot. Deliberately not a table column — the list is dense and
             // mostly used on mobile, so this rides alongside the word itself.
             const AiSourceDot = ({ source }) => {
@@ -728,7 +766,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
             const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
-            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: 2-4 British English synonyms (comma-separated)\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun",\n  "usage": "very common|common|uncommon|rare|formal|informal|literary",\n  "alternative": "more commonly used word/phrase, or empty string if already very common"\n}');
+            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: ONLY a comma-separated list of 2-4 British English synonyms — terms only, no explanation or commentary\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun",\n  "usage": "very common|common|uncommon|rare|formal|informal|literary",\n  "alternative": "more commonly used word/phrase, or empty string if already very common"\n}');
             
             // 🆕 V11.2: New states
             // 🆕 V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
@@ -2059,6 +2097,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     // 🆕 V14.81: provenance filters — the Groq one drives the Gemini upgrade path
                     else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
+                    // 🆕 V14.84: unknown origin = has content, but no recorded model
+                    else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
 
                     const { data, count, error } = await query
                         .order('created_at', { ascending: false })
@@ -2688,6 +2728,8 @@ Return ONLY valid JSON, no explanation.` }],
                     // 🆕 V14.81: provenance filters — the Groq one drives the Gemini upgrade path
                     else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
+                    // 🆕 V14.84: unknown origin = has content, but no recorded model
+                    else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
 
                     const { data, error } = await query.order('created_at', { ascending: false });
                     
@@ -4200,8 +4242,15 @@ Return ONLY the JSON object.`;
             const [showBatchChooser, setShowBatchChooser] = useState(false);
             const [batchModelChoice, setBatchModelChoice] = useState(null);
 
-            // 'Filled with Groq' + Gemini is the upgrade path: it REPLACES existing content
-            const isGroqFilledFilter = emptyFilter === 'GroqFilled';
+            // Filters whose records already HAVE content of unverified quality. Combined with Gemini
+            // these become the upgrade path, which REPLACES existing content rather than filling blanks.
+            // 🆕 V14.84: 'Unknown origin' joins 'Filled with Groq' here.
+            const UPGRADE_FILTERS = ['GroqFilled', 'UnknownOrigin'];
+            const isGroqFilledFilter = UPGRADE_FILTERS.includes(emptyFilter);
+
+            // 🆕 V14.84: "has content in at least one field" — a bare ai_source IS NULL would also
+            // match the ~4,300 genuinely empty records, which nothing has filled.
+            const HAS_ANY_CONTENT = 'and(synonyms.not.is.null,synonyms.neq.),and(context.not.is.null,context.neq.),and(family.not.is.null,family.neq.)';
 
             const AI_SOURCE_LABELS = { gemini: 'Filled by Gemini', groq: 'Filled by Groq' };
 
@@ -4223,6 +4272,8 @@ Return ONLY the JSON object.`;
                     else if (emptyFilter === 'Difficulty') query = query.or('difficulty.is.null,difficulty.eq.,difficulty.eq.NULL');
                     else if (emptyFilter === 'GroqFilled') query = query.eq('ai_source', 'groq');
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
+                    // 🆕 V14.84: unknown origin = has content, but no recorded model
+                    else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
 
                     // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate, blanks
                     // or not. Everywhere else "pending" still means missing at least one field, which
@@ -4361,6 +4412,11 @@ Return ONLY the JSON object.`;
                 }
 
                 // ── 4. Field selection — never overwrite existing content ──────────────────────
+                // 🆕 V14.84: strip prose out of the synonyms list before it reaches the database
+                if (result.synonyms) {
+                    result.synonyms = cleanSynonymsField(result.synonyms, record.vocabulary, tag);
+                }
+
                 const update = {};
                 if (missing.synonyms && result.synonyms) update.synonyms = String(result.synonyms).trim();
                 if (missing.context && result.context) update.context = String(result.context).trim();
@@ -4487,9 +4543,24 @@ Return ONLY the JSON object.`;
             // batch filler so both produce identical results.
             const MAGIC_FILL_SYSTEM = 'You are an expert British English lexicographer. Synonyms must be EXACT: truly interchangeable, drop-in replacements sharing the same core meaning. Never include near-synonyms, loosely related words, or words with overlapping but different meanings.';
 
+            // 🆕 V14.84: appended at build time rather than only added to the default template,
+            // because the prompt is user-editable and already persisted in localStorage — editing
+            // the default alone would not reach an existing installation.
+            function synonymsRule(word) {
+                return `
+
+━━━ SYNONYMS FIELD — STRICT FORMAT ━━━
+The "synonyms" value MUST be ONLY a comma-separated list of terms.
+✗ NO explanation, commentary, or notes of any kind
+✗ NO sentences — never write things like "X is often used as a verb, so..."
+✗ NO colons, and never mention "${word}" itself inside the synonyms value
+✓ Just the terms: "term one, term two, term three"
+If you cannot produce clean synonyms, return an empty string for synonyms rather than prose.`;
+            }
+
             function buildMagicFillPrompt(word, currentFamily) {
                 // 🆕 V11.38: Enhance prompt with current family if available
-                const base = magicFillPrompt.replace(/{word}/g, word);
+                const base = magicFillPrompt.replace(/{word}/g, word) + synonymsRule(word);
                 if (!currentFamily) return base;
 
                 return `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
@@ -4715,6 +4786,11 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
                     // currentData already obtained at the beginning of function (V11.38)
+
+                    // 🆕 V14.84: same synonyms hardening as the batch path, for both models
+                    if (result.synonyms) {
+                        result.synonyms = cleanSynonymsField(result.synonyms, word, '[Magic Fill]');
+                    }
 
                     // 🆕 V14.67: Show which model produced this fill
                     setMagicFillModel(modelUsed);
@@ -5045,7 +5121,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     // currentWord already defined above (used in prompt)
                     
                     const currentSyns = (currentWord.synonyms || '').split(',').map(s => s.trim()).filter(s => s);
-                    const improvedSyns = (result.synonyms || '').split(',').map(s => s.trim()).filter(s => s);
+                    // 🆕 V14.84: keep prose out of the suggestion chips too
+                    const improvedSyns = sanitiseSynonyms(result.synonyms, word).kept;
                     
                     const currentCtx = currentWord.context ? [currentWord.context] : [];
                     const improvedCtx = result.context ? [result.context] : [];
@@ -5458,7 +5535,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.83</span>
+                                        English Booster <span className="version-text">v14.84</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5596,6 +5673,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* 🆕 V14.81: provenance — 'Filled with Groq' is the Gemini upgrade path */}
                                     <option value="GroqFilled">⚡ Filled with Groq</option>
                                     <option value="GeminiFilled">✨ Filled with Gemini</option>
+                                    {/* 🆕 V14.84: not "filled manually" — this covers both records you
+                                        edited yourself and everything that predates provenance tracking,
+                                        and the two cannot be told apart. */}
+                                    <option
+                                        value="UnknownOrigin"
+                                        title="Records that have content but no recorded model: either you wrote or edited them yourself, or they already existed before provenance tracking was added in V14.81. The two cannot be distinguished."
+                                    >❓ Unknown origin</option>
                                 </select>
                                 {/* 🆕 V14.78: batch AI fill for the current filtered list
                                     🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
@@ -6578,8 +6662,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-3 mb-5">
                                             <p className="text-amber-300 text-xs font-bold mb-1">⚠️ This is an upgrade — existing content will be replaced</p>
                                             <p className="text-amber-200/80 text-xs">
-                                                These records were filled by Groq. Gemini will rewrite their synonyms, context and family,
-                                                overwriting what is there now. The previous values are kept in change history.
+                                                {emptyFilter === 'UnknownOrigin'
+                                                    ? 'These records have content but no recorded model, so their quality is unverified. '
+                                                    : 'These records were filled by Groq. '}
+                                                Gemini will rewrite their synonyms, context and family, overwriting what is there now.
+                                                The previous values are kept in change history.
                                             </p>
                                         </div>
                                     ) : (
