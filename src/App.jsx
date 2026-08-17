@@ -674,6 +674,47 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 return clean;
             }
 
+            // 🆕 V14.86: the gpt-oss models format answers as markdown where Llama returned plain
+            // prose, so **bold** and "- " bullets were rendering literally. Several prompts explicitly
+            // ASK for bold labels and bullets, so the right fix is to render them rather than strip.
+            // Renders React elements, never HTML, so AI output cannot inject markup.
+            const AIText = ({ text, className = '' }) => {
+                if (!text || !String(text).trim()) return null;
+
+                // gpt-oss often runs bullets together on one line ("... context. - **Target Idiom**: ...")
+                const normalised = String(text)
+                    .replace(/\s+[-*•]\s+(?=\*\*)/g, '\n- ')
+                    .replace(/\s*\n\s*/g, '\n');
+
+                const lines = normalised.split('\n').map(l => l.trim()).filter(Boolean);
+
+                const renderInline = (s, keyPrefix) =>
+                    String(s).split(/(\*\*[^*]+\*\*)/g).filter(p => p !== '').map((part, i) =>
+                        /^\*\*[^*]+\*\*$/.test(part)
+                            ? <strong key={`${keyPrefix}${i}`} className="font-black">{part.slice(2, -2)}</strong>
+                            : <React.Fragment key={`${keyPrefix}${i}`}>{part}</React.Fragment>
+                    );
+
+                return (
+                    <div className={className}>
+                        {lines.map((line, i) => {
+                            const isBullet = /^[-*•]\s+/.test(line);
+                            const content = isBullet
+                                ? line.replace(/^[-*•]\s+/, '')
+                                : line.replace(/^#{1,6}\s*/, '');
+                            return isBullet ? (
+                                <div key={i} className="flex gap-1.5 mt-1 first:mt-0">
+                                    <span className="opacity-50 flex-shrink-0">•</span>
+                                    <span>{renderInline(content, `${i}-`)}</span>
+                                </div>
+                            ) : (
+                                <p key={i} className="mt-1 first:mt-0">{renderInline(content, `${i}-`)}</p>
+                            );
+                        })}
+                    </div>
+                );
+            };
+
             // 🆕 V14.81: provenance dot. Deliberately not a table column — the list is dense and
             // mostly used on mobile, so this rides alongside the word itself.
             const AiSourceDot = ({ source }) => {
@@ -5555,7 +5596,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.85</span>
+                                        English Booster <span className="version-text">v14.86</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8300,7 +8341,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 </p>
                                                                 {(() => {
                                                                     const found = (dictationExplanations || []).find(x => x.id === dictationPopup.error.id);
-                                                                    if (found && found.explanation) return <p className="text-slate-300 text-sm">{found.explanation}</p>;
+                                                                    if (found && found.explanation) return <AIText text={found.explanation} className="text-slate-300 text-sm" />;
                                                                     if (dictationAILoading) return <p className="text-slate-500 text-sm italic">Explanation loading…</p>;
                                                                     return <p className="text-slate-500 text-sm italic">No explanation available.</p>;
                                                                 })()}
@@ -8582,7 +8623,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 ) : selectionExplanation ? (
                                                     <>
                                                         <h4 className="text-blue-300 text-xs font-black uppercase mb-2">💡 Why {selectionWords[selectionIndex].vocabulary} is the best answer</h4>
-                                                        <p className="text-white/80 text-sm leading-relaxed">{selectionExplanation}</p>
+                                                        <AIText text={selectionExplanation} className="text-white/80 text-sm leading-relaxed" />
                                                     </>
                                                 ) : null}
                                             </div>
@@ -8936,9 +8977,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             {guessworkAIResult.score === 'Active' ? 'Perfect match!' : guessworkAIResult.score === 'Emerging' ? 'Valid synonym!' : "Here's the difference"}
                                                         </h4>
                                                     </div>
-                                                    <p className="text-white/90 text-sm leading-relaxed">{guessworkAIResult.explanation}</p>
+                                                    <AIText text={guessworkAIResult.explanation} className="text-white/90 text-sm leading-relaxed" />
                                                     {guessworkAIResult.is_synonym && guessworkAIResult.synonym_note && (
-                                                        <p className="text-yellow-200/80 text-xs mt-2 italic">💡 {guessworkAIResult.synonym_note}</p>
+                                                        <div className="text-yellow-200/80 text-xs mt-2 italic flex gap-1">
+                                                            <span>💡</span><AIText text={guessworkAIResult.synonym_note} />
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
@@ -9351,7 +9394,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         translationAIResult.grade === 'C2' ? 'text-green-400' : translationAIResult.grade === 'C1' ? 'text-teal-400' : translationAIResult.grade === 'B2' ? 'text-yellow-400' : 'text-red-400'
                                                     }`}>Grade {translationAIResult.grade}</span>
                                                     <span className="text-slate-300 text-sm">({translationAIResult.percentage}%)</span>
-                                                    <span className="text-slate-400 text-sm flex-1">{translationAIResult.feedback}</span>
+                                                    <div className="text-slate-400 text-sm flex-1"><AIText text={translationAIResult.feedback} /></div>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); alert('🌐 TRANSLATION GRADING CRITERIA\n\n📊 CAMBRIDGE LEVELS:\n🏆 C2 (90–100%): Perfect or near-perfect, sophisticated expression\n⭐ C1 (75–89%): Advanced, at most 1 minor imprecision\n📝 B2 (60–74%): Good but 1–2 clear errors\n🔴 B1 (0–59%): 3+ errors or significant issues\n\n🔍 WHAT IS EVALUATED:\n• Grammar: tenses, articles, prepositions, agreement\n• Vocabulary: right word choice, spelling\n• Style: natural English expression\n\n❌ NOT penalised:\n• He/she gender differences\n• Punctuation-only differences\n• Correct idioms & set expressions\n\nClick on highlighted corrections to see details.'); }}
                                                         className="text-blue-400 hover:text-blue-300 text-base shrink-0"
@@ -9449,7 +9492,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                         <span className="text-green-300 font-bold">{translationPopup.correction.corrected}</span>
                                                                     </p>
                                                                 )}
-                                                                <p className="text-slate-300 text-sm">{translationPopup.correction.explanation}</p>
+                                                                <AIText text={translationPopup.correction.explanation} className="text-slate-300 text-sm" />
                                                             </div>
                                                         );
                                                     })()}
@@ -9649,7 +9692,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 writingFeedback.grade === 'C2' ? 'text-green-400' : writingFeedback.grade === 'C1' ? 'text-teal-400' : writingFeedback.grade === 'B2' ? 'text-yellow-400' : 'text-red-400'
                                             }`}>Grade {writingFeedback.grade}</span>
                                             <span className="text-slate-300 text-sm">({writingFeedback.percentage}%)</span>
-                                            <span className="text-slate-400 text-sm flex-1">{writingFeedback.summary}</span>
+                                            <div className="text-slate-400 text-sm flex-1"><AIText text={writingFeedback.summary} /></div>
                                         </div>
 
                                         {/* Annotated text — clickable corrections */}
@@ -9728,7 +9771,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                                 <span className="text-green-300 font-bold">{writingPopup.correction.corrected}</span>
                                                             </p>
                                                         )}
-                                                        <p className="text-slate-300 text-sm">{writingPopup.correction.explanation}</p>
+                                                        <AIText text={writingPopup.correction.explanation} className="text-slate-300 text-sm" />
                                                     </div>
                                                 );
                                             })()}
@@ -9754,7 +9797,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </h4>
                                                 <div className="space-y-2">
                                                     {writingFeedback.word_usage_notes.map((note, i) => (
-                                                        <p key={i} className="text-sm text-teal-100/80">• {note}</p>
+                                                        <div key={i} className="text-sm text-teal-100/80 flex gap-1.5">
+                                                            <span className="opacity-50">•</span><AIText text={note} />
+                                                        </div>
                                                     ))}
                                                 </div>
                                             </div>
@@ -9769,7 +9814,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 </h4>
                                                 <div className="space-y-2">
                                                     {writingFeedback.naturalness_notes.map((note, i) => (
-                                                        <p key={i} className="text-sm text-blue-100/80">• {note}</p>
+                                                        <div key={i} className="text-sm text-blue-100/80 flex gap-1.5">
+                                                            <span className="opacity-50">•</span><AIText text={note} />
+                                                        </div>
                                                     ))}
                                                 </div>
                                             </div>
