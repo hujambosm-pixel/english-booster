@@ -1429,11 +1429,63 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
 
 
             // 🆕 V11.26: Smart partial matching - finds phrases even with missing words
+            // 🆕 V14.91: locate the vocabulary expression inside a sentence using the SAME rules the
+            // validator uses — punctuation stripped from both sides, inflections on every word, slash
+            // alternatives expanded, pronouns flexible. Returns character offsets into the ORIGINAL
+            // string, so the highlighted run keeps the expression's internal punctuation
+            // ("poured blood, sweat, and tears into" bolds as one span, commas included).
+            function findVocabularySpan(context, vocabulary) {
+                const tokens = [];
+                const wordRe = /[\p{L}\p{N}'’-]+/gu;
+                let m;
+                while ((m = wordRe.exec(context)) !== null) {
+                    tokens.push({
+                        norm: m[0].toLowerCase().replace(/[‘’]/g, "'"),
+                        start: m.index,
+                        end: m.index + m[0].length
+                    });
+                }
+                if (!tokens.length) return null;
+
+                const vocabTokens = normaliseWords(vocabulary).split(' ').filter(Boolean);
+                if (!vocabTokens.length) return null;
+
+                const branchesOf = t => t.split('/').filter(Boolean);
+                const isOptional = t => branchesOf(t).every(b => VOCAB_SKIP_WORDS.includes(b) || b.length <= 2);
+
+                const contentCount = vocabTokens.filter(t => !isOptional(t)).length;
+                const required = contentCount <= 1 ? contentCount : Math.max(2, Math.ceil(contentCount * 0.7));
+
+                const GAP = 3; // tolerate a few inserted words, e.g. "keep inflation in check"
+                let pos = 0, first = -1, last = -1, contentMatched = 0;
+
+                for (const vt of vocabTokens) {
+                    const forms = new Set();
+                    branchesOf(vt).forEach(b => inflectionsOf(b).forEach(f => forms.add(f)));
+
+                    // the anchor may sit anywhere; later words must follow closely and in order
+                    const limit = first === -1 ? tokens.length : Math.min(tokens.length, pos + 1 + GAP);
+                    let found = -1;
+                    for (let i = pos; i < limit; i++) {
+                        if (forms.has(tokens[i].norm)) { found = i; break; }
+                    }
+                    if (found === -1) continue;  // optional word, or one the sentence rephrased
+
+                    if (first === -1) first = found;
+                    last = found;
+                    pos = found + 1;
+                    if (!isOptional(vt)) contentMatched++;
+                }
+
+                if (first === -1 || contentMatched < required) return null;
+                return { start: tokens[first].start, end: tokens[last].end };
+            }
+
             function highlightWordInContext(context, vocabulary) {
                 if (!context || !vocabulary) return context;
-                
+
                 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                
+
                 // 1. Try EXACT match first (fastest path)
                 const escapedVocab = escapeRegex(vocabulary);
                 let regex = new RegExp(`\\b${escapedVocab}\\b`, 'gi');
@@ -1455,7 +1507,21 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     });
                 }
                 
-                // 2. For SINGLE words: try conjugations
+                // 🆕 V14.91: 2. Shared matching — same rules as the validator, so anything the
+                // validator accepts also gets bolded. Runs before the legacy strategies below, which
+                // remain as a fallback for anything this does not locate.
+                const span = findVocabularySpan(context, vocabulary);
+                if (span) {
+                    return (
+                        <>
+                            {context.slice(0, span.start)}
+                            <strong className="text-white font-black">{context.slice(span.start, span.end)}</strong>
+                            {context.slice(span.end)}
+                        </>
+                    );
+                }
+
+                // 3. For SINGLE words: try conjugations
                 if (!vocabulary.includes(' ')) {
                     const vocabLower = vocabulary.toLowerCase();
                     const variations = [
@@ -5716,7 +5782,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.90</span>
+                                        English Booster <span className="version-text">v14.91</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
