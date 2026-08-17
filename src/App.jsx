@@ -461,6 +461,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             tokens: data.usageMetadata || null
                         }
                     );
+                    // 🆕 V14.88: MAX_TOKENS means the payload is cut off — the text returns, but any
+                    // JSON in it will be incomplete. Say so here rather than leaving the caller to
+                    // report an opaque parse error.
+                    if (candidate.finishReason === 'MAX_TOKENS') {
+                        console.error(`[${label}] ⚠️ finishReason=MAX_TOKENS — response TRUNCATED at ${maxOutputTokens} tokens. Raise maxOutputTokens for this call.`, {
+                            received: text.length + ' chars',
+                            usage: data.usageMetadata || null
+                        });
+                    }
+
                     markGeminiAvailable(); // 🆕 V14.73: a success clears any stale quota flag
                     bumpAiDaily('gemini'); // 🆕 V14.82: counted against Gemini specifically
                     return text;
@@ -604,11 +614,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 // interactive Magic Fill uses. The previous lastIndexOf('}') spanned past the valid
                 // object into any trailing content, so a model that appended prose after the JSON
                 // produced "Unexpected non-whitespace character after JSON" from the retry as well.
-                const start = raw.indexOf('{');
+                // 🆕 V14.88: handles arrays too, so the two call sites expecting [...] can share it.
+                const objAt = raw.indexOf('{'), arrAt = raw.indexOf('[');
+                const start = (objAt === -1) ? arrAt : (arrAt === -1 ? objAt : Math.min(objAt, arrAt));
                 if (start === -1) {
-                    console.error('[parseLooseJson] no JSON object found. Raw response:', raw);
+                    console.error('[parseLooseJson] no JSON value found. Raw response:', raw);
                     throw new Error('No JSON object in response');
                 }
+                const open = raw[start], close = open === '[' ? ']' : '}';
 
                 let depth = 0, inString = false, escaped = false, end = -1;
                 for (let i = start; i < raw.length; i++) {
@@ -616,22 +629,29 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     if (escaped) { escaped = false; continue; }
                     if (ch === '\\') { escaped = true; continue; }
                     if (ch === '"') { inString = !inString; continue; }
-                    if (inString) continue;          // braces inside strings are not structure
-                    if (ch === '{') depth++;
-                    else if (ch === '}') {
+                    if (inString) continue;          // brackets inside strings are not structure
+                    if (ch === open) depth++;
+                    else if (ch === close) {
                         depth--;
                         if (depth === 0) { end = i + 1; break; }
                     }
                 }
                 if (end === -1) {
-                    console.error('[parseLooseJson] unbalanced JSON object. Raw response:', raw);
-                    throw new Error('No balanced JSON object in response');
+                    // 🆕 V14.88: this is what a TRUNCATED response looks like — the value never closes.
+                    // Say so explicitly and show how far it got, rather than letting a bare JSON.parse
+                    // report the opaque "Unexpected end of JSON input".
+                    console.error(
+                        `[parseLooseJson] TRUNCATED or unbalanced JSON — no closing "${close}" found. ` +
+                        `Received ${raw.length} chars. This usually means the model hit its output limit.`,
+                        '\nRaw response:', raw
+                    );
+                    throw new Error(`Incomplete JSON in response (truncated after ${raw.length} characters)`);
                 }
 
                 try {
                     return JSON.parse(raw.substring(start, end));
                 } catch (e) {
-                    console.error('[parseLooseJson] extracted object still invalid:', raw.substring(start, end), '| full raw:', raw);
+                    console.error('[parseLooseJson] extracted value still invalid:', raw.substring(start, end), '| full raw:', raw);
                     throw e;
                 }
             }
@@ -813,12 +833,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     });
                     if (!resp.ok) { console.warn('Usage API error:', resp.status); return; }
                     const data = await resp.json();
-                    let raw = groqContent('usage-info', data);
-                    raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    const braceStart = raw.indexOf('{');
-                    const braceEnd = raw.lastIndexOf('}');
-                    if (braceStart === -1 || braceEnd === -1) return;
-                    const result = JSON.parse(raw.substring(braceStart, braceEnd + 1));
+                    // 🆕 V14.88: hardened parser instead of a lastIndexOf slice + bare JSON.parse
+                    const result = parseLooseJson(groqContent('usage-info', data));
                     if (result.usage) {
                         setUsageInfo({ word, usage: result.usage, alternative: result.alternative || '' });
                     }
@@ -2271,11 +2287,10 @@ Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"
                     if (!response.ok) return [];
 
                     const data = await response.json();
-                    let raw = groqContent('related-words', data) || '[]';
-                    raw = raw.replace(/```json|```/g, '').trim();
-                    
+                    const rawRelated = groqContent('related-words', data) || '[]';
+
                     try {
-                        const results = JSON.parse(raw);
+                        const results = parseLooseJson(rawRelated); // 🆕 V14.88: now handles arrays too
                         return results.filter(w => w.toLowerCase() !== word.toLowerCase()).slice(0, 20);
                     } catch(e) {
                         // Fallback: try comma-separated
@@ -2329,9 +2344,7 @@ Return ONLY valid JSON, no explanation.` }],
                     });
                     
                     const data = await response.json();
-                    let raw = groqContent('spell-check', data) || '{}';
-                    raw = raw.replace(/```json|```/g, '').trim();
-                    const result = JSON.parse(raw);
+                    const result = parseLooseJson(groqContent('spell-check', data) || '{}'); // 🆕 V14.88
                     setSpellCheckResult(result);
                     
                     if (result.ok) {
@@ -3412,17 +3425,19 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                         let raw = groqContent(`fallback:${model}`, data);
                         // 🆕 V14.85: strip any reasoning the model emits into the content
                         raw = stripReasoningBlocks(raw);
-                        raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                        const start = raw.indexOf('{');
-                        const end = raw.lastIndexOf('}');
-                        if (start === -1 || end === -1) {
-                            lastError = `${model}: no JSON object in response`;
-                            console.warn('Groq fallback — bad response:', lastError);
+                        // 🆕 V14.88: hardened parser — a truncated response now falls through to the
+                        // next model instead of throwing an opaque parse error
+                        let parsedResult;
+                        try {
+                            parsedResult = parseLooseJson(raw);
+                        } catch (parseErr) {
+                            lastError = `${model}: ${parseErr.message}`;
+                            console.warn('Groq fallback — unparseable response:', lastError, '| raw:', raw);
                             continue;
                         }
                         console.log('✅ Groq model used:', model);
                         bumpAiDaily('groq'); // 🆕 V14.82
-                        return JSON.parse(raw.substring(start, end + 1));
+                        return parsedResult;
                     } catch (err) {
                         lastError = `${model}: ${err.message}`;
                         console.warn('Groq fallback — exception:', lastError);
@@ -4720,7 +4735,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     // 🆕 V14.73: ...and only while the daily quota holds
                     if (geminiReady()) {
                         try {
-                            textResponse = await callGemini(geminiKey, systemContent, prompt, 'Magic Fill');
+                            textResponse = await callGemini(geminiKey, systemContent, prompt, 'Magic Fill', { maxOutputTokens: 1500 }); // 🆕 V14.88
                             modelUsed = 'Gemini';
                             console.log('%c[Magic Fill] ✨ Model used: GEMINI (no fallback needed)', 'color:#60a5fa;font-weight:bold');
                         } catch (e) {
@@ -4793,40 +4808,14 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     }
 
                     
-                    textResponse = textResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                    
+                    // 🆕 V14.88: same hardened parser as everywhere else, instead of a private copy
                     let result;
                     try {
-                        result = JSON.parse(textResponse);
-                    } catch (e1) {
-                        console.warn('⚠️ Direct parse failed, extracting first JSON object...');
-                        try {
-                            const firstBraceIndex = textResponse.indexOf('{');
-                            if (firstBraceIndex === -1) {
-                                throw new Error('No JSON object found');
-                            }
-                            
-                            let braceCount = 0;
-                            let endIndex = -1;
-                            for (let i = firstBraceIndex; i < textResponse.length; i++) {
-                                if (textResponse[i] === '{') braceCount++;
-                                if (textResponse[i] === '}') braceCount--;
-                                if (braceCount === 0) {
-                                    endIndex = i + 1;
-                                    break;
-                                }
-                            }
-                            
-                            if (endIndex === -1) {
-                                throw new Error('Could not find end of JSON object');
-                            }
-                            
-                            const firstJsonStr = textResponse.substring(firstBraceIndex, endIndex);
-                            result = JSON.parse(firstJsonStr);
-                        } catch (e2) {
-                            console.error('❌ All parsing failed:', e2);
-                            throw new Error(`AI returned invalid JSON. Please check your API key and try again.\n\nResponse: ${textResponse.substring(0, 100)}...`);
-                        }
+                        result = parseLooseJson(textResponse);
+                    } catch (e) {
+                        console.error('[Magic Fill] ✗ could not parse the response for', word,
+                            '| model:', modelUsed, '| raw response:', textResponse);
+                        throw new Error(`AI returned invalid JSON.\n\n${e.message}`);
                     }
                     
 
@@ -5086,7 +5075,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     // 🆕 V14.73: ...and only while the daily quota holds
                     if (geminiReady()) {
                         try {
-                            rawResponse = await callGemini(geminiKey, systemContent, prompt, 'AI Improve');
+                            // 🆕 V14.88: the Improve prompt is long (sense anchoring, mandatory rules,
+                            // worked example), so its answer needs more room than Magic Fill's default.
+                            rawResponse = await callGemini(geminiKey, systemContent, prompt, 'AI Improve', { maxOutputTokens: 2500 });
                             modelUsed = 'Gemini';
                             console.log('%c[AI Improve] ✨ Model used: GEMINI (no fallback needed)', 'color:#4ade80;font-weight:bold');
                         } catch (e) {
@@ -5147,20 +5138,16 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         );
                     }
 
-                    let textResponse = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
+                    // 🆕 V14.88: was its own brace scan, and on a truncated response endIndex stayed
+                    // -1, so substring(first, -1) returned "" and JSON.parse("") threw the opaque
+                    // "Unexpected end of JSON input". parseLooseJson reports truncation and logs the raw text.
                     let result;
                     try {
-                        result = JSON.parse(textResponse);
+                        result = parseLooseJson(rawResponse);
                     } catch (e) {
-                        const firstBraceIndex = textResponse.indexOf('{');
-                        let braceCount = 0, endIndex = -1;
-                        for (let i = firstBraceIndex; i < textResponse.length; i++) {
-                            if (textResponse[i] === '{') braceCount++;
-                            if (textResponse[i] === '}') braceCount--;
-                            if (braceCount === 0) { endIndex = i + 1; break; }
-                        }
-                        result = JSON.parse(textResponse.substring(firstBraceIndex, endIndex));
+                        console.error('[AI Improve] ✗ could not parse the response for', word,
+                            '| model:', modelUsed, '| raw response:', rawResponse);
+                        throw e;
                     }
 
                     // 🆕 V11.30: Validate that context uses EXACT word - improved for multi-word phrases
@@ -5317,11 +5304,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         
                         if (filterResp.ok) {
                             const filterData = await filterResp.json();
-                            let raw = groqContent('find-similar', filterData).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                            const bracketStart = raw.indexOf('[');
-                            const bracketEnd = raw.lastIndexOf(']');
-                            if (bracketStart !== -1 && bracketEnd !== -1) {
-                                const approved = JSON.parse(raw.substring(bracketStart, bracketEnd + 1))
+                            const rawFilter = groqContent('find-similar', filterData);
+                            {
+                                const approved = parseLooseJson(rawFilter) // 🆕 V14.88: now handles arrays too
                                     .map(w => w.toLowerCase().trim());
                                 candidates = candidates.filter(c => 
                                     approved.some(a => 
@@ -5622,7 +5607,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.87</span>
+                                        English Booster <span className="version-text">v14.88</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
