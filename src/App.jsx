@@ -3180,23 +3180,87 @@ Return ONLY valid JSON, no explanation.` }],
                 setTranslationHintLoading(false);
             }
 
+            // 🆕 V14.90: multi-word idioms cannot be matched literally — pronouns change to fit the
+            // sentence ("your head" → "my head"), verbs inflect ("pour" → "pouring"), entries carry
+            // slash alternatives ("head/mind") and punctuation, and the phrase may be quoted.
+            // The old check kept the vocabulary's own commas as part of the token, so "blood," could
+            // never match anything, silently discarding perfectly good contexts.
+            const VOCAB_SKIP_WORDS = [
+                'a', 'an', 'the', 'in', 'on', 'at', 'to', 'of', 'for', 'with', 'by', 'and', 'or', 'but', 'if', 'so',
+                'my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'it',
+                'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'us', 'them'
+            ];
+
+            const normaliseWords = s => String(s || '')
+                .toLowerCase()
+                .replace(/[‘’]/g, "'")
+                .replace(/[^\p{L}\p{N}\s'\/-]/gu, ' ')   // drops commas, quotes, full stops
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            function inflectionsOf(word) {
+                const forms = new Set([word, word + 's', word + 'es', word + 'ed', word + 'd', word + 'ing']);
+                if (/e$/.test(word)) { const s = word.slice(0, -1); forms.add(s + 'ing'); forms.add(s + 'ed'); }
+                if (/y$/.test(word)) { const s = word.slice(0, -1); forms.add(s + 'ies'); forms.add(s + 'ied'); }
+                // doubled final consonant: pop → popped / popping
+                if (/[^aeiou][aeiou][^aeiouwxy]$/.test(word)) {
+                    const d = word + word.slice(-1);
+                    forms.add(d + 'ed'); forms.add(d + 'ing');
+                }
+                return forms;
+            }
+
+            // Returns { ok, relaxed } — relaxed means it passed only because of the tolerant rules.
+            function matchVocabularyInText(text, vocabulary) {
+                if (!text || !vocabulary) return { ok: true, relaxed: false };
+
+                const hayText = normaliseWords(text);
+                const vocabText = normaliseWords(vocabulary);
+                if (!vocabText) return { ok: true, relaxed: false };
+
+                // exact phrase present — no relaxation needed
+                if (hayText.includes(vocabText)) return { ok: true, relaxed: false };
+
+                const hay = hayText.split(' ');
+                const vocabTokens = vocabText.split(' ');
+
+                // each token becomes its list of acceptable branches ("head/mind" → head, mind)
+                const contentTokens = vocabTokens
+                    .map(t => t.split('/').filter(Boolean))
+                    .filter(branches => branches.some(b => !VOCAB_SKIP_WORDS.includes(b) && b.length > 2));
+
+                if (contentTokens.length === 0) {
+                    return { ok: hayText.includes(vocabText), relaxed: false };
+                }
+
+                // single word: any inflection anywhere is enough
+                if (contentTokens.length === 1) {
+                    const forms = new Set();
+                    contentTokens[0].forEach(b => inflectionsOf(b).forEach(f => forms.add(f)));
+                    const ok = hay.some(w => forms.has(w));
+                    return { ok, relaxed: ok && !hayText.includes(vocabText) };
+                }
+
+                // multi-word: content words must appear IN ORDER, most of them present
+                let pos = 0, matched = 0;
+                for (const branches of contentTokens) {
+                    const forms = new Set();
+                    branches.forEach(b => inflectionsOf(b).forEach(f => forms.add(f)));
+                    let found = -1;
+                    for (let i = pos; i < hay.length; i++) {
+                        if (forms.has(hay[i])) { found = i; break; }
+                    }
+                    if (found !== -1) { matched++; pos = found + 1; }
+                }
+
+                const required = Math.max(2, Math.ceil(contentTokens.length * 0.7));
+                return { ok: matched >= required, relaxed: true, matched, required };
+            }
+
             // 🆕 V14.76: does the answer contain the vocabulary word being practised? Checked locally
             // rather than asked of the model, so the one hard requirement is never subject to drift.
             function containsVocabularyWord(text, vocabulary) {
-                if (!text || !vocabulary) return true;
-                const haystack = ' ' + text.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').replace(/\s+/g, ' ') + ' ';
-                const stopWords = ['a', 'an', 'the', 'in', 'on', 'at', 'to', 'of', 'for', 'with', 'by'];
-                const optionalWords = ['my', 'your', 'his', 'her', 'its', 'their', 'our', 'this', 'that', 'it'];
-                const keyWords = vocabulary.toLowerCase().split(/\s+/)
-                    .filter(w => !stopWords.includes(w) && !optionalWords.includes(w) && w.length > 2);
-                // nothing substantive to look for (e.g. "in on") — treat as present
-                if (keyWords.length === 0) return haystack.includes(' ' + vocabulary.toLowerCase() + ' ');
-                return keyWords.every(kw => {
-                    const stem = kw.replace(/e$/, '').replace(/y$/, '');
-                    const forms = [kw, kw + 's', kw + 'es', kw + 'ed', kw + 'd', kw + 'ing',
-                                   stem + 'ing', stem + 'ed', stem + 'ies', stem + 'ied'];
-                    return forms.some(f => haystack.includes(' ' + f + ' ') || haystack.includes(' ' + f + "'"));
-                });
+                return matchVocabularyInText(text, vocabulary).ok;
             }
 
             // 🆕 V11.16: Load Guesswork Exercise
@@ -4377,6 +4441,11 @@ Return ONLY the JSON object.`;
             const [showBatchChooser, setShowBatchChooser] = useState(false);
             const [batchModelChoice, setBatchModelChoice] = useState(null);
 
+            // 🆕 V14.90: the model of the RUNNING batch, held separately from batchProgress. The title
+            // used to read batchProgress.model, so any progress update that rebuilt the object without
+            // it fell back to "Gemini" — visible as a flicker during retries.
+            const [batchActiveModel, setBatchActiveModel] = useState('gemini');
+
             // Filters whose records already HAVE content of unverified quality. Combined with Gemini
             // these become the upgrade path, which REPLACES existing content rather than filling blanks.
             // 🆕 V14.84: 'Unknown origin' joins 'Filled with Groq' here.
@@ -4540,10 +4609,16 @@ Return ONLY the JSON object.`;
 
                 // ── 3. Context guard — drops ONLY the context, never the whole record ──────────
                 let contextRejected = false;
-                if (result.context && !containsVocabularyWord(result.context, record.vocabulary)) {
-                    contextRejected = true;
-                    console.warn(`${tag} ⚠ context did not contain the word, dropping context only:`, result.context);
-                    result.context = '';
+                if (result.context) {
+                    const match = matchVocabularyInText(result.context, record.vocabulary);
+                    if (!match.ok) {
+                        contextRejected = true;
+                        console.warn(`${tag} ⚠ context did not contain the word, dropping context only:`, result.context);
+                        result.context = '';
+                    } else if (match.relaxed) {
+                        // 🆕 V14.90: passed only via the tolerant rules — logged so these can be spot-checked
+                        console.log(`${tag} ✓ context accepted by relaxed matching (${match.matched ?? 'n/a'}/${match.required ?? 'n/a'} content words in order):`, result.context);
+                    }
                 }
 
                 // ── 4. Field selection — never overwrite existing content ──────────────────────
@@ -4633,6 +4708,7 @@ Return ONLY the JSON object.`;
                 }
 
                 batchStopRef.current = false;
+                setBatchActiveModel(model); // 🆕 V14.90: fixed for the whole run
                 setBatchRunning(true);
                 setBatchSummary(null);
                 setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0, unavailable: 0, status: '', model });
@@ -4644,7 +4720,7 @@ Return ONLY the JSON object.`;
                     if (batchStopRef.current) { stoppedBy = 'user'; break; }
 
                     const record = queue[i];
-                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped });
+                    setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped, unavailable, status: '', model });
 
                     const { outcome, reason, detail } = await batchFillRecord(record, model, overwrite);
                     if (outcome === 'filled') filled++;
@@ -5640,7 +5716,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.89</span>
+                                        English Booster <span className="version-text">v14.90</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6799,11 +6875,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[210] p-4">
                             <div className="bg-slate-900 rounded-3xl p-7 max-w-lg w-full shadow-2xl border border-purple-500/30">
                                 {/* 🆕 V14.83: title and note follow the model actually running */}
+                                {/* 🆕 V14.90: reads batchActiveModel, which cannot be lost by a progress rebuild */}
                                 <h2 className="text-xl font-black text-white mb-1">
-                                    {batchProgress.model === 'groq' ? '⚡ Filling with Groq' : '✨ Filling with Gemini'}
+                                    {batchActiveModel === 'groq' ? '⚡ Filling with Groq' : '✨ Filling with Gemini'}
                                 </h2>
                                 <p className="text-slate-500 text-xs mb-5">
-                                    {batchProgress.model === 'groq'
+                                    {batchActiveModel === 'groq'
                                         ? 'Requests are spaced ~6s apart to keep the load steady — a full batch takes 2-3 minutes.'
                                         : "Requests are spaced ~6s apart to stay inside Gemini's per-minute limit — a full batch takes 2-3 minutes."}
                                 </p>
