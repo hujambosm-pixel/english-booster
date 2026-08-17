@@ -23,6 +23,32 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
             .trim();
 
+        // 🆕 V14.87: gpt-oss spends output tokens on reasoning before emitting the answer, which was
+        // truncating JSON mid-object ("Unexpected end of JSON input" in AI Improve). Verified against
+        // Groq's reasoning docs: gpt-oss accepts reasoning_effort with "low" | "medium" | "high".
+        const GROQ_REASONING_EFFORT = 'low';
+
+        // Reads Groq content and surfaces finish_reason. "length" means the budget ran out and the
+        // payload is truncated — the single most useful signal if this recurs.
+        function groqContent(label, data) {
+            const choice = data?.choices?.[0];
+            const finish = choice?.finish_reason;
+            if (finish === 'length') {
+                console.error(`[Groq:${label}] ⚠️ finish_reason="length" — response TRUNCATED, max_tokens too small`, {
+                    usage: data?.usage || null
+                });
+            } else if (finish && finish !== 'stop') {
+                console.warn(`[Groq:${label}] finish_reason="${finish}"`, { usage: data?.usage || null });
+            } else {
+                console.log(`[Groq:${label}] ok`, {
+                    finish_reason: finish || 'n/a',
+                    completion_tokens: data?.usage?.completion_tokens ?? null,
+                    reasoning_tokens: data?.usage?.completion_tokens_details?.reasoning_tokens ?? null
+                });
+            }
+            return stripReasoningBlocks(choice?.message?.content);
+        }
+
 
         function App() {
             // 🆕 V11.17: Supabase credentials configurable in Settings (with defaults for immediate functionality)
@@ -195,12 +221,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                             model: GROQ_MODEL_LARGE,
                             messages: [{ role: 'system', content: systemPrompt }, ...history],
                             temperature: 0.8,
-                            max_tokens: 120
+                            max_tokens: 400, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
                     if (!resp.ok) return null;
                     const data = await resp.json();
-                    return stripReasoningBlocks(data.choices?.[0]?.message?.content) || null;
+                    return groqContent('voice', data) || null;
                 } catch (e) { return null; }
             }
 
@@ -782,12 +808,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 Reply ONLY: {"usage":"...","alternative":"..."}`
                             }],
                             temperature: 0.0,
-                            max_tokens: 80
+                            max_tokens: 400, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
                     if (!resp.ok) { console.warn('Usage API error:', resp.status); return; }
                     const data = await resp.json();
-                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content);
+                    let raw = groqContent('usage-info', data);
                     raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                     const braceStart = raw.indexOf('{');
                     const braceEnd = raw.lastIndexOf('}');
@@ -2238,14 +2264,14 @@ Example for "sturdy": ["robust","solid","strong","durable","tough","stout","hard
 Example for "run": ["sprint","dash","jog","race","ran","running","runs","runner"]`
                             }],
                             temperature: 0.0,
-                            max_tokens: 300
+                            max_tokens: 800, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
 
                     if (!response.ok) return [];
 
                     const data = await response.json();
-                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '[]';
+                    let raw = groqContent('related-words', data) || '[]';
                     raw = raw.replace(/```json|```/g, '').trim();
                     
                     try {
@@ -2298,12 +2324,12 @@ If there are spelling errors, respond with: {"ok": false, "errors": [{"field": "
 
 Return ONLY valid JSON, no explanation.` }],
                             temperature: 0.0,
-                            max_tokens: 300
+                            max_tokens: 800, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
                     
                     const data = await response.json();
-                    let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '{}';
+                    let raw = groqContent('spell-check', data) || '{}';
                     raw = raw.replace(/```json|```/g, '').trim();
                     const result = JSON.parse(raw);
                     setSpellCheckResult(result);
@@ -3079,7 +3105,7 @@ Return ONLY valid JSON, no explanation.` }],
                             model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.5,
-                            max_tokens: 150
+                            max_tokens: 500, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
 
@@ -3088,7 +3114,7 @@ Return ONLY valid JSON, no explanation.` }],
                     }
 
                     const data = await response.json();
-                    return stripReasoningBlocks(data.choices?.[0]?.message?.content) || 'Unable to generate meaning.';
+                    return groqContent('word-meaning', data) || 'Unable to generate meaning.';
                 } catch (error) {
                     console.error('Generate meaning error:', error);
                     return '❌ Error generating meaning. Please try again.';
@@ -3293,14 +3319,14 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.3,
-                            max_tokens: 200
+                            max_tokens: 600, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
 
                     if (!response.ok) throw new Error('Translation failed');
 
                     const data = await response.json();
-                    const translation = stripReasoningBlocks(data.choices?.[0]?.message?.content) || '';
+                    const translation = groqContent('spanish', data) || '';
                     setTranslationSpanish(translation);
                 } catch (error) {
                     console.error('Translation error:', error);
@@ -3374,7 +3400,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({ model, messages, temperature: 0.0, max_tokens: maxTokens })
+                            body: JSON.stringify({ model, messages, temperature: 0.0, max_tokens: maxTokens, reasoning_effort: GROQ_REASONING_EFFORT })
                         });
                         if (!res.ok) {
                             const errData = await res.json().catch(() => ({}));
@@ -3383,7 +3409,7 @@ Provide ONLY the Spanish translation, nothing else. Use natural, native Spanish.
                             continue;
                         }
                         const data = await res.json();
-                        let raw = stripReasoningBlocks(data.choices?.[0]?.message?.content);
+                        let raw = groqContent(`fallback:${model}`, data);
                         // 🆕 V14.85: strip any reasoning the model emits into the content
                         raw = stripReasoningBlocks(raw);
                         raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -3493,7 +3519,7 @@ Return ONLY the JSON object.`;
                         groqFallback: () => callGroqWithFallback(apiKey, [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
-                        ], 3000)
+                        ], 4000)
                     });
                     setWritingFeedback(feedback);
                 } catch (error) {
@@ -3559,7 +3585,7 @@ Return one explanation for each id listed above. Explain only; change nothing.`;
                         groqFallback: () => callGroqWithFallback(apiKey, [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
-                        ], 1200)
+                        ], 2000)
                     });
 
                     // Keep only explanations matching an error the local diff actually found, so a
@@ -3640,7 +3666,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     model: GROQ_MODEL_FAST,
                                     messages: [{ role: 'user', content: prompt }],
                                     temperature: 0.3,
-                                    max_tokens: 300
+                                    max_tokens: 1200, reasoning_effort: GROQ_REASONING_EFFORT
                                 })
                             });
 
@@ -3649,7 +3675,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             }
 
                             const data = await response.json();
-                            return parseLooseJson(data.choices[0].message.content);
+                            return parseLooseJson(groqContent('guesswork-validate', data));
                         }
                     });
 
@@ -3703,7 +3729,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                             model: GROQ_MODEL_FAST,
                             messages: [{ role: 'user', content: prompt }],
                             temperature: 0.7,
-                            max_tokens: 200
+                            max_tokens: 800, reasoning_effort: GROQ_REASONING_EFFORT
                         })
                     });
                     
@@ -3711,7 +3737,7 @@ Respond ONLY in this JSON format (no markdown, no backticks):
                     
                     const data = await response.json();
                     // 🆕 V14.85: reasoning-safe, and brace-recovery instead of a bare JSON.parse
-                    const result = parseLooseJson(data.choices[0].message.content);
+                    const result = parseLooseJson(groqContent('selection-options', data));
                     
                     // Convert distractors to word objects like the correct word
                     return (result.distractors || []).map(word => ({
@@ -3770,14 +3796,14 @@ Since she is giving a speech, "off the cuff" is the most natural and idiomatic c
                                     model: GROQ_MODEL_FAST,
                                     messages: [{ role: 'user', content: prompt }],
                                     temperature: 0.5,
-                                    max_tokens: 300
+                                    max_tokens: 900, reasoning_effort: GROQ_REASONING_EFFORT
                                 })
                             });
 
                             if (!response.ok) throw new Error('API Error');
 
                             const data = await response.json();
-                            return stripReasoningBlocks(data.choices[0].message.content);
+                            return groqContent('selection-explain', data);
                         }
                     });
                     setSelectionExplanation(explanation);
@@ -3996,7 +4022,7 @@ Return ONLY the JSON object.`;
                         groqFallback: () => callGroqWithFallback(apiKey, [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
-                        ], 1500)
+                        ], 2500)
                     });
                     // 🆕 V14.77: grade, summary and annotations reconciled against corrections_list
                     return reconcileTranslationResult(result, userTranslation);
@@ -4372,7 +4398,7 @@ Return ONLY the JSON object.`;
                             { role: 'user', content: prompt }
                         ],
                         temperature: 0.2,
-                        max_tokens: 500
+                        max_tokens: 1500, reasoning_effort: GROQ_REASONING_EFFORT
                     })
                 });
 
@@ -4387,7 +4413,7 @@ Return ONLY the JSON object.`;
                 }
 
                 const data = await response.json();
-                const text = stripReasoningBlocks(data.choices?.[0]?.message?.content);
+                const text = groqContent('batch-fill', data);
                 if (!text.trim()) throw new Error('Empty Groq response');
                 bumpAiDaily('groq'); // 🆕 V14.82
                 return text;
@@ -4740,7 +4766,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                                         }
                                     ],
                                     temperature: 0.2,
-                                    max_tokens: 500
+                                    max_tokens: 1500, reasoning_effort: GROQ_REASONING_EFFORT
                                 })
                             }
                         );
@@ -4757,7 +4783,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                             throw new Error('No response from AI');
                         }
 
-                        textResponse = stripReasoningBlocks(data.choices[0].message.content);
+                        textResponse = groqContent('magic-fill', data);
                         bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
@@ -5098,7 +5124,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     { role: 'user', content: prompt }
                                 ],
                                 temperature: 0.2,
-                                max_tokens: 500
+                                max_tokens: 1500, reasoning_effort: GROQ_REASONING_EFFORT
                             })
                         });
 
@@ -5112,7 +5138,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             throw new Error('No response from AI');
                         }
 
-                        rawResponse = stripReasoningBlocks(data.choices[0].message.content);
+                        rawResponse = groqContent('ai-improve', data);
                         bumpAiDaily('groq'); // 🆕 V14.82
                         modelUsed = 'Groq';
                         console.log(
@@ -5285,13 +5311,13 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     content: `Reference word: "${currentWord.vocabulary}"${currentWord.synonyms ? ' (synonyms: ' + currentWord.synonyms + ')' : ''}\n\nCandidate list: ${candidateList}\n\nWhich candidates are truly synonyms, near-synonyms, or grammatical variants of "${currentWord.vocabulary}"? Return ONLY the JSON array.`
                                 }],
                                 temperature: 0.0,
-                                max_tokens: 500
+                                max_tokens: 1200, reasoning_effort: GROQ_REASONING_EFFORT
                             })
                         });
                         
                         if (filterResp.ok) {
                             const filterData = await filterResp.json();
-                            let raw = stripReasoningBlocks(filterData.choices?.[0]?.message?.content).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                            let raw = groqContent('find-similar', filterData).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
                             const bracketStart = raw.indexOf('[');
                             const bracketEnd = raw.lastIndexOf(']');
                             if (bracketStart !== -1 && bracketEnd !== -1) {
@@ -5596,7 +5622,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.86</span>
+                                        English Booster <span className="version-text">v14.87</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
