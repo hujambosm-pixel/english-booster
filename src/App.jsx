@@ -438,7 +438,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                     }
 
                     const parts = candidate.content?.parts || [];
-                    const text = parts[0]?.text || parts.map(p => p.text || '').join('');
+                    // 🆕 V14.89: ALWAYS concatenate every part. This previously read parts[0].text and
+                    // only fell back to joining when that was empty, so whenever Gemini split its
+                    // answer across parts the tail was silently dropped — producing JSON that looked
+                    // complete but was missing its closing brace, with no MAX_TOKENS and no error.
+                    const text = parts.map(p => p.text || '').join('');
+                    if (parts.length > 1) {
+                        console.log(`[${label}] response arrived in ${parts.length} parts, concatenated to ${text.length} chars`);
+                    }
                     if (!text || !text.trim()) {
                         console.error(`[${label}] ❌ Gemini returned an empty text part`, {
                             finishReason: candidate.finishReason || null,
@@ -454,6 +461,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                         'color:#4ade80;font-weight:bold',
                         {
                             finishReason: candidate.finishReason || 'n/a',
+                            parts: parts.length,      // 🆕 V14.89
+                            chars: text.length,       // 🆕 V14.89
                             // thinkingTokens is the number to watch if calls are slow — it should be
                             // small or 0 now that thinking is minimised
                             thinkingTokens: data.usageMetadata?.thoughtsTokenCount ?? 0,
@@ -623,26 +632,50 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                 }
                 const open = raw[start], close = open === '[' ? ']' : '}';
 
-                let depth = 0, inString = false, escaped = false, end = -1;
+                // 🆕 V14.89: track the actual nesting stack, so missing closers can be reconstructed
+                const stack = [];
+                let inString = false, escaped = false, end = -1;
                 for (let i = start; i < raw.length; i++) {
                     const ch = raw[i];
                     if (escaped) { escaped = false; continue; }
                     if (ch === '\\') { escaped = true; continue; }
                     if (ch === '"') { inString = !inString; continue; }
                     if (inString) continue;          // brackets inside strings are not structure
-                    if (ch === open) depth++;
-                    else if (ch === close) {
-                        depth--;
-                        if (depth === 0) { end = i + 1; break; }
+                    if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+                    else if (ch === '}' || ch === ']') {
+                        stack.pop();
+                        if (stack.length === 0) { end = i + 1; break; }
                     }
                 }
+
                 if (end === -1) {
-                    // 🆕 V14.88: this is what a TRUNCATED response looks like — the value never closes.
-                    // Say so explicitly and show how far it got, rather than letting a bare JSON.parse
-                    // report the opaque "Unexpected end of JSON input".
+                    // 🆕 V14.89: models sometimes omit only the trailing bracket(s) while the payload
+                    // itself is complete. Repair that rather than discarding a usable answer — but
+                    // only when the content is genuinely finished: not mid-string, and not ending on a
+                    // comma, either of which would mean real content is missing.
+                    const body = raw.slice(start);
+                    const trimmed = body.replace(/\s+$/, '');
+                    const repairable = !inString && stack.length > 0 && !trimmed.endsWith(',');
+
+                    if (repairable) {
+                        const closers = stack.slice().reverse().join('');
+                        try {
+                            const repaired = JSON.parse(trimmed + closers);
+                            console.warn(
+                                `[parseLooseJson] 🔧 repaired incomplete JSON by appending "${closers}" ` +
+                                `(${closers.length} bracket${closers.length === 1 ? '' : 's'}). ` +
+                                `Payload was ${trimmed.length} chars and otherwise complete.`
+                            );
+                            return repaired;
+                        } catch (repairError) {
+                            console.error('[parseLooseJson] repair attempt failed:', repairError.message, '| tried:', trimmed + closers);
+                        }
+                    }
+
                     console.error(
                         `[parseLooseJson] TRUNCATED or unbalanced JSON — no closing "${close}" found. ` +
-                        `Received ${raw.length} chars. This usually means the model hit its output limit.`,
+                        `Received ${raw.length} chars${inString ? ', ending inside an unterminated string' : ''}` +
+                        `${trimmed.endsWith(',') ? ', ending on a comma so content is genuinely missing' : ''}.`,
                         '\nRaw response:', raw
                     );
                     throw new Error(`Incomplete JSON in response (truncated after ${raw.length} characters)`);
@@ -5607,7 +5640,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.88</span>
+                                        English Booster <span className="version-text">v14.89</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
