@@ -917,6 +917,41 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [changedWords, setChangedWords] = useState([]);
             const [selectedForHistory, setSelectedForHistory] = useState([]);
             const [historyCopied, setHistoryCopied] = useState(false); // 🆕 V14.92
+            const [historyReviewCopied, setHistoryReviewCopied] = useState(false); // 🆕 V14.94
+
+            // 🆕 V14.94: same external-review export as the main list, but sourced from the change
+            // list. The point is recency — this reviews exactly what a batch just generated, which
+            // the main list cannot filter by. Exports the CURRENT (AFTER) values, not the diff,
+            // since that is what the external AI has to judge.
+            async function exportChangeHistoryForReview() {
+                const rows = selectedForHistory.length > 0
+                    ? changedWords.filter(w => selectedForHistory.includes(w.id))
+                    : changedWords;
+                if (rows.length === 0) return;
+
+                const batch = rows.slice(0, REVIEW_EXPORT_LIMIT);
+                const payload = batch.map(w => ({
+                    id: w.id,
+                    vocabulary: w.vocabulary,
+                    family: w.family || '',
+                    synonyms: w.synonyms || '',
+                    context: w.context || ''
+                }));
+
+                const text = REVIEW_INSTRUCTIONS + JSON.stringify(payload, null, 2);
+                try {
+                    await navigator.clipboard.writeText(text);
+                    setHistoryReviewCopied(true);
+                    setTimeout(() => setHistoryReviewCopied(false), 2500);
+                } catch (e) {
+                    console.warn('Clipboard unavailable, falling back to a prompt:', e.message);
+                    window.prompt('Copy the review request below (Ctrl+C):', text);
+                }
+
+                if (rows.length > batch.length) {
+                    alert(`🔍 Copied ${batch.length} records for review.\n\n${rows.length} were selected, but exports are capped at ${REVIEW_EXPORT_LIMIT} so the text fits an external chat window.\n\nTick a smaller set to do the rest.`);
+                }
+            }
 
             // 🆕 V14.92: plain-text export of the change list, mirroring what the modal shows, so a
             // batch can be pasted into another AI for review without spending this app's quota.
@@ -6127,7 +6162,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.93</span>
+                                        English Booster <span className="version-text">v14.94</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8514,16 +8549,28 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         >
                                             🔄 Refresh
                                         </button>
-                                        {/* 🆕 V14.92: copy as plain text, for a second opinion elsewhere */}
+                                        {/* 🆕 V14.92: plain-text BEFORE/AFTER audit trail */}
                                         <button
                                             onClick={() => copyChangeHistory()}
                                             disabled={changedWords.length === 0}
-                                            className="text-teal-300 hover:text-teal-200 disabled:text-slate-600 text-sm bg-teal-900/30 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
-                                            title={selectedForHistory.length > 0
-                                                ? `Copy the ${selectedForHistory.length} selected entr${selectedForHistory.length === 1 ? 'y' : 'ies'} as plain text`
-                                                : 'Copy all entries as plain text'}
+                                            className="text-slate-300 hover:text-white disabled:text-slate-600 text-sm bg-slate-700/40 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
+                                            title={`Audit trail — copies the BEFORE → AFTER diff as readable plain text${
+                                                selectedForHistory.length > 0 ? ` (${selectedForHistory.length} selected)` : ' (all entries)'}`}
                                         >
-                                            {historyCopied ? '✓ Copied' : `📋 Copy${selectedForHistory.length > 0 ? ` (${selectedForHistory.length})` : ' all'}`}
+                                            {historyCopied ? '✓ Copied' : `📋 Copy diff${selectedForHistory.length > 0 ? ` (${selectedForHistory.length})` : ' (all)'}`}
+                                        </button>
+                                        {/* 🆕 V14.94: AI review prompt — current values, not the diff */}
+                                        <button
+                                            onClick={() => exportChangeHistoryForReview()}
+                                            disabled={changedWords.length === 0}
+                                            className="text-teal-300 hover:text-teal-200 disabled:text-slate-600 text-sm bg-teal-900/30 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
+                                            title={`AI review prompt — copies the CURRENT values of ${
+                                                selectedForHistory.length > 0 ? `the ${selectedForHistory.length} ticked` : 'all'
+                                            } record(s) with review instructions, for checking in an external AI. Paste the reply back via 📥 Import on the main list.`}
+                                        >
+                                            {historyReviewCopied
+                                                ? '✓ Copied'
+                                                : `🔍 Review ${selectedForHistory.length > 0 ? `${selectedForHistory.length} selected` : 'all'}`}
                                         </button>
                                     </div>
                                     <button onClick={() => { setShowChangeHistory(false); setSelectedForHistory([]); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
