@@ -796,6 +796,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V14.81: provenance dot. Deliberately not a table column — the list is dense and
             // mostly used on mobile, so this rides alongside the word itself.
+            // 🆕 V14.98: flags vocabulary the generator cannot handle, so it is visible in the list
+            const MalformedMarker = ({ vocabulary }) => {
+                if (!hasMalformedVocabulary(vocabulary)) return null;
+                return (
+                    <span
+                        title="Contains / or ( — the AI treats this notation as literal text, so batch fill skips it. Correct it by hand."
+                        className="ml-1.5 text-amber-400 cursor-help align-middle text-[11px]"
+                    >⚠️</span>
+                );
+            };
+
             const AiSourceDot = ({ source }) => {
                 if (source !== 'gemini' && source !== 'groq') return null;
                 return (
@@ -2341,6 +2352,8 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
+                    // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
+                    else if (emptyFilter === 'Malformed') query = query.or(MALFORMED_VOCAB_OR);
 
                     const { data, count, error } = await query
                         .order('created_at', { ascending: false })
@@ -2973,6 +2986,8 @@ Return ONLY valid JSON, no explanation.` }],
                     else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
+                    // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
+                    else if (emptyFilter === 'Malformed') query = query.or(MALFORMED_VOCAB_OR);
 
                     const { data, error } = await query.order('created_at', { ascending: false });
                     
@@ -4797,6 +4812,14 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
             // match the ~4,300 genuinely empty records, which nothing has filled.
             const HAS_ANY_CONTENT = 'and(synonyms.not.is.null,synonyms.neq.),and(context.not.is.null,context.neq.),and(family.not.is.null,family.neq.)';
 
+            // 🆕 V14.98: a slash or a parenthesis in the vocabulary makes the model treat the notation
+            // as literal text — "catfished (catfish)" ends up inside the generated sentence, and only
+            // one branch of "take it from me / take my word for it" ever appears, so the context is
+            // then rejected. These are NOT auto-fixable: in "hindsight is 20/20" the slash belongs to
+            // the expression, and "homebody / outdoorsy" are opposites rather than alternatives.
+            const hasMalformedVocabulary = v => /[\/(]/.test(String(v || ''));
+            const MALFORMED_VOCAB_OR = 'vocabulary.like."%/%",vocabulary.like."%(%"';
+
             const AI_SOURCE_LABELS = { gemini: 'Filled by Gemini', groq: 'Filled by Groq' };
 
             // 🆕 V14.92: sentence-case leaks into generated entries ("Bite the bullet"). Lowercase them
@@ -4871,6 +4894,8 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
                     else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
+                    // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
+                    else if (emptyFilter === 'Malformed') query = query.or(MALFORMED_VOCAB_OR);
 
                     // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate, blanks
                     // or not. Everywhere else "pending" still means missing at least one field, which
@@ -4941,6 +4966,13 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
                 };
                 if (!missing.synonyms && !missing.context && !missing.family) {
                     return { outcome: 'skipped', reason: 'already complete' };
+                }
+
+                // 🆕 V14.98: skip rather than generate — producing content that has to be undone
+                // later is worse than leaving the record alone. No API call, so no throttle either.
+                if (hasMalformedVocabulary(record.vocabulary)) {
+                    console.warn(`[Batch fill] "${record.vocabulary}" ⏭ skipped: vocabulary contains alternatives`);
+                    return { outcome: 'skipped', reason: 'vocabulary contains alternatives — needs manual cleanup' };
                 }
 
                 const tag = `[Batch fill] "${record.vocabulary}"`;
@@ -5125,6 +5157,7 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
 
                 let filled = 0, failed = 0, skipped = 0, unavailable = 0, stoppedBy = null;
                 const failures = []; // 🆕 V14.79: per-record reasons, surfaced in the summary
+                const skippedDetails = []; // 🆕 V14.98: skips worth explaining
 
                 for (let i = 0; i < queue.length; i++) {
                     if (batchStopRef.current) { stoppedBy = 'user'; break; }
@@ -5135,7 +5168,13 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
                     const { outcome, reason, detail, written } = await batchFillRecord(record, model, overwrite);
                     if (written) setBatchLastResult(written); // 🆕 V14.92: show what was just generated
                     if (outcome === 'filled') filled++;
-                    else if (outcome === 'skipped') skipped++;
+                    else if (outcome === 'skipped') {
+                        skipped++;
+                        // 🆕 V14.98: a skip with a reason worth surfacing, not just a silent no-op
+                        if (reason && reason !== 'already complete') {
+                            skippedDetails.push({ word: record.vocabulary, reason });
+                        }
+                    }
                     else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
                     else {
                         // 🆕 V14.80: Google capacity problems counted apart from genuine errors
@@ -5157,7 +5196,7 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
                 setBatchRunning(false);
                 setBatchProgress(null);
                 if (failures.length) console.table(failures);
-                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, model, overwrite, attempted: filled + failed + skipped + unavailable, failures, marked: batchMarkedRef.current });
+                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, model, overwrite, attempted: filled + failed + skipped + unavailable, failures, skippedDetails, marked: batchMarkedRef.current });
                 await refreshPendingTotal();
             }
 
@@ -6160,7 +6199,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.97</span>
+                                        English Booster <span className="version-text">v14.98</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6309,6 +6348,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="UsageReview" title="Uncommon, rare, formal or literary — worth reviewing as a group">🔍 Worth reviewing (usage)</option>
                                     <option value="UsageUncommon">· Uncommon</option>
                                     <option value="UsageRare">· Rare</option>
+                                    {/* 🆕 V14.98: slash or bracket notation — needs manual cleanup */}
+                                    <option
+                                        value="Malformed"
+                                        title="Vocabulary containing / or ( — the AI treats the notation as literal text, so these are skipped by batch fill and need correcting by hand"
+                                    >⚠️ Malformed vocabulary</option>
                                 </select>
                                 {/* 🆕 V14.96: Export/Import moved out of the filter row to the header corner */}
 
@@ -6373,7 +6417,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                 className="p-5 font-black text-slate-100 text-lg cursor-pointer hover:text-indigo-400 transition-colors" 
                                                 onClick={() => speakText(w.vocabulary, 1.0)}
                                                 title="Click to hear pronunciation"
-                                            >{search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} /></td>
+                                            >{search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} /><MalformedMarker vocabulary={w.vocabulary} /></td>
                                             <td className="p-5"><span className="text-[10px] font-black px-2 py-1 rounded border bg-slate-800 text-slate-400 uppercase">{w.family || '—'}</span></td>
                                             <td className="p-5 font-bold text-slate-100 text-sm italic">{search ? (w.synonyms ? highlightMatch(w.synonyms, search) : '—') : (w.synonyms || '—')}</td>
                                             <td 
@@ -6460,7 +6504,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             onClick={() => speakText(w.vocabulary, 1.0)}
                                             title="Click to hear pronunciation"
                                         >
-                                            {search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} />
+                                            {search ? highlightMatch(w.vocabulary, search) : w.vocabulary}<AiSourceDot source={w.ai_source} /><MalformedMarker vocabulary={w.vocabulary} />
                                         </div>
                                         
                                         {w.synonyms && (
@@ -7642,6 +7686,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                 )}
 
+                                {/* 🆕 V14.98: skips that need explaining, e.g. malformed vocabulary */}
+                                {batchSummary.skippedDetails?.length > 0 && (
+                                    <div className="mb-5">
+                                        <p className="text-[10px] uppercase font-black text-slate-400 mb-2">
+                                            Skipped, needs attention ({batchSummary.skippedDetails.length})
+                                        </p>
+                                        <div className="max-h-40 overflow-y-auto custom-scroll space-y-1.5">
+                                            {batchSummary.skippedDetails.map((s, i) => (
+                                                <div key={i} className="bg-slate-800/60 border border-slate-600/40 rounded-lg px-3 py-2 text-xs">
+                                                    <span className="text-indigo-300 font-bold">{s.word}</span>
+                                                    <span className="text-slate-500 mx-1.5">—</span>
+                                                    <span className="text-slate-300">{s.reason}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-slate-600 text-[10px] mt-2">
+                                            Find them with the ⚠️ Malformed vocabulary filter and correct them by hand.
+                                        </p>
+                                    </div>
+                                )}
+
                                 {/* 🆕 V14.79: why each record failed — "Failed: 4" alone is not actionable */}
                                 {batchSummary.failures?.length > 0 && (
                                     <div className="mb-5">
@@ -8558,10 +8623,31 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <button onClick={() => { setShowChangeHistory(false); setSelectedForHistory([]); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
                                 </div>
                                 
-                                <p className="text-slate-400 mb-4">
-                                    {changedWords.length} modified word(s) in the last 2 hours
-                                </p>
-                                
+                                <div className="flex items-center justify-between gap-4 mb-4">
+                                    <p className="text-slate-400">
+                                        {changedWords.length} modified word(s) in the last 2 hours
+                                    </p>
+                                    {/* 🆕 V14.98: tick or untick every entry at once */}
+                                    {changedWords.length > 0 && (
+                                        <label className="flex items-center gap-2 cursor-pointer flex-shrink-0 text-sm text-slate-300 hover:text-white">
+                                            <input
+                                                type="checkbox"
+                                                className="w-4 h-4"
+                                                checked={selectedForHistory.length === changedWords.length}
+                                                ref={el => {
+                                                    // indeterminate is a DOM property, not an attribute
+                                                    if (el) el.indeterminate = selectedForHistory.length > 0
+                                                        && selectedForHistory.length < changedWords.length;
+                                                }}
+                                                onChange={e => setSelectedForHistory(
+                                                    e.target.checked ? changedWords.map(w => w.id) : []
+                                                )}
+                                            />
+                                            Select all ({changedWords.length})
+                                        </label>
+                                    )}
+                                </div>
+
                                 <div className="flex-1 overflow-y-auto custom-scroll mb-6 space-y-2">
                                     {changedWords.length === 0 ? (
                                         <div className="text-center text-slate-500 py-12">
