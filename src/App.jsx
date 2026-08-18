@@ -916,6 +916,44 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [showChangeHistory, setShowChangeHistory] = useState(false);
             const [changedWords, setChangedWords] = useState([]);
             const [selectedForHistory, setSelectedForHistory] = useState([]);
+            const [historyCopied, setHistoryCopied] = useState(false); // 🆕 V14.92
+
+            // 🆕 V14.92: plain-text export of the change list, mirroring what the modal shows, so a
+            // batch can be pasted into another AI for review without spending this app's quota.
+            async function copyChangeHistory() {
+                const rows = selectedForHistory.length > 0
+                    ? changedWords.filter(w => selectedForHistory.includes(w.id))
+                    : changedWords;
+                if (rows.length === 0) return;
+
+                const text = rows.map(word => {
+                    let before = {};
+                    try { before = word.previous_version ? JSON.parse(word.previous_version) : {}; } catch (e) { /* keep empty */ }
+                    return [
+                        `WORD: ${word.vocabulary}`,
+                        'BEFORE:',
+                        `  Family:   ${before.family || '—'}`,
+                        `  Synonyms: ${before.synonyms || '—'}`,
+                        `  Context:  ${before.context || '—'}`,
+                        'AFTER:',
+                        `  Family:   ${word.family || '—'}`,
+                        `  Synonyms: ${word.synonyms || '—'}`,
+                        `  Context:  ${word.context || '—'}`,
+                        `Modified: ${word.modified_at ? new Date(word.modified_at).toLocaleString() : '—'}`
+                    ].join('\n');
+                }).join('\n\n' + '─'.repeat(48) + '\n\n');
+
+                const header = `English Booster — change history (${rows.length} record${rows.length === 1 ? '' : 's'})\n\n`;
+                try {
+                    await navigator.clipboard.writeText(header + text);
+                    setHistoryCopied(true);
+                    setTimeout(() => setHistoryCopied(false), 2000);
+                } catch (e) {
+                    // clipboard API blocked (insecure context or denied permission) — fall back
+                    console.warn('Clipboard unavailable, falling back to a selectable prompt:', e.message);
+                    window.prompt('Copy the change history below (Ctrl+C):', header + text);
+                }
+            }
             
             // 🆕 V11.4: Recycle bin count & Dictation
             const [recycleBinCount, setRecycleBinCount] = useState(0);
@@ -2301,6 +2339,10 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
+                    // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
+                    else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
 
                     const { data, count, error } = await query
                         .order('created_at', { ascending: false })
@@ -2929,6 +2971,10 @@ Return ONLY valid JSON, no explanation.` }],
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
+                    // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
+                    else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
 
                     const { data, error } = await query.order('created_at', { ascending: false });
                     
@@ -4512,6 +4558,24 @@ Return ONLY the JSON object.`;
             // it fell back to "Gemini" — visible as a flicker during retries.
             const [batchActiveModel, setBatchActiveModel] = useState('gemini');
 
+            // 🆕 V14.92: the fields written for the previous record, plus anything flagged for review.
+            // Deliberately read-only during the run — the batch is writing to Supabase every few
+            // seconds and a concurrent edit would conflict, so review happens from the summary.
+            const [batchLastResult, setBatchLastResult] = useState(null);
+            const [batchMarked, setBatchMarked] = useState([]);
+            // mirror in a ref: the runner's closure would otherwise read a stale marked list
+            const batchMarkedRef = React.useRef([]);
+
+            function toggleBatchMark(entry) {
+                setBatchMarked(prev => {
+                    const next = prev.some(m => m.id === entry.id)
+                        ? prev.filter(m => m.id !== entry.id)
+                        : [...prev, { id: entry.id, vocabulary: entry.vocabulary, synonyms: entry.synonyms, context: entry.context, family: entry.family }];
+                    batchMarkedRef.current = next;
+                    return next;
+                });
+            }
+
             // Filters whose records already HAVE content of unverified quality. Combined with Gemini
             // these become the upgrade path, which REPLACES existing content rather than filling blanks.
             // 🆕 V14.84: 'Unknown origin' joins 'Filled with Groq' here.
@@ -4523,6 +4587,54 @@ Return ONLY the JSON object.`;
             const HAS_ANY_CONTENT = 'and(synonyms.not.is.null,synonyms.neq.),and(context.not.is.null,context.neq.),and(family.not.is.null,family.neq.)';
 
             const AI_SOURCE_LABELS = { gemini: 'Filled by Gemini', groq: 'Filled by Groq' };
+
+            // 🆕 V14.92: sentence-case leaks into generated entries ("Bite the bullet"). Lowercase them
+            // unless the capital is genuinely required. Applied ONLY when creating a record — existing
+            // rows are never touched.
+            const ALWAYS_CAPITALISED = new Set([
+                'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+                'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+                'september', 'october', 'november', 'december',
+                'english', 'british', 'american', 'french', 'spanish', 'german', 'italian',
+                'portuguese', 'dutch', 'russian', 'chinese', 'japanese', 'korean', 'arabic',
+                'greek', 'latin', 'irish', 'scottish', 'welsh', 'europe', 'european',
+                'god', 'christmas', 'easter'
+            ]);
+
+            function normaliseVocabularyCase(vocabulary) {
+                const raw = String(vocabulary || '');
+                if (!raw.trim()) return raw;
+
+                return raw.split(/(\s+)/).map(token => {
+                    if (/^\s+$/.test(token) || !token) return token;
+
+                    const bare = token.replace(/^[^\p{L}]+/u, '').replace(/[^\p{L}']+$/u, '');
+                    if (!bare) return token;
+
+                    if (/^[A-Z][A-Z0-9.]*$/.test(bare)) return token;       // acronym: FOMO, ASAP, U.K.
+                    if (bare === 'I' || /^I['’]/.test(bare)) return token;  // I, I'm, I'd
+                    if (/[a-z][A-Z]/.test(bare)) return token;              // iPhone, McDonald's
+                    if (ALWAYS_CAPITALISED.has(bare.toLowerCase())) return token;
+                    if (/^[A-Z][a-z']/.test(bare)) {
+                        // sentence-case word with no reason to be capitalised
+                        const at = token.indexOf(bare[0]);
+                        return token.slice(0, at) + bare[0].toLowerCase() + token.slice(at + 1);
+                    }
+                    return token;
+                }).join('');
+            }
+
+            // 🆕 V14.92: the Magic Fill prompt already returns a "usage" field, so the classification
+            // comes free with the fill — no second call. Normalised to a known set before storing.
+            const USAGE_LEVELS = ['very common', 'common', 'uncommon', 'rare', 'formal', 'informal', 'literary'];
+
+            function normaliseUsageLevel(value) {
+                const v = String(value || '').toLowerCase().trim();
+                if (!v) return null;
+                // longest first, so "very common" is not matched as "common"
+                const match = [...USAGE_LEVELS].sort((a, b) => b.length - a.length).find(u => v.includes(u));
+                return match || null;
+            }
 
             // Total pending across the WHOLE current filter, not just the rows loaded so far
             async function refreshPendingTotal() {
@@ -4544,6 +4656,10 @@ Return ONLY the JSON object.`;
                     else if (emptyFilter === 'GeminiFilled') query = query.eq('ai_source', 'gemini');
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
+                    // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
+                    else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
 
                     // 🆕 V14.81: on the upgrade path every Groq-filled record is a candidate, blanks
                     // or not. Everywhere else "pending" still means missing at least one field, which
@@ -4712,6 +4828,10 @@ Return ONLY the JSON object.`;
 
                 update.modified_at = new Date().toISOString();
                 update.ai_source = model; // 🆕 V14.81: provenance — which model actually wrote this
+
+                // 🆕 V14.92: capture the usage classification that came back in the same response
+                const usageLevel = normaliseUsageLevel(result.usage);
+                if (usageLevel) update.usage_level = usageLevel;
                 update.previous_version = JSON.stringify({
                     vocabulary: record.vocabulary, synonyms: record.synonyms,
                     context: record.context, family: record.family, favourite: record.favourite
@@ -4735,7 +4855,17 @@ Return ONLY the JSON object.`;
                     setWords(prev => prev.map(w => w.id === record.id ? { ...w, ...update } : w));
                     return {
                         outcome: 'filled',
-                        reason: contextRejected ? 'filled, but context was rejected' : 'filled'
+                        reason: contextRejected ? 'filled, but context was rejected' : 'filled',
+                        // 🆕 V14.92: what was actually written, so the progress panel can show it
+                        written: {
+                            id: record.id,
+                            vocabulary: record.vocabulary,
+                            synonyms: update.synonyms ?? record.synonyms ?? '',
+                            context: update.context ?? record.context ?? '',
+                            family: update.family ?? record.family ?? '',
+                            usage_level: update.usage_level || null,
+                            contextRejected
+                        }
                     };
                 } catch (e) {
                     console.error(`${tag} ✗ Supabase threw:`, e);
@@ -4775,6 +4905,9 @@ Return ONLY the JSON object.`;
 
                 batchStopRef.current = false;
                 setBatchActiveModel(model); // 🆕 V14.90: fixed for the whole run
+                setBatchLastResult(null);   // 🆕 V14.92
+                setBatchMarked([]);         // 🆕 V14.92
+                batchMarkedRef.current = [];
                 setBatchRunning(true);
                 setBatchSummary(null);
                 setBatchProgress({ current: 0, total: queue.length, word: '', filled: 0, failed: 0, skipped: 0, unavailable: 0, status: '', model });
@@ -4788,7 +4921,8 @@ Return ONLY the JSON object.`;
                     const record = queue[i];
                     setBatchProgress({ current: i + 1, total: queue.length, word: record.vocabulary, filled, failed, skipped, unavailable, status: '', model });
 
-                    const { outcome, reason, detail } = await batchFillRecord(record, model, overwrite);
+                    const { outcome, reason, detail, written } = await batchFillRecord(record, model, overwrite);
+                    if (written) setBatchLastResult(written); // 🆕 V14.92: show what was just generated
                     if (outcome === 'filled') filled++;
                     else if (outcome === 'skipped') skipped++;
                     else if (outcome === 'quota') { stoppedBy = 'quota'; break; }
@@ -4812,7 +4946,7 @@ Return ONLY the JSON object.`;
                 setBatchRunning(false);
                 setBatchProgress(null);
                 if (failures.length) console.table(failures);
-                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, model, overwrite, attempted: filled + failed + skipped + unavailable, failures });
+                setBatchSummary({ filled, failed, skipped, unavailable, stoppedBy, model, overwrite, attempted: filled + failed + skipped + unavailable, failures, marked: batchMarkedRef.current });
                 await refreshPendingTotal();
             }
 
@@ -5066,8 +5200,14 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         const targetId = wordId || currentData.id;
                         
                         // 🆕 V11.22: Save previous version for change history
+                        // 🆕 V14.92: usage comes back in the same response; fall back to the separate
+                        // fetchUsageInfo result if this prompt did not include it
+                        const magicUsage = normaliseUsageLevel(result.usage)
+                            || (usageInfo && usageInfo.word === word ? normaliseUsageLevel(usageInfo.usage) : null);
+
                         const updateDataWithHistory = {
                             ...updateData,
+                            ...(magicUsage ? { usage_level: magicUsage } : {}),
                             ai_source: (modelUsed || '').toLowerCase() || null, // 🆕 V14.81
                             previous_version: JSON.stringify({
                                 vocabulary: currentData?.vocabulary,
@@ -5648,6 +5788,12 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     }
                 } else {
                     // New word - need to refresh to show it
+                    // 🆕 V14.92: normalise capitalisation on CREATION only — existing rows are untouched
+                    const normalisedVocab = normaliseVocabularyCase(wordData.vocabulary);
+                    if (normalisedVocab !== wordData.vocabulary) {
+                        console.log(`[New word] normalised capitalisation: "${wordData.vocabulary}" → "${normalisedVocab}"`);
+                        wordData.vocabulary = normalisedVocab;
+                    }
                     await supabase.from('vocabulary_v4').insert([wordData]);
                     fetchWords(0, true);
                 }
@@ -5782,7 +5928,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.91</span>
+                                        English Booster <span className="version-text">v14.92</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -5927,6 +6073,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         value="UnknownOrigin"
                                         title="Records that have content but no recorded model: either you wrote or edited them yourself, or they already existed before provenance tracking was added in V14.81. The two cannot be distinguished."
                                     >❓ Unknown origin</option>
+                                    {/* 🆕 V14.92: usage classification captured during generation */}
+                                    <option value="UsageReview" title="Uncommon, rare, formal or literary — worth reviewing as a group">🔍 Worth reviewing (usage)</option>
+                                    <option value="UsageUncommon">· Uncommon</option>
+                                    <option value="UsageRare">· Rare</option>
                                 </select>
                                 {/* 🆕 V14.78: batch AI fill for the current filtered list
                                     🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
@@ -6973,6 +7123,50 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     )}
                                 </div>
 
+                                {/* 🆕 V14.92: what was generated for the previous record, so quality can
+                                    be judged live. Read-only: the batch is writing every few seconds and
+                                    a concurrent edit would conflict, so review happens from the summary. */}
+                                {batchLastResult && (
+                                    <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-3 mb-4">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div className="min-w-0">
+                                                <p className="text-[10px] uppercase font-black text-slate-500">Just generated</p>
+                                                <p className="text-white font-bold truncate">{batchLastResult.vocabulary}</p>
+                                            </div>
+                                            <button
+                                                onClick={() => toggleBatchMark(batchLastResult)}
+                                                className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border transition-colors ${
+                                                    batchMarked.some(m => m.id === batchLastResult.id)
+                                                        ? 'bg-amber-500/25 text-amber-200 border-amber-400/60'
+                                                        : 'bg-slate-700/40 text-slate-300 border-slate-600 hover:border-amber-400/60'
+                                                }`}
+                                            >
+                                                {batchMarked.some(m => m.id === batchLastResult.id) ? '✓ Marked' : '⚑ Mark for review'}
+                                            </button>
+                                        </div>
+                                        <dl className="text-xs space-y-1">
+                                            <div className="flex gap-2">
+                                                <dt className="text-slate-500 w-16 flex-shrink-0">Family</dt>
+                                                <dd className="text-indigo-300">{batchLastResult.family || '—'}
+                                                    {batchLastResult.usage_level && (
+                                                        <span className="text-slate-500 ml-2">· {batchLastResult.usage_level}</span>
+                                                    )}
+                                                </dd>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <dt className="text-slate-500 w-16 flex-shrink-0">Synonyms</dt>
+                                                <dd className="text-slate-200">{batchLastResult.synonyms || '—'}</dd>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <dt className="text-slate-500 w-16 flex-shrink-0">Context</dt>
+                                                <dd className="text-slate-200">
+                                                    {batchLastResult.context || <span className="text-amber-400">— {batchLastResult.contextRejected ? '(rejected)' : 'none'}</span>}
+                                                </dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-4 gap-2 mb-6 text-center">
                                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl py-2">
                                         <p className="text-[9px] uppercase font-black text-green-500/80">Filled</p>
@@ -7056,6 +7250,39 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </>
                                         )}
                                     </p>
+                                )}
+
+                                {/* 🆕 V14.92: records flagged during the run — editable now the batch is done */}
+                                {batchSummary.marked?.length > 0 && (
+                                    <div className="mb-5">
+                                        <p className="text-[10px] uppercase font-black text-amber-400/80 mb-2">
+                                            ⚑ Marked for review ({batchSummary.marked.length})
+                                        </p>
+                                        <div className="max-h-48 overflow-y-auto custom-scroll space-y-1.5">
+                                            {batchSummary.marked.map(m => (
+                                                <div key={m.id} className="bg-amber-900/15 border border-amber-500/25 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="text-amber-200 font-bold text-xs truncate">{m.vocabulary}</p>
+                                                        <p className="text-slate-400 text-[11px] truncate">{m.synonyms || '—'}</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            const record = words.find(w => w.id === m.id);
+                                                            if (!record) { alert('That record is no longer in the current list. Clear the filter and search for it.'); return; }
+                                                            setBatchSummary(null);
+                                                            setEditingWord(record);
+                                                            setOriginalEditData({ ...record });
+                                                            setShowAddModal(true);
+                                                            setSpellCheckResult(null);
+                                                            setUsageInfo(null);
+                                                            setMagicFillModel(null);
+                                                        }}
+                                                        className="flex-shrink-0 text-indigo-300 hover:text-indigo-200 text-[10px] font-black uppercase border border-indigo-500/40 rounded-lg px-2.5 py-1"
+                                                    >Open</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 )}
 
                                 {/* 🆕 V14.79: why each record failed — "Failed: 4" alone is not actionable */}
@@ -7528,8 +7755,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             };
                                             
                                             // 🆕 V11.22: Save previous version for change history
+                                            // 🆕 V14.92: the Improve prompt returns no usage field, but
+                                            // fetchUsageInfo ran when this modal opened — persist that
+                                            const improveUsage = (usageInfo && usageInfo.word === improveData.vocabulary)
+                                                ? normaliseUsageLevel(usageInfo.usage) : null;
+
                                             const updateDataWithHistory = {
                                                 ...updateData,
+                                                ...(improveUsage ? { usage_level: improveUsage } : {}),
                                                 ai_source: (improveData.model || '').toLowerCase() || null, // 🆕 V14.81
                                                 previous_version: JSON.stringify({
                                                     vocabulary: improveData.vocabulary,
@@ -7933,12 +8166,23 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                 <div className="flex justify-between items-center mb-6">
                                     <div className="flex items-center gap-3">
                                         <h2 className="text-2xl font-black main-gradient uppercase italic">📜 Change History (2h)</h2>
-                                        <button 
+                                        <button
                                             onClick={() => loadChangeHistory()}
                                             className="text-blue-400 hover:text-blue-300 text-sm bg-blue-900/30 px-3 py-1 rounded-lg"
                                             title="Refresh history"
                                         >
                                             🔄 Refresh
+                                        </button>
+                                        {/* 🆕 V14.92: copy as plain text, for a second opinion elsewhere */}
+                                        <button
+                                            onClick={() => copyChangeHistory()}
+                                            disabled={changedWords.length === 0}
+                                            className="text-teal-300 hover:text-teal-200 disabled:text-slate-600 text-sm bg-teal-900/30 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
+                                            title={selectedForHistory.length > 0
+                                                ? `Copy the ${selectedForHistory.length} selected entr${selectedForHistory.length === 1 ? 'y' : 'ies'} as plain text`
+                                                : 'Copy all entries as plain text'}
+                                        >
+                                            {historyCopied ? '✓ Copied' : `📋 Copy${selectedForHistory.length > 0 ? ` (${selectedForHistory.length})` : ' all'}`}
                                         </button>
                                     </div>
                                     <button onClick={() => { setShowChangeHistory(false); setSelectedForHistory([]); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
