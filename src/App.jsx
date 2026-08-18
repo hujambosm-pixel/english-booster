@@ -916,7 +916,6 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [showChangeHistory, setShowChangeHistory] = useState(false);
             const [changedWords, setChangedWords] = useState([]);
             const [selectedForHistory, setSelectedForHistory] = useState([]);
-            const [historyCopied, setHistoryCopied] = useState(false); // 🆕 V14.92
             const [historyReviewCopied, setHistoryReviewCopied] = useState(false); // 🆕 V14.94
 
             // 🆕 V14.94: same external-review export as the main list, but sourced from the change
@@ -953,42 +952,6 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                 }
             }
 
-            // 🆕 V14.92: plain-text export of the change list, mirroring what the modal shows, so a
-            // batch can be pasted into another AI for review without spending this app's quota.
-            async function copyChangeHistory() {
-                const rows = selectedForHistory.length > 0
-                    ? changedWords.filter(w => selectedForHistory.includes(w.id))
-                    : changedWords;
-                if (rows.length === 0) return;
-
-                const text = rows.map(word => {
-                    let before = {};
-                    try { before = word.previous_version ? JSON.parse(word.previous_version) : {}; } catch (e) { /* keep empty */ }
-                    return [
-                        `WORD: ${word.vocabulary}`,
-                        'BEFORE:',
-                        `  Family:   ${before.family || '—'}`,
-                        `  Synonyms: ${before.synonyms || '—'}`,
-                        `  Context:  ${before.context || '—'}`,
-                        'AFTER:',
-                        `  Family:   ${word.family || '—'}`,
-                        `  Synonyms: ${word.synonyms || '—'}`,
-                        `  Context:  ${word.context || '—'}`,
-                        `Modified: ${word.modified_at ? new Date(word.modified_at).toLocaleString() : '—'}`
-                    ].join('\n');
-                }).join('\n\n' + '─'.repeat(48) + '\n\n');
-
-                const header = `English Booster — change history (${rows.length} record${rows.length === 1 ? '' : 's'})\n\n`;
-                try {
-                    await navigator.clipboard.writeText(header + text);
-                    setHistoryCopied(true);
-                    setTimeout(() => setHistoryCopied(false), 2000);
-                } catch (e) {
-                    // clipboard API blocked (insecure context or denied permission) — fall back
-                    console.warn('Clipboard unavailable, falling back to a selectable prompt:', e.message);
-                    window.prompt('Copy the change history below (Ctrl+C):', header + text);
-                }
-            }
             
             // 🆕 V11.4: Recycle bin count & Dictation
             const [recycleBinCount, setRecycleBinCount] = useState(0);
@@ -4584,6 +4547,17 @@ Return ONLY the JSON object.`;
             const REVIEW_EXPORT_LIMIT = 40;          // external chat interfaces have input limits
             const REVIEW_FIELDS = ['synonyms', 'context', 'family'];
 
+            // 🆕 V14.96: one style definition, so the main list and Change History buttons are
+            // identical by construction rather than by copied class strings.
+            const REVIEW_BTN = 'px-2.5 py-1 rounded-lg text-[10px] lg:text-xs font-black uppercase whitespace-nowrap border transition-colors bg-teal-600/20 text-teal-300 border-teal-500/40 hover:bg-teal-600/30 disabled:bg-slate-800/60 disabled:text-slate-600 disabled:border-transparent';
+
+            function openReviewImport() {
+                setShowReviewImport(true);
+                setReviewPreview(null);
+                setReviewResult(null);
+                setReviewPaste('');
+            }
+
             const [reviewExported, setReviewExported] = useState(false);
             const [showReviewImport, setShowReviewImport] = useState(false);
             const [reviewPaste, setReviewPaste] = useState('');
@@ -6145,24 +6119,45 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                         {/* 🆕 V14.73: AI provider status. Absolutely positioned in the header's empty
                             top-right corner so it adds nothing to the flow — no existing element moves
                             or resizes. Click opens the explainer modal. */}
-                        <button
-                            type="button"
-                            onClick={() => setShowGeminiInfo(true)}
-                            title="Which AI is handling your features — click for details"
-                            className={`absolute top-2 right-3 lg:top-3 lg:right-5 z-40 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] lg:text-xs font-black whitespace-nowrap transition-colors ${
-                                geminiQuota.exhausted
-                                    ? 'bg-orange-500/15 text-orange-300 border-orange-400/50 hover:bg-orange-500/25'
-                                    : 'bg-green-500/15 text-green-300 border-green-400/50 hover:bg-green-500/25'
-                            }`}
-                        >
-                            {geminiQuota.exhausted ? '⚡ Groq' : '✨ Gemini'}
-                        </button>
+                        {/* 🆕 V14.96: header corner cluster — review round-trip beside the AI status
+                            badge, absolutely positioned so the filter row keeps its own space */}
+                        <div className="absolute top-2 right-3 lg:top-3 lg:right-5 z-40 flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={exportForReview}
+                                disabled={words.length === 0}
+                                title={`Copy up to ${REVIEW_EXPORT_LIMIT} records from the current filter, with review instructions, for checking in an external AI`}
+                                className={REVIEW_BTN}
+                            >
+                                {reviewExported ? '✓ Copied' : `📤 Export (${Math.min(words.length, REVIEW_EXPORT_LIMIT)})`}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={openReviewImport}
+                                title="Paste an external AI's corrections back in"
+                                className={REVIEW_BTN}
+                            >
+                                📥 Import
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowGeminiInfo(true)}
+                                title="Which AI is handling your features — click for details"
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] lg:text-xs font-black whitespace-nowrap transition-colors ${
+                                    geminiQuota.exhausted
+                                        ? 'bg-orange-500/15 text-orange-300 border-orange-400/50 hover:bg-orange-500/25'
+                                        : 'bg-green-500/15 text-green-300 border-green-400/50 hover:bg-green-500/25'
+                                }`}
+                            >
+                                {geminiQuota.exhausted ? '⚡ Groq' : '✨ Gemini'}
+                            </button>
+                        </div>
 
                         <div className="max-w-[1850px] mx-auto flex flex-col gap-4">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.95</span>
+                                        English Booster <span className="version-text">v14.96</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6312,24 +6307,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="UsageUncommon">· Uncommon</option>
                                     <option value="UsageRare">· Rare</option>
                                 </select>
-                                {/* 🆕 V14.93: external review round-trip — driven by the current filters */}
-                                <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
-                                    <button
-                                        onClick={exportForReview}
-                                        disabled={words.length === 0}
-                                        title={`Copy up to ${REVIEW_EXPORT_LIMIT} filtered records, with review instructions, for checking in an external AI`}
-                                        className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap bg-teal-600/20 text-teal-300 border border-teal-500/40 hover:bg-teal-600/30 disabled:bg-slate-800 disabled:text-slate-600 disabled:border-transparent transition-colors"
-                                    >
-                                        {reviewExported ? '✓ Copied' : `📤 Export ${Math.min(words.length, REVIEW_EXPORT_LIMIT)}`}
-                                    </button>
-                                    <button
-                                        onClick={() => { setShowReviewImport(true); setReviewPreview(null); setReviewResult(null); setReviewPaste(''); }}
-                                        title="Paste an external AI's corrections back in"
-                                        className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap bg-teal-600/10 text-teal-300 border border-teal-500/30 hover:bg-teal-600/25 transition-colors"
-                                    >
-                                        📥 Import
-                                    </button>
-                                </div>
+                                {/* 🆕 V14.96: Export/Import moved out of the filter row to the header corner */}
 
                                 {/* 🆕 V14.78: batch AI fill for the current filtered list
                                     🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
@@ -8551,28 +8529,27 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         >
                                             🔄 Refresh
                                         </button>
-                                        {/* 🆕 V14.92: plain-text BEFORE/AFTER audit trail */}
-                                        <button
-                                            onClick={() => copyChangeHistory()}
-                                            disabled={changedWords.length === 0}
-                                            className="text-slate-300 hover:text-white disabled:text-slate-600 text-sm bg-slate-700/40 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
-                                            title={`Audit trail — copies the BEFORE → AFTER diff as readable plain text${
-                                                selectedForHistory.length > 0 ? ` (${selectedForHistory.length} selected)` : ' (all entries)'}`}
-                                        >
-                                            {historyCopied ? '✓ Copied' : `📋 Copy diff${selectedForHistory.length > 0 ? ` (${selectedForHistory.length})` : ' (all)'}`}
-                                        </button>
-                                        {/* 🆕 V14.94: AI review prompt — current values, not the diff */}
+                                        {/* 🆕 V14.96: identical pair to the main list, same shared style.
+                                            The plain-text diff export is gone — it carried no ids or
+                                            instructions, so it could not feed the round-trip. */}
                                         <button
                                             onClick={() => exportChangeHistoryForReview()}
                                             disabled={changedWords.length === 0}
-                                            className="text-teal-300 hover:text-teal-200 disabled:text-slate-600 text-sm bg-teal-900/30 disabled:bg-slate-800/40 px-3 py-1 rounded-lg"
-                                            title={`AI review prompt — copies the CURRENT values of ${
+                                            className={REVIEW_BTN}
+                                            title={`Copies the CURRENT values of ${
                                                 selectedForHistory.length > 0 ? `the ${selectedForHistory.length} ticked` : 'all'
-                                            } record(s) with review instructions, for checking in an external AI. Paste the reply back via 📥 Import on the main list.`}
+                                            } record(s), with review instructions, for checking in an external AI`}
                                         >
                                             {historyReviewCopied
                                                 ? '✓ Copied'
-                                                : `🔍 Review ${selectedForHistory.length > 0 ? `${selectedForHistory.length} selected` : 'all'}`}
+                                                : `📤 Export (${selectedForHistory.length > 0 ? selectedForHistory.length : changedWords.length})`}
+                                        </button>
+                                        <button
+                                            onClick={openReviewImport}
+                                            className={REVIEW_BTN}
+                                            title="Paste an external AI's corrections back in"
+                                        >
+                                            📥 Import
                                         </button>
                                     </div>
                                     <button onClick={() => { setShowChangeHistory(false); setSelectedForHistory([]); }} className="text-slate-400 hover:text-white text-3xl">&times;</button>
