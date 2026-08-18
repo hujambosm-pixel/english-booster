@@ -4543,6 +4543,205 @@ Return ONLY the JSON object.`;
 
             const isRecordPending = w => !w.synonyms?.trim() || !w.context?.trim() || !w.family?.trim();
 
+            // ─── 🆕 V14.93: external AI review round-trip ──────────────────────────────────────
+            // Export the filtered records for review elsewhere (no API quota), paste the corrections
+            // back. The id on every record is what makes the return leg safe.
+            const REVIEW_EXPORT_LIMIT = 40;          // external chat interfaces have input limits
+            const REVIEW_FIELDS = ['synonyms', 'context', 'family'];
+
+            const [reviewExported, setReviewExported] = useState(false);
+            const [showReviewImport, setShowReviewImport] = useState(false);
+            const [reviewPaste, setReviewPaste] = useState('');
+            const [reviewPreview, setReviewPreview] = useState(null);   // { changes, skipped }
+            const [reviewChecked, setReviewChecked] = useState({});     // "id::field" -> bool
+            const [reviewBusy, setReviewBusy] = useState(false);
+            const [reviewResult, setReviewResult] = useState(null);
+
+            const REVIEW_INSTRUCTIONS = `You are reviewing English vocabulary records for a learner's study app.
+
+For each record you are given: id, vocabulary, family, synonyms and context.
+
+━━━ HOW TO JUDGE SYNONYMS ━━━
+A synonym qualifies ONLY if substituting it for the vocabulary item in the given context sentence
+preserves the meaning. Apply that substitution test literally, one synonym at a time.
+✗ Related words, broader categories, narrower examples and paraphrases do NOT qualify.
+✗ Words that merely occur in similar situations do NOT qualify.
+✓ Keep only true drop-in replacements. Removing a bad synonym is a correction worth making.
+
+━━━ HOW TO JUDGE CONTEXT ━━━
+Flag a context sentence if it:
+- sounds unnatural, or is something a native speaker would not say
+- uses a DIFFERENT sense of the vocabulary item than the synonyms imply
+- does not actually contain the vocabulary item (in any inflected form)
+
+━━━ WHAT TO RETURN ━━━
+Return ONLY the records that need changing, as a JSON array.
+Each entry must contain the "id" plus ONLY the fields you are correcting, with their corrected values.
+Do not return records that are already correct. Do not return a list of ids without values.
+
+Allowed fields: "synonyms" (comma-separated terms only), "context" (one sentence), "family".
+Family must be exactly one of: ${FAMILIES.join(', ')}.
+
+Example of the expected shape:
+[{"id":"a1b2","synonyms":"refuge, sanctuary, shelter"},
+ {"id":"c3d4","context":"He swivelled his chair to face the window."}]
+
+If nothing needs changing, return exactly: []
+
+Output raw JSON only. No markdown fences, no commentary, no explanation before or after.
+
+━━━ RECORDS ━━━
+`;
+
+            async function exportForReview() {
+                const batch = words.slice(0, REVIEW_EXPORT_LIMIT);
+                if (batch.length === 0) {
+                    alert('Nothing to export — the current filter has no records loaded.');
+                    return;
+                }
+
+                const payload = batch.map(w => ({
+                    id: w.id,
+                    vocabulary: w.vocabulary,
+                    family: w.family || '',
+                    synonyms: w.synonyms || '',
+                    context: w.context || ''
+                }));
+
+                const text = REVIEW_INSTRUCTIONS + JSON.stringify(payload, null, 2);
+
+                try {
+                    await navigator.clipboard.writeText(text);
+                    setReviewExported(true);
+                    setTimeout(() => setReviewExported(false), 2500);
+                } catch (e) {
+                    console.warn('Clipboard unavailable, falling back to a prompt:', e.message);
+                    window.prompt('Copy the review request below (Ctrl+C):', text);
+                }
+
+                if (totalCount > batch.length) {
+                    alert(`📋 Copied ${batch.length} records.\n\nThis filter holds ${totalCount.toLocaleString()}, but exports are capped at ${REVIEW_EXPORT_LIMIT} so the text fits an external chat window.\n\nNarrow the filter, or work through it in batches.`);
+                }
+            }
+
+            // Validates the pasted response against the DATABASE before anything is shown as applicable
+            async function buildReviewPreview(pastedText) {
+                let parsed;
+                try {
+                    parsed = parseLooseJson(pastedText);
+                } catch (e) {
+                    return { error: `Could not read that as JSON.\n\n${e.message}` };
+                }
+                if (!Array.isArray(parsed)) {
+                    return { error: 'Expected a JSON array of records, e.g. [{"id":"…","synonyms":"…"}].' };
+                }
+                if (parsed.length === 0) {
+                    return { error: 'The response was an empty array — the reviewer found nothing to change.' };
+                }
+
+                const ids = [...new Set(parsed.map(e => e && e.id).filter(Boolean))];
+                const { data: rows, error } = await supabase
+                    .from('vocabulary_v4')
+                    .select('id, vocabulary, synonyms, context, family, favourite')
+                    .in('id', ids);
+                if (error) return { error: `Could not load those records: ${error.message}` };
+
+                const byId = new Map((rows || []).map(r => [String(r.id), r]));
+                const changes = [], skipped = [];
+
+                for (const entry of parsed) {
+                    if (!entry || typeof entry !== 'object') { skipped.push({ id: '—', reason: 'not an object' }); continue; }
+                    const id = entry.id != null ? String(entry.id) : '';
+                    if (!id) { skipped.push({ id: '—', reason: 'no id' }); continue; }
+
+                    const current = byId.get(id);
+                    if (!current) { skipped.push({ id, reason: 'id not found in the database' }); continue; }
+
+                    const proposedFields = Object.keys(entry).filter(k => k !== 'id');
+                    if (proposedFields.length === 0) { skipped.push({ id, word: current.vocabulary, reason: 'no fields to change, only an id' }); continue; }
+
+                    for (const field of proposedFields) {
+                        if (!REVIEW_FIELDS.includes(field)) {
+                            skipped.push({ id, word: current.vocabulary, reason: `field "${field}" is not editable` });
+                            continue;
+                        }
+                        const next = String(entry[field] ?? '').trim();
+                        if (!next) { skipped.push({ id, word: current.vocabulary, reason: `empty value for ${field}` }); continue; }
+
+                        if (field === 'family' && !FAMILIES.includes(next)) {
+                            skipped.push({ id, word: current.vocabulary, reason: `family "${next}" is not one of the allowed values` });
+                            continue;
+                        }
+
+                        const currentValue = String(current[field] || '').trim();
+                        if (currentValue === next) continue; // identical — skipped silently, as specified
+
+                        // context that no longer contains the word is flagged, not blocked
+                        let flag = null;
+                        if (field === 'context' && !matchVocabularyInText(next, current.vocabulary).ok) {
+                            flag = 'does not appear to contain the vocabulary word';
+                        }
+
+                        changes.push({ id, word: current.vocabulary, field, current: currentValue, next, flag, record: current });
+                    }
+                }
+
+                if (changes.length === 0) {
+                    return { error: `Nothing applicable.\n\n${skipped.length} entr${skipped.length === 1 ? 'y was' : 'ies were'} skipped, or the values matched what is already stored.`, skipped };
+                }
+                return { changes, skipped };
+            }
+
+            async function applyReviewChanges() {
+                if (!reviewPreview?.changes) return;
+                const selected = reviewPreview.changes.filter(c => reviewChecked[`${c.id}::${c.field}`]);
+                if (selected.length === 0) { alert('No changes ticked.'); return; }
+
+                setReviewBusy(true);
+                let applied = 0;
+                const failures = [];
+
+                // group by record so one update carries all its fields and one history entry
+                const byRecord = new Map();
+                for (const c of selected) {
+                    if (!byRecord.has(c.id)) byRecord.set(c.id, { record: c.record, fields: {} });
+                    byRecord.get(c.id).fields[c.field] = c.next;
+                }
+
+                for (const [id, { record, fields }] of byRecord) {
+                    try {
+                        const update = {
+                            ...fields,
+                            // 🆕 V14.93: externally reviewed content is no longer model-generated
+                            ai_source: null,
+                            previous_version: JSON.stringify({
+                                vocabulary: record.vocabulary,
+                                synonyms: record.synonyms,
+                                context: record.context,
+                                family: record.family,
+                                favourite: record.favourite
+                            }),
+                            modified_at: new Date().toISOString()
+                        };
+                        const { data, error } = await supabase.from('vocabulary_v4').update(update).eq('id', id).select('id');
+                        if (error) throw new Error(error.message);
+                        if (!data || data.length === 0) throw new Error('no row updated (RLS or id mismatch)');
+
+                        setWords(prev => prev.map(w => String(w.id) === id ? { ...w, ...update } : w));
+                        applied += Object.keys(fields).length;
+                    } catch (e) {
+                        console.error(`[Review import] failed for ${record.vocabulary}:`, e);
+                        failures.push({ word: record.vocabulary, reason: e.message });
+                    }
+                }
+
+                setReviewBusy(false);
+                setReviewResult({ applied, records: byRecord.size, failures, skipped: reviewPreview.skipped || [] });
+                setReviewPreview(null);
+                setReviewPaste('');
+                checkChangeHistoryCount();
+            }
+
             const [batchRunning, setBatchRunning] = useState(false);
             const [batchProgress, setBatchProgress] = useState(null);
             const [batchSummary, setBatchSummary] = useState(null);
@@ -5928,7 +6127,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.92</span>
+                                        English Booster <span className="version-text">v14.93</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6078,6 +6277,25 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <option value="UsageUncommon">· Uncommon</option>
                                     <option value="UsageRare">· Rare</option>
                                 </select>
+                                {/* 🆕 V14.93: external review round-trip — driven by the current filters */}
+                                <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+                                    <button
+                                        onClick={exportForReview}
+                                        disabled={words.length === 0}
+                                        title={`Copy up to ${REVIEW_EXPORT_LIMIT} filtered records, with review instructions, for checking in an external AI`}
+                                        className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap bg-teal-600/20 text-teal-300 border border-teal-500/40 hover:bg-teal-600/30 disabled:bg-slate-800 disabled:text-slate-600 disabled:border-transparent transition-colors"
+                                    >
+                                        {reviewExported ? '✓ Copied' : `📤 Export ${Math.min(words.length, REVIEW_EXPORT_LIMIT)}`}
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowReviewImport(true); setReviewPreview(null); setReviewResult(null); setReviewPaste(''); }}
+                                        title="Paste an external AI's corrections back in"
+                                        className="p-2 lg:p-2.5 rounded-xl text-xs font-bold uppercase whitespace-nowrap bg-teal-600/10 text-teal-300 border border-teal-500/30 hover:bg-teal-600/25 transition-colors"
+                                    >
+                                        📥 Import
+                                    </button>
+                                </div>
+
                                 {/* 🆕 V14.78: batch AI fill for the current filtered list
                                     🆕 V14.79: hidden entirely when nothing is pending, rather than shown disabled */}
                                 {batchPendingTotal > 0 && (
@@ -7001,6 +7219,129 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <button type="submit" className="flex-[2] bg-indigo-600 py-4 rounded-2xl font-black uppercase text-sm shadow-lg shadow-indigo-500/20">Commit Changes</button>
                                     </div>
                                 </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🆕 V14.93: EXTERNAL REVIEW IMPORT */}
+                    {showReviewImport && (
+                        <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-[210] p-4" onClick={() => !reviewBusy && setShowReviewImport(false)}>
+                            <div className="bg-slate-900 rounded-3xl p-6 max-w-3xl w-full max-h-[92vh] overflow-y-auto custom-scroll shadow-2xl border border-teal-500/30" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <h2 className="text-xl font-black text-white">📥 Import external review</h2>
+                                    <button onClick={() => setShowReviewImport(false)} disabled={reviewBusy} className="text-slate-400 hover:text-white text-2xl leading-none disabled:opacity-40">&times;</button>
+                                </div>
+
+                                {/* ── step 3: result ── */}
+                                {reviewResult ? (
+                                    <div className="mt-4">
+                                        <div className="bg-green-500/10 border border-green-400/40 rounded-2xl p-4 mb-4">
+                                            <p className="text-green-200 text-sm">
+                                                Applied <span className="font-black">{reviewResult.applied}</span> change{reviewResult.applied === 1 ? '' : 's'} across{' '}
+                                                <span className="font-black">{reviewResult.records}</span> record{reviewResult.records === 1 ? '' : 's'}.
+                                                These appear in Change History and can be undone there.
+                                            </p>
+                                        </div>
+                                        {reviewResult.failures.length > 0 && (
+                                            <div className="mb-4">
+                                                <p className="text-[10px] uppercase font-black text-red-400/80 mb-2">Failed ({reviewResult.failures.length})</p>
+                                                {reviewResult.failures.map((f, i) => (
+                                                    <p key={i} className="text-xs bg-red-900/15 border border-red-500/25 rounded-lg px-3 py-2 mb-1.5">
+                                                        <span className="text-indigo-300 font-bold">{f.word}</span> <span className="text-red-300">— {f.reason}</span>
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {reviewResult.skipped.length > 0 && (
+                                            <div className="mb-4">
+                                                <p className="text-[10px] uppercase font-black text-slate-500 mb-2">Skipped ({reviewResult.skipped.length})</p>
+                                                <div className="max-h-40 overflow-y-auto custom-scroll space-y-1">
+                                                    {reviewResult.skipped.map((s, i) => (
+                                                        <p key={i} className="text-xs text-slate-400 bg-slate-800/50 rounded-lg px-3 py-1.5">
+                                                            <span className="text-slate-300">{s.word || s.id}</span> — {s.reason}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <button onClick={() => { setShowReviewImport(false); setReviewResult(null); }} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black uppercase text-sm">Done</button>
+                                    </div>
+
+                                /* ── step 2: preview before writing ── */
+                                ) : reviewPreview?.changes ? (
+                                    <div className="mt-4">
+                                        <p className="text-slate-400 text-sm mb-3">
+                                            {reviewPreview.changes.length} proposed change{reviewPreview.changes.length === 1 ? '' : 's'}. Untick anything you do not want.
+                                        </p>
+                                        <div className="space-y-2 mb-4 max-h-[46vh] overflow-y-auto custom-scroll">
+                                            {reviewPreview.changes.map(c => {
+                                                const key = `${c.id}::${c.field}`;
+                                                return (
+                                                    <label key={key} className={`flex gap-3 p-3 rounded-xl border cursor-pointer ${
+                                                        c.flag ? 'bg-amber-900/15 border-amber-500/40' : 'bg-slate-800/50 border-slate-700/60'
+                                                    }`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!reviewChecked[key]}
+                                                            onChange={e => setReviewChecked(prev => ({ ...prev, [key]: e.target.checked }))}
+                                                            className="mt-1 w-4 h-4 flex-shrink-0"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-white font-bold text-sm">
+                                                                {c.word} <span className="text-slate-500 font-normal text-xs uppercase ml-1">{c.field}</span>
+                                                            </p>
+                                                            <p className="text-xs text-red-300/90 line-through break-words mt-1">{c.current || '(empty)'}</p>
+                                                            <p className="text-xs text-green-300 break-words">{c.next}</p>
+                                                            {c.flag && <p className="text-[11px] text-amber-300 mt-1">⚠️ {c.flag} — your call</p>}
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                        {reviewPreview.skipped?.length > 0 && (
+                                            <p className="text-slate-500 text-xs mb-4">
+                                                {reviewPreview.skipped.length} entr{reviewPreview.skipped.length === 1 ? 'y' : 'ies'} skipped during validation — listed after applying.
+                                            </p>
+                                        )}
+                                        <div className="flex gap-3">
+                                            <button onClick={() => setReviewPreview(null)} disabled={reviewBusy} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-2xl font-black uppercase text-sm disabled:opacity-50">Back</button>
+                                            <button onClick={applyReviewChanges} disabled={reviewBusy} className="flex-[2] bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-2xl font-black uppercase text-sm disabled:opacity-50">
+                                                {reviewBusy ? 'Applying…' : `Apply ${reviewPreview.changes.filter(c => reviewChecked[`${c.id}::${c.field}`]).length} change(s)`}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                /* ── step 1: paste ── */
+                                ) : (
+                                    <div className="mt-4">
+                                        <p className="text-slate-400 text-sm mb-3">
+                                            Paste the external AI's response. Fences and surrounding commentary are handled — nothing is written until you review the changes.
+                                        </p>
+                                        <textarea
+                                            value={reviewPaste}
+                                            onChange={e => setReviewPaste(e.target.value)}
+                                            rows="10"
+                                            placeholder='[{"id":"…","synonyms":"refuge, sanctuary, shelter"}]'
+                                            className="w-full p-4 rounded-xl text-xs font-mono mb-4"
+                                        />
+                                        <button
+                                            onClick={async () => {
+                                                setReviewBusy(true);
+                                                const result = await buildReviewPreview(reviewPaste);
+                                                setReviewBusy(false);
+                                                if (result.error) { alert('⚠️ ' + result.error); return; }
+                                                const ticked = {};
+                                                result.changes.forEach(c => { ticked[`${c.id}::${c.field}`] = true; });
+                                                setReviewChecked(ticked);
+                                                setReviewPreview(result);
+                                            }}
+                                            disabled={reviewBusy || !reviewPaste.trim()}
+                                            className="w-full bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-2xl font-black uppercase text-sm"
+                                        >
+                                            {reviewBusy ? 'Checking…' : 'Review changes'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
