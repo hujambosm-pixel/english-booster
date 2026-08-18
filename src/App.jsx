@@ -6162,7 +6162,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.94</span>
+                                        English Booster <span className="version-text">v14.95</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -8538,7 +8538,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     {/* 🆕 V11.21: CHANGE HISTORY MODAL */}
                     {showChangeHistory && (
                         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
-                            <div className="glass-card p-10 rounded-[2.5rem] w-full max-w-4xl border-blue-500/30 max-h-[80vh] flex flex-col">
+                            {/* 🆕 V14.95: wider on desktop, and less padding on mobile so the usable
+                                width goes to the text rather than the frame */}
+                            <div className="glass-card p-5 sm:p-8 lg:p-10 rounded-[2.5rem] w-full max-w-6xl border-blue-500/30 max-h-[85vh] flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div className="flex items-center gap-3">
                                         <h2 className="text-2xl font-black main-gradient uppercase italic">📜 Change History (2h)</h2>
@@ -8613,18 +8615,21 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                     <div className="flex-1">
                                                         <p className="text-white font-bold text-lg mb-2">{word.vocabulary}</p>
                                                         
-                                                        <div className="grid grid-cols-2 gap-4 text-xs">
-                                                            <div className="bg-red-900/20 border border-red-500/30 rounded p-2">
-                                                                <p className="text-red-400 font-bold mb-1">BEFORE:</p>
-                                                                <p className="text-slate-300">Family: {previousData.family || '—'}</p>
-                                                                <p className="text-slate-300 truncate">Synonyms: {previousData.synonyms || '—'}</p>
-                                                                <p className="text-slate-300 truncate">Context: {previousData.context || '—'}</p>
+                                                        {/* 🆕 V14.95: values wrap instead of truncating, and the two
+                                                            panels stack on narrow screens — side by side, each column
+                                                            is too narrow to read a full context sentence. */}
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                                            <div className="bg-red-900/20 border border-red-500/30 rounded p-3 min-w-0">
+                                                                <p className="text-red-400 font-bold mb-1.5">BEFORE:</p>
+                                                                <p className="text-slate-300 mb-1"><span className="text-slate-500">Family:</span> {previousData.family || '—'}</p>
+                                                                <p className="text-slate-300 mb-1 break-words"><span className="text-slate-500">Synonyms:</span> {previousData.synonyms || '—'}</p>
+                                                                <p className="text-slate-300 break-words leading-relaxed"><span className="text-slate-500">Context:</span> {previousData.context || '—'}</p>
                                                             </div>
-                                                            <div className="bg-green-900/20 border border-green-500/30 rounded p-2">
-                                                                <p className="text-green-400 font-bold mb-1">AFTER:</p>
-                                                                <p className="text-slate-300">Family: {word.family || '—'}</p>
-                                                                <p className="text-slate-300 truncate">Synonyms: {word.synonyms || '—'}</p>
-                                                                <p className="text-slate-300 truncate">Context: {word.context || '—'}</p>
+                                                            <div className="bg-green-900/20 border border-green-500/30 rounded p-3 min-w-0">
+                                                                <p className="text-green-400 font-bold mb-1.5">AFTER:</p>
+                                                                <p className="text-slate-300 mb-1"><span className="text-slate-500">Family:</span> {word.family || '—'}</p>
+                                                                <p className="text-slate-300 mb-1 break-words"><span className="text-slate-500">Synonyms:</span> {word.synonyms || '—'}</p>
+                                                                <p className="text-slate-300 break-words leading-relaxed"><span className="text-slate-500">Context:</span> {word.context || '—'}</p>
                                                             </div>
                                                         </div>
                                                         
