@@ -881,6 +881,16 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     const result = parseLooseJson(groqContent('usage-info', data));
                     if (result.usage) {
                         setUsageInfo({ word, usage: result.usage, alternative: result.alternative || '' });
+
+                        // 🆕 V15.0: this is the dedicated corpus classifier, so rather than duplicating
+                        // the criteria it also backfills the modal's USAGE select when Magic Fill's own
+                        // response omitted it. Still only fills an EMPTY select — a manual choice stands.
+                        const level = normaliseUsageLevel(result.usage);
+                        const select = document.querySelector('[name="usage_level"]');
+                        if (level && select && !select.value) {
+                            select.value = level;
+                            console.log(`[Usage] backfilled the modal select from fetchUsageInfo: "${level}"`);
+                        }
                     }
                 } catch(e) {
                     console.warn('Usage info fetch error:', e);
@@ -4888,12 +4898,23 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
             // comes free with the fill — no second call. Normalised to a known set before storing.
             const USAGE_LEVELS = ['very common', 'common', 'uncommon', 'rare', 'formal', 'informal', 'literary'];
 
+            // 🆕 V15.0: hyphens and underscores normalised first — "very-common" used to fall through
+            // to a bare includes() and come back as "common", the wrong band. Anything that still does
+            // not resolve to one of the seven returns null rather than writing junk into the column.
             function normaliseUsageLevel(value) {
-                const v = String(value || '').toLowerCase().trim();
+                const v = String(value || '')
+                    .toLowerCase()
+                    .replace(/[_-]+/g, ' ')
+                    .replace(/[^a-z ]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
                 if (!v) return null;
-                // longest first, so "very common" is not matched as "common"
-                const match = [...USAGE_LEVELS].sort((a, b) => b.length - a.length).find(u => v.includes(u));
-                return match || null;
+
+                if (USAGE_LEVELS.includes(v)) return v;                    // exact, the normal case
+                // longest first, so "very common" wins over "common" when both could match
+                const ordered = [...USAGE_LEVELS].sort((a, b) => b.length - a.length);
+                const contained = ordered.find(u => v.includes(u));
+                return contained || null;
             }
 
             // Total pending across the WHOLE current filter, not just the rows loaded so far
@@ -5245,9 +5266,29 @@ The "synonyms" value MUST be ONLY a comma-separated list of terms.
 If you cannot produce clean synonyms, return an empty string for synonyms rather than prose.`;
             }
 
+            // 🆕 V15.0: the stored prompt mentions "usage" only inside its JSON example and never
+            // instructs the model to classify it, so the field was routinely omitted. Appended at
+            // build time, like synonymsRule, so it reaches installations whose prompt is already
+            // saved in localStorage — and without overwriting whatever the user has edited there.
+            function usageRule(word) {
+                return `
+
+━━━ USAGE FIELD — REQUIRED ━━━
+Classify how common "${word}" actually is, based on corpus frequency (BNC/COCA).
+The "usage" value MUST be EXACTLY one of these seven strings, lower case, nothing else:
+very common, common, uncommon, rare, formal, informal, literary
+- "very common" = top 3000 words, used daily (big, run, happy)
+- "common" = top 10000, regular in educated speech and journalism (sturdy, reluctant)
+- "uncommon" = used, but not everyday; more typical of formal or academic writing
+- "rare" = seldom encountered, specialised or archaic
+- "formal" / "informal" = restricted to that register
+- "literary" = common in literature, uncommon in speech
+Never invent another label, never hyphenate it, and never leave the field out.`;
+            }
+
             function buildMagicFillPrompt(word, currentFamily) {
                 // 🆕 V11.38: Enhance prompt with current family if available
-                const base = magicFillPrompt.replace(/{word}/g, word) + synonymsRule(word);
+                const base = magicFillPrompt.replace(/{word}/g, word) + synonymsRule(word) + usageRule(word);
                 if (!currentFamily) return base;
 
                 return `CRITICAL INSTRUCTION: The word "${word}" is a ${currentFamily}.
@@ -5466,6 +5507,11 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
                         // 🆕 V14.99: same "only fill what is empty" rule — a manual choice is never overwritten
                         const filledUsage = normaliseUsageLevel(result.usage);
+                        // 🆕 V15.0: says plainly whether the model returned the field at all, so a
+                        // recurrence is diagnosable without guessing
+                        console.log('[Magic Fill] usage returned by the model:',
+                            result.usage === undefined ? '(field absent)' : JSON.stringify(result.usage),
+                            '→ normalised:', filledUsage ?? '(none)');
                         if (filledUsage && targetFields.usage_level && !targetFields.usage_level.value) {
                             targetFields.usage_level.value = filledUsage;
                         }
@@ -6233,7 +6279,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.99</span>
+                                        English Booster <span className="version-text">v15.0</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -7044,14 +7090,14 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         {editingWord && <span className="text-slate-500 text-xs font-mono">ID: {editingWord.id}</span>}
                                     </div>
                                 </div>
-                                <form onSubmit={handleSave} className="grid grid-cols-2 gap-5 overflow-y-auto custom-scroll px-8 py-6 flex-1">
+                                <form onSubmit={handleSave} className="grid grid-cols-1 sm:grid-cols-2 gap-5 overflow-y-auto custom-scroll px-8 py-6 flex-1">
                                     {/* 🆕 V14.67: which model generated the fields below — pinned to the top of the form */}
                                     {magicFillModel && (
-                                        <div className="col-span-2 -mb-1 py-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                                        <div className="sm:col-span-2 -mb-1 py-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
                                             <ModelBadge model={magicFillModel} prominent />
                                         </div>
                                     )}
-                                    <div className="col-span-2 flex flex-col gap-1">
+                                    <div className="flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Vocabulary</label>
                                         <div className="relative">
                                             <input name="vocabulary" id="modalVocabInput" required defaultValue={editingWord?.vocabulary} className="p-4 rounded-xl w-full pr-20"
@@ -7211,6 +7257,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </div>
                                         )}
                                     </div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     
                                     <div className="flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Favourite Level</label>
@@ -7255,7 +7302,6 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         </div>
                                     </div>
                                     
-                                    <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     {/* 🆕 V14.99: usage_level — same pattern as the Family select, so the
                                         value the AI wrote is visible here and a manual choice is kept */}
                                     <div className="flex flex-col gap-1">
@@ -7265,11 +7311,11 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             {USAGE_LEVELS.map(u => <option key={u} value={u}>{u}</option>)}
                                         </select>
                                     </div>
-                                    <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
-                                    <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
+                                    <div className="sm:col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
+                                    <div className="sm:col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
                                     {/* 🆕 V12.8: Usage frequency info */}
                                     {usageInfo && (
-                                        <div className="col-span-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs">
+                                        <div className="sm:col-span-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="text-slate-500 uppercase font-black text-[9px]">Usage:</span>
                                                 <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
@@ -7290,7 +7336,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     )}
                                     {/* 🆕 V11.96: Spell check results */}
                                     {spellCheckResult && (
-                                        <div className={`col-span-2 rounded-xl p-3 text-sm ${spellCheckResult.ok ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
+                                        <div className={`sm:col-span-2 rounded-xl p-3 text-sm ${spellCheckResult.ok ? 'bg-green-900/30 border border-green-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
                                             {spellCheckResult.ok ? (
                                                 <div className="text-green-400 flex items-center gap-2"><i className="fas fa-check-circle"></i> All spelling correct!</div>
                                             ) : (
@@ -7311,7 +7357,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             )}
                                         </div>
                                     )}
-                                    <div className="col-span-2 flex gap-4 mt-4">
+                                    <div className="sm:col-span-2 flex gap-4 mt-4">
                                         <button type="button" onClick={() => {setEditingWord(null); setShowAddModal(false); setAddModalAIMode(false); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setSpellCheckResult(null);}} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Discard</button>
                                         <button 
                                             type="button"
