@@ -347,6 +347,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             }
 
             const [magicFillModel, setMagicFillModel] = useState(null); // 🆕 V14.67: 'Gemini' | 'Groq' — which model produced the last fill
+            const [modalUsageLevel, setModalUsageLevel] = useState(''); // 🆕 V15.01: backs the controlled USAGE select
 
             // 🆕 V14.67: Gemini call — returns raw text, throws on any failure so the caller can fall back to Groq
             // 🆕 V14.68: shared by Magic Fill and AI Improve; `label` only tags the console output
@@ -842,7 +843,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
             // 🆕 V13.2: Usage frequency — precise, using 70b model
             async function fetchUsageInfo(word) {
                 const apiKey = groqApiKey.trim();
-                if (!apiKey || !word) return;
+                if (!apiKey || !word) return null; // 🆕 V15.01: always resolve to a level or null
                 try {
                     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
@@ -882,16 +883,17 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     if (result.usage) {
                         setUsageInfo({ word, usage: result.usage, alternative: result.alternative || '' });
 
-                        // 🆕 V15.0: this is the dedicated corpus classifier, so rather than duplicating
-                        // the criteria it also backfills the modal's USAGE select when Magic Fill's own
-                        // response omitted it. Still only fills an EMPTY select — a manual choice stands.
+                        // 🆕 V15.01: RETURNS the level as well as setting the badge state. Callers used
+                        // to read the usageInfo state right after firing this without awaiting it, so
+                        // they always saw the previous value and the fallback could never fire.
                         const level = normaliseUsageLevel(result.usage);
-                        const select = document.querySelector('[name="usage_level"]');
-                        if (level && select && !select.value) {
-                            select.value = level;
-                            console.log(`[Usage] backfilled the modal select from fetchUsageInfo: "${level}"`);
+                        if (level) {
+                            setModalUsageLevel(prev => prev || level); // fills only an empty field
+                            console.log(`[Usage] fetchUsageInfo classified "${word}" as "${level}"`);
                         }
+                        return level;
                     }
+                    return null;
                 } catch(e) {
                     console.warn('Usage info fetch error:', e);
                 }
@@ -5497,25 +5499,28 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     // 🆕 V14.67: Show which model produced this fill
                     setMagicFillModel(modelUsed);
 
+                    // 🆕 V15.01: logged HERE, before the branch, so it runs on every path — modal or
+                    // list, Gemini or Groq. It previously sat inside the modal branch only, which is
+                    // why a ✨ pressed from the list produced no diagnostic at all.
+                    const modelUsage = normaliseUsageLevel(result.usage);
+                    console.log(`[Magic Fill] usage from ${modelUsed}:`,
+                        result.usage === undefined ? '(field absent)' : JSON.stringify(result.usage),
+                        '→ normalised:', modelUsage ?? '(none)');
+
                     // 🆕 V13.0: Fetch usage info separately (reliable, independent call)
-                    fetchUsageInfo(word);
+                    // 🆕 V15.01: keep the promise — the list branch needs its RESULT, not the state,
+                    // which is still the previous word's value at this point.
+                    const usageFallback = fetchUsageInfo(word);
 
                     if (targetFields) {
                         // 🆕 V11.8: Only fill empty fields in modal
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
-                        // 🆕 V14.99: same "only fill what is empty" rule — a manual choice is never overwritten
-                        const filledUsage = normaliseUsageLevel(result.usage);
-                        // 🆕 V15.0: says plainly whether the model returned the field at all, so a
-                        // recurrence is diagnosable without guessing
-                        console.log('[Magic Fill] usage returned by the model:',
-                            result.usage === undefined ? '(field absent)' : JSON.stringify(result.usage),
-                            '→ normalised:', filledUsage ?? '(none)');
-                        if (filledUsage && targetFields.usage_level && !targetFields.usage_level.value) {
-                            targetFields.usage_level.value = filledUsage;
-                        }
-                        
+                        // 🆕 V15.01: the select is controlled now, so this goes through state rather
+                        // than a DOM write. Still fills only an empty field — a manual choice stands.
+                        if (modelUsage) setModalUsageLevel(prev => prev || modelUsage);
+
                     } else if (wordId || currentData) {
                         // 🆕 V11.8: Respect existing data - only update empty fields
                         const updateData = {
@@ -5529,8 +5534,11 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         // 🆕 V11.22: Save previous version for change history
                         // 🆕 V14.92: usage comes back in the same response; fall back to the separate
                         // fetchUsageInfo result if this prompt did not include it
-                        const magicUsage = normaliseUsageLevel(result.usage)
-                            || (usageInfo && usageInfo.word === word ? normaliseUsageLevel(usageInfo.usage) : null);
+                        // 🆕 V15.01: AWAIT that fallback. It used to read the usageInfo state, which is
+                        // still the previous word's at this point, so the fallback never once fired and
+                        // usage_level was silently left empty whenever the model omitted the field.
+                        const magicUsage = modelUsage || await usageFallback;
+                        console.log('[Magic Fill] usage_level written to the database:', magicUsage ?? '(none)');
 
                         const updateDataWithHistory = {
                             ...updateData,
@@ -6279,7 +6287,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v15.0</span>
+                                        English Booster <span className="version-text">v15.01</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6288,7 +6296,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(''); /* 🆕 V15.01 */ setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -6541,7 +6549,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -6637,7 +6645,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -7055,8 +7063,9 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         document.querySelector('[name="synonyms"]').value = originalEditData.synonyms || '';
                                                         document.querySelector('[name="context"]').value = originalEditData.context || '';
                                                         document.querySelector('[name="family"]').value = originalEditData.family || '';
-                                                        const usageEl = document.querySelector('[name="usage_level"]'); // 🆕 V14.99
-                                                        if (usageEl) usageEl.value = originalEditData.usage_level || '';
+                                                        // 🆕 V15.01: through state — a DOM write on a
+                                                        // controlled select would be reverted on render
+                                                        setModalUsageLevel(originalEditData.usage_level || '');
                                                         alert('✅ Original data restored!');
                                                     }
                                                 }}
@@ -7129,8 +7138,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         handleMagicFill(vocabValue, {
                                                             synonyms: document.querySelector('[name="synonyms"]'),
                                                             context: document.querySelector('[name="context"]'),
-                                                            family: document.querySelector('[name="family"]'),
-                                                            usage_level: document.querySelector('[name="usage_level"]') // 🆕 V14.99
+                                                            family: document.querySelector('[name="family"]')
+                                                            // 🆕 V15.01: usage no longer passed as a DOM node — it goes through state
                                                         });
                                                     }
                                                 }} 
@@ -7306,7 +7315,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         value the AI wrote is visible here and a manual choice is kept */}
                                     <div className="flex flex-col gap-1">
                                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Usage</label>
-                                        <select name="usage_level" defaultValue={editingWord?.usage_level || ''} className="p-4 rounded-xl font-bold">
+                                        {/* 🆕 V15.01: CONTROLLED. As an uncontrolled select with
+                                            defaultValue, any code that wrote to it competed with React
+                                            and could be silently reverted on the next render. */}
+                                        <select
+                                            name="usage_level"
+                                            value={modalUsageLevel}
+                                            onChange={e => setModalUsageLevel(e.target.value)}
+                                            className="p-4 rounded-xl font-bold"
+                                        >
                                             <option value="">—</option>
                                             {USAGE_LEVELS.map(u => <option key={u} value={u}>{u}</option>)}
                                         </select>
@@ -7769,6 +7786,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setSpellCheckResult(null);
                                                             setUsageInfo(null);
                                                             setMagicFillModel(null);
+                                                            setModalUsageLevel(record.usage_level || ''); // 🆕 V15.01
                                                         }}
                                                         className="flex-shrink-0 text-indigo-300 hover:text-indigo-200 text-[10px] font-black uppercase border border-indigo-500/40 rounded-lg px-2.5 py-1"
                                                     >Open</button>
