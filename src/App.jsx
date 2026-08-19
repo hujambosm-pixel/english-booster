@@ -348,6 +348,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             const [magicFillModel, setMagicFillModel] = useState(null); // 🆕 V14.67: 'Gemini' | 'Groq' — which model produced the last fill
             const [modalUsageLevel, setModalUsageLevel] = useState(''); // 🆕 V15.01: backs the controlled USAGE select
+            // 🆕 V15.03: the field values as Magic Fill left them. Comparing the form against THIS,
+            // rather than against the values the modal opened with, is what distinguishes "pressed ✨
+            // and saved untouched" from "pressed ✨ and then corrected something by hand".
+            const [magicFillSnapshot, setMagicFillSnapshot] = useState(null);
 
             // 🆕 V14.67: Gemini call — returns raw text, throws on any failure so the caller can fall back to Groq
             // 🆕 V14.68: shared by Magic Fill and AI Improve; `label` only tags the console output
@@ -5371,7 +5375,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                     return;
                 }
 
-                setMagicFillModel(null); // 🆕 V14.67
+                setMagicFillModel(null); setMagicFillSnapshot(null); // 🆕 V14.67
 
                 // 🆕 V11.38: Get current word data to check family BEFORE AI request
                 let currentData = null;
@@ -5562,6 +5566,19 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         // 🆕 V15.01: the select is controlled now, so this goes through state rather
                         // than a DOM write. Still fills only an empty field — a manual choice stands.
                         if (modelUsage) setModalUsageLevel(prev => prev || modelUsage);
+
+                        // 🆕 V15.03: record the state Magic Fill leaves the form in, so a later edit
+                        // by hand is detectable at save time. usage_level is read as the value that
+                        // WILL apply, since its state update has not flushed yet.
+                        const usageSelect = document.querySelector('[name="usage_level"]');
+                        setMagicFillSnapshot({
+                            vocabulary: document.getElementById('modalVocabInput')?.value ?? '',
+                            synonyms: targetFields.synonyms.value,
+                            context: targetFields.context.value,
+                            family: targetFields.family.value,
+                            usage_level: (usageSelect?.value || modelUsage || ''),
+                            favourite: document.getElementById('favouriteInput')?.value ?? '0'
+                        });
 
                     } else if (wordId || currentData) {
                         // 🆕 V11.8: Respect existing data - only update empty fields
@@ -6108,15 +6125,28 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                     || editableFields.some(f => String(wordData[f] ?? '') !== String(baseline[f] ?? ''))
                     || Number(wordData.favourite || 0) !== Number(baseline.favourite || 0);
 
-                if (magicFillModel) {
+                // 🆕 V15.03: did the user touch anything AFTER Magic Fill filled the form? If so the
+                // record has been reviewed by hand, and Manual wins over the model — otherwise it
+                // would resurface when filtering for AI-written content still awaiting curation.
+                const editedAfterFill = magicFillSnapshot
+                    ? editableFields.some(f => String(wordData[f] ?? '') !== String(magicFillSnapshot[f] ?? ''))
+                        || Number(wordData.favourite || 0) !== Number(magicFillSnapshot.favourite || 0)
+                    : false;
+
+                let provenanceReason;
+                if (magicFillModel && !editedAfterFill) {
                     wordData.ai_source = magicFillModel.toLowerCase();
+                    provenanceReason = '(Magic Fill ran, saved untouched)';
                 } else if (somethingChanged) {
                     wordData.ai_source = 'manual';
+                    provenanceReason = editedAfterFill
+                        ? '(edited by hand after Magic Fill)'
+                        : '(a field changed)';
                 } else {
                     wordData.ai_source = editingWord?.ai_source ?? null;
+                    provenanceReason = '(nothing changed, kept as-is)';
                 }
-                console.log('[Save] ai_source →', wordData.ai_source,
-                    magicFillModel ? '(Magic Fill ran)' : somethingChanged ? '(a field changed)' : '(nothing changed, kept as-is)');
+                console.log('[Save] ai_source →', wordData.ai_source, provenanceReason);
 
                 if (editingWord) {
                     
@@ -6354,7 +6384,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v15.02</span>
+                                        English Booster <span className="version-text">v15.03</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6363,7 +6393,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <div className="border-l border-white/10 pl-2 lg:pl-3 ml-1 flex items-center gap-1.5 lg:gap-2">
                                             {/* Add button */}
                                             <button 
-                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(''); /* 🆕 V15.01 */ setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
+                                                onClick={() => {setEditingWord(null); setShowAddModal(true); setAddModalAIMode(false); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(''); /* 🆕 V15.01 */ setDupCheck({ loading: false, morphLoading: false, exact: [], partial: [], morphForms: [], term: '' }); setTimeout(() => { const input = document.getElementById('modalVocabInput'); if (input && search.trim()) { input.value = search.trim(); searchDuplicates(search.trim()); } }, 50);}} 
                                                 className="p-2 lg:p-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
                                                 title="Add New Word"
                                             >
@@ -6621,7 +6651,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -6717,7 +6747,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -7861,7 +7891,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setShowAddModal(true);
                                                             setSpellCheckResult(null);
                                                             setUsageInfo(null);
-                                                            setMagicFillModel(null);
+                                                            setMagicFillModel(null); setMagicFillSnapshot(null);
                                                             setModalUsageLevel(record.usage_level || ''); // 🆕 V15.01
                                                         }}
                                                         className="flex-shrink-0 text-indigo-300 hover:text-indigo-200 text-[10px] font-black uppercase border border-indigo-500/40 rounded-lg px-2.5 py-1"
