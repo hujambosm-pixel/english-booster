@@ -2371,14 +2371,28 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     }
 
                     setTotalCount(count || 0);
-                    
+
                     if (data) {
-                        if (isNewSearch) { 
-                            setWords(data); 
-                            setPage(1); 
-                        } else { 
-                            setWords(prev => [...prev, ...data]); 
-                            setPage(pageNum + 1); 
+                        // 🆕 V14.99: the LIKE filter also matches numeric slashes (20/20), which are
+                        // not malformed. Refine here so the list agrees with the ⚠️ marker and with
+                        // what batch fill actually skips.
+                        let rows = data;
+                        if (emptyFilter === 'Malformed') {
+                            rows = data.filter(w => hasMalformedVocabulary(w.vocabulary));
+                            const droppedFalsePositives = data.length - rows.length;
+                            if (droppedFalsePositives > 0) {
+                                console.log(`[Malformed filter] ignored ${droppedFalsePositives} record(s) whose only slash is numeric`);
+                                // the whole set fits in one page, so the refined length is the true count
+                                if (isNewSearch && data.length < PAGE_SIZE) setTotalCount(rows.length);
+                            }
+                        }
+
+                        if (isNewSearch) {
+                            setWords(rows);
+                            setPage(1);
+                        } else {
+                            setWords(prev => [...prev, ...rows]);
+                            setPage(pageNum + 1);
                         }
                         setHasMore(data.length === PAGE_SIZE);
                     } else {
@@ -4817,7 +4831,19 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
             // one branch of "take it from me / take my word for it" ever appears, so the context is
             // then rejected. These are NOT auto-fixable: in "hindsight is 20/20" the slash belongs to
             // the expression, and "homebody / outdoorsy" are opposites rather than alternatives.
-            const hasMalformedVocabulary = v => /[\/(]/.test(String(v || ''));
+            // 🆕 V14.99: a digit/digit slash is legitimate numeric notation (20/20, 50/50, 24/7),
+            // not a separator between alternatives, so it must not be flagged.
+            function hasMalformedSlash(vocabulary) {
+                const withoutNumericSlashes = String(vocabulary || '').replace(/\d+\/\d+/g, '');
+                return withoutNumericSlashes.includes('/');
+            }
+
+            const hasMalformedVocabulary = v =>
+                hasMalformedSlash(v) || String(v || '').includes('(');
+
+            // The database filter stays broad — PostgREST LIKE cannot express "a slash that is not
+            // between digits" — and fetchWords refines the result with hasMalformedVocabulary, so
+            // one criterion governs the marker, the filter and the batch skip alike.
             const MALFORMED_VOCAB_OR = 'vocabulary.like."%/%",vocabulary.like."%(%"';
 
             const AI_SOURCE_LABELS = { gemini: 'Filled by Gemini', groq: 'Filled by Groq' };
@@ -5438,6 +5464,11 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
+                        // 🆕 V14.99: same "only fill what is empty" rule — a manual choice is never overwritten
+                        const filledUsage = normaliseUsageLevel(result.usage);
+                        if (filledUsage && targetFields.usage_level && !targetFields.usage_level.value) {
+                            targetFields.usage_level.value = filledUsage;
+                        }
                         
                     } else if (wordId || currentData) {
                         // 🆕 V11.8: Respect existing data - only update empty fields
@@ -5962,7 +5993,10 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                 // The exception is a modal the user just Magic Filled — those fields ARE AI-written,
                 // and magicFillModel records which model produced them.
                 wordData.ai_source = magicFillModel ? magicFillModel.toLowerCase() : null;
-                
+
+                // 🆕 V14.99: "—" means undefined, which is NULL in the column rather than an empty string
+                wordData.usage_level = normaliseUsageLevel(wordData.usage_level);
+
                 if (editingWord) {
                     
                     // 🆕 V11.21: Save previous version for change history
@@ -6199,7 +6233,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v14.98</span>
+                                        English Booster <span className="version-text">v14.99</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6975,6 +7009,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         document.querySelector('[name="synonyms"]').value = originalEditData.synonyms || '';
                                                         document.querySelector('[name="context"]').value = originalEditData.context || '';
                                                         document.querySelector('[name="family"]').value = originalEditData.family || '';
+                                                        const usageEl = document.querySelector('[name="usage_level"]'); // 🆕 V14.99
+                                                        if (usageEl) usageEl.value = originalEditData.usage_level || '';
                                                         alert('✅ Original data restored!');
                                                     }
                                                 }}
@@ -7047,7 +7083,8 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         handleMagicFill(vocabValue, {
                                                             synonyms: document.querySelector('[name="synonyms"]'),
                                                             context: document.querySelector('[name="context"]'),
-                                                            family: document.querySelector('[name="family"]')
+                                                            family: document.querySelector('[name="family"]'),
+                                                            usage_level: document.querySelector('[name="usage_level"]') // 🆕 V14.99
                                                         });
                                                     }
                                                 }} 
@@ -7219,6 +7256,15 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     </div>
                                     
                                     <div className="flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Family</label><select name="family" defaultValue={editingWord?.family} className="p-4 rounded-xl font-bold"><option value="">Family...</option>{FAMILIES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
+                                    {/* 🆕 V14.99: usage_level — same pattern as the Family select, so the
+                                        value the AI wrote is visible here and a manual choice is kept */}
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Usage</label>
+                                        <select name="usage_level" defaultValue={editingWord?.usage_level || ''} className="p-4 rounded-xl font-bold">
+                                            <option value="">—</option>
+                                            {USAGE_LEVELS.map(u => <option key={u} value={u}>{u}</option>)}
+                                        </select>
+                                    </div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Synonyms</label><input name="synonyms" defaultValue={editingWord?.synonyms} className="p-4 rounded-xl" /></div>
                                     <div className="col-span-2 flex flex-col gap-1"><label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Context</label><textarea name="context" defaultValue={editingWord?.context} className="p-4 rounded-xl h-20 resize-none shadow-inner" /></div>
                                     {/* 🆕 V12.8: Usage frequency info */}
