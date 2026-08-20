@@ -101,7 +101,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 
             // 🆕 V11.13: Web Search prompt for Perplexity/ChatGPT/Claude
             const [aiSearchPrompt, setAiSearchPrompt] = useState(
-                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: Based on corpus frequency (BNC/COCA), classify "{word}" as: very common (top 3000) / common (top 10000) / uncommon / rare / formal / literary. If there is a more commonly used EXACT synonym (truly interchangeable, same meaning), indicate it. Do NOT suggest near-synonyms.'
+                localStorage.getItem('ai_search_prompt') || 'For the English word/expression "{word}", provide:\n· Meaning.\n· Family: provide if the "{word}" is a noun, adjective, phrasal verb, idiom, etc.\n· Synonyms: some exact British English synonyms.\n· Context: Some natural sentences using this "{word}" in a sentence in British English.\n· Level: give the related level according to the Cambridge school.\n· Usage frequency: Based on corpus frequency (BNC/COCA), classify "{word}" as: very common (top 3000) / common (top 10000) / uncommon / rare. Frequency only, not register. If there is a more commonly used EXACT synonym (truly interchangeable, same meaning), indicate it. Do NOT suggest near-synonyms.'
             );
             
             // 🆕 V11.9: Undo history (stores last change for each word)
@@ -897,13 +897,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
                                 role: 'user', 
                                 content: `Classify the English word/expression "${word}":
 
-1. USAGE: Based on actual corpus frequency data, classify as ONE of:
+1. FREQUENCY: Based on actual corpus frequency data, classify as ONE of these FOUR:
    - "very common" = top 3000 words, used daily in speech and writing (e.g. "big", "run", "happy")
-   - "common" = top 10000 words, regularly used in educated conversation, journalism, reviews (e.g. "unsettling", "sturdy", "reluctant")  
-   - "uncommon" = used but not everyday, more typical of formal or academic writing (e.g. "auspicious", "beguile", "pernicious")
+   - "common" = top 10000 words, regularly used in educated conversation, journalism, reviews (e.g. "unsettling", "sturdy", "reluctant")
+   - "uncommon" = used but not everyday (e.g. "auspicious", "beguile", "pernicious")
    - "rare" = seldom encountered, highly specialised or archaic (e.g. "defenestrate", "sesquipedalian")
-   - "formal" = common in formal/professional contexts but unusual in casual speech (e.g. "henceforth", "notwithstanding")
-   - "literary" = common in literature but uncommon in everyday speech (e.g. "ethereal", "ephemeral")
+   This measures FREQUENCY ONLY. Never answer with a register label such as formal, informal or
+   literary: a formal or literary word is still rated on how OFTEN it appears (e.g. "henceforth"
+   is "rare", "ethereal" is "uncommon").
 
 2. ALTERNATIVE: If there is a MORE COMMONLY USED word/phrase that is an EXACT synonym (truly interchangeable, same meaning), provide it. 
    - ONLY exact synonyms that could directly replace "${word}" in any sentence
@@ -926,11 +927,11 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                         // 🆕 V15.01: RETURNS the level as well as setting the badge state. Callers used
                         // to read the usageInfo state right after firing this without awaiting it, so
                         // they always saw the previous value and the fallback could never fire.
+                        // 🆕 V15.04: classifies and RETURNS only. It used to also write into the modal
+                        // select, which made two writers race over the same field; the caller now awaits
+                        // this value and applies it, so there is exactly one writer.
                         const level = normaliseUsageLevel(result.usage);
-                        if (level) {
-                            setModalUsageLevel(prev => prev || level); // fills only an empty field
-                            console.log(`[Usage] fetchUsageInfo classified "${word}" as "${level}"`);
-                        }
+                        if (level) console.log(`[Frequency] fetchUsageInfo classified "${word}" as "${level}"`);
                         return level;
                     }
                     return null;
@@ -965,7 +966,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
             const [spellCheckResult, setSpellCheckResult] = useState(null); // 🆕 V11.96
             const [spellCheckLoading, setSpellCheckLoading] = useState(false); // 🆕 V11.96 // 🆕 V11.93: Independent AI toggle for Find & Merge
             const [addModalAIMode, setAddModalAIMode] = useState(false); // 🆕 V11.93: Independent AI toggle for Add modal
-            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: ONLY a comma-separated list of 2-4 British English synonyms — terms only, no explanation or commentary\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun",\n  "usage": "very common|common|uncommon|rare|formal|informal|literary",\n  "alternative": "more commonly used word/phrase, or empty string if already very common"\n}');
+            const [magicFillPrompt, setMagicFillPrompt] = useState(localStorage.getItem('magic_fill_prompt') || 'For the English word/expression "{word}", provide:\n\n1. SYNONYMS: ONLY a comma-separated list of 2-4 British English synonyms — terms only, no explanation or commentary\n   - IMPORTANT: Synonyms MUST match the same grammatical FAMILY as "{word}"\n   - Example: If "{word}" is a phrasal verb, give phrasal verb synonyms\n   - Example: If "{word}" is an idiom, give idiomatic expression synonyms\n\n2. CONTEXT: A natural sentence (12-15 words) using EXACTLY "{word}" in British English\n   ⛔ CRITICAL: You MUST use the EXACT word/phrase "{word}" in your sentence\n   ⛔ DO NOT use synonyms - use "{word}" EXACTLY as written\n   ⛔ DO NOT substitute with similar words\n   ✅ EXAMPLE: If word is "suck at", sentence MUST contain "suck at" or "sucked at"\n   ✅ EXAMPLE: If word is "keep in check", sentence MUST contain "keep in check"\n   - The sentence should demonstrate correct grammatical function\n   - Make it sound natural and conversational\n\n3. FAMILY: Choose ONE that matches the PRIMARY grammatical function:\n   - Noun: Names a thing/person/concept\n   - Adjective: Describes a noun\n   - Adverb: Modifies verb/adjective (often ends in -ly)\n   - Verb: Action or state word\n   - Phrasal Verb: Verb + preposition (give up, look after)\n   - Idiom: Fixed expression with non-literal meaning (piece of cake, break the ice)\n   - Preposition: Word showing relationship (in, on, at, by, with, about)\n   - Chunk: Multi-word expression or collocation\n\nREMINDER: The context sentence MUST include "{word}" exactly - no synonyms!\n\nRespond ONLY in this exact JSON format (no markdown, no backticks):\n{\n  "synonyms": "synonym1, synonym2, synonym3",\n  "context": "Example sentence with {word} here.",\n  "family": "Noun",\n  "usage": "very common|common|uncommon|rare",\n  "alternative": "more commonly used word/phrase, or empty string if already very common"\n}');
             
             // 🆕 V11.2: New states
             // 🆕 V11.24: Search mode (0=vocabulary only, 1=vocabulary+synonyms, 2=AI Deep Search)
@@ -2403,7 +2404,7 @@ Reply ONLY: {"usage":"...","alternative":"..."}`
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
                     // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
-                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
                     // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
@@ -3053,7 +3054,7 @@ Return ONLY valid JSON, no explanation.` }],
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
                     // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
-                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
                     // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
@@ -4942,7 +4943,10 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
 
             // 🆕 V14.92: the Magic Fill prompt already returns a "usage" field, so the classification
             // comes free with the fill — no second call. Normalised to a known set before storing.
-            const USAGE_LEVELS = ['very common', 'common', 'uncommon', 'rare', 'formal', 'informal', 'literary'];
+            // 🆕 V15.04: FREQUENCY only — how common a word is, not its register. formal, informal and
+            // literary are gone; they measured a different axis. The column stays usage_level, so no
+            // schema change. A record still holding a removed value normalises to null, i.e. blank.
+            const USAGE_LEVELS = ['very common', 'common', 'uncommon', 'rare'];
 
             // 🆕 V15.0: hyphens and underscores normalised first — "very-common" used to fall through
             // to a bare includes() and come back as "common", the wrong band. Anything that still does
@@ -4986,7 +4990,7 @@ Output raw JSON only. No markdown fences, no commentary, no explanation before o
                     // 🆕 V14.84: unknown origin = has content, but no recorded model
                     else if (emptyFilter === 'UnknownOrigin') query = query.is('ai_source', null).or(HAS_ANY_CONTENT);
                     // 🆕 V14.92: usage classification, for reviewing uncommon/rare entries as a group
-                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare', 'formal', 'literary']);
+                    else if (emptyFilter === 'UsageReview') query = query.in('usage_level', ['uncommon', 'rare']);
                     else if (emptyFilter === 'UsageUncommon') query = query.eq('usage_level', 'uncommon');
                     else if (emptyFilter === 'UsageRare') query = query.eq('usage_level', 'rare');
                     // 🆕 V14.98: records whose vocabulary carries slash or bracket notation
@@ -5318,19 +5322,26 @@ If you cannot produce clean synonyms, return an empty string for synonyms rather
             // instructs the model to classify it, so the field was routinely omitted. Appended at
             // build time, like synonymsRule, so it reaches installations whose prompt is already
             // saved in localStorage — and without overwriting whatever the user has edited there.
+            // 🆕 V15.04: the ONE place that decides which frequency applies to a fill. Both Magic Fill
+            // branches call it, so the modal and the list can no longer resolve it differently — the
+            // divergence that made the modal path mark records as manual.
+            async function resolveMagicUsage(modelUsage, fallbackPromise) {
+                return modelUsage || (await fallbackPromise) || null;
+            }
+
             function usageRule(word) {
                 return `
 
 ━━━ USAGE FIELD — REQUIRED ━━━
-Classify how common "${word}" actually is, based on corpus frequency (BNC/COCA).
-The "usage" value MUST be EXACTLY one of these seven strings, lower case, nothing else:
-very common, common, uncommon, rare, formal, informal, literary
+Classify how FREQUENT "${word}" is, based on corpus frequency (BNC/COCA).
+This measures frequency ONLY — never register, formality or literary flavour.
+The "usage" value MUST be EXACTLY one of these four strings, lower case, nothing else:
+very common, common, uncommon, rare
 - "very common" = top 3000 words, used daily (big, run, happy)
 - "common" = top 10000, regular in educated speech and journalism (sturdy, reluctant)
-- "uncommon" = used, but not everyday; more typical of formal or academic writing
-- "rare" = seldom encountered, specialised or archaic
-- "formal" / "informal" = restricted to that register
-- "literary" = common in literature, uncommon in speech
+- "uncommon" = used, but not everyday (auspicious, beguile)
+- "rare" = seldom encountered, specialised or archaic (defenestrate)
+A formal or literary word is still rated on how OFTEN it appears, not on its register.
 Never invent another label, never hyphenate it, and never leave the field out.`;
             }
 
@@ -5563,20 +5574,24 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         if (result.synonyms && !targetFields.synonyms.value) targetFields.synonyms.value = result.synonyms;
                         if (result.context && !targetFields.context.value) targetFields.context.value = result.context;
                         if (result.family && !targetFields.family.value) targetFields.family.value = result.family;
-                        // 🆕 V15.01: the select is controlled now, so this goes through state rather
-                        // than a DOM write. Still fills only an empty field — a manual choice stands.
-                        if (modelUsage) setModalUsageLevel(prev => prev || modelUsage);
+                        // 🆕 V15.04: AWAIT the same resolution the list branch uses. Previously this
+                        // branch only used the model's own answer and let the classifier land later,
+                        // asynchronously — which arrived AFTER the snapshot below and was therefore
+                        // read at save time as an edit by hand, turning the provenance into 'manual'.
+                        const resolvedUsage = await resolveMagicUsage(modelUsage, usageFallback);
+                        const usageSelect = document.querySelector('[name="usage_level"]');
+                        const usageAfterFill = usageSelect?.value || resolvedUsage || '';
+                        if (resolvedUsage) setModalUsageLevel(prev => prev || resolvedUsage);
 
                         // 🆕 V15.03: record the state Magic Fill leaves the form in, so a later edit
-                        // by hand is detectable at save time. usage_level is read as the value that
-                        // WILL apply, since its state update has not flushed yet.
-                        const usageSelect = document.querySelector('[name="usage_level"]');
+                        // by hand is detectable at save time. Now that the value above is final, the
+                        // snapshot matches what the form will actually hold.
                         setMagicFillSnapshot({
                             vocabulary: document.getElementById('modalVocabInput')?.value ?? '',
                             synonyms: targetFields.synonyms.value,
                             context: targetFields.context.value,
                             family: targetFields.family.value,
-                            usage_level: (usageSelect?.value || modelUsage || ''),
+                            usage_level: usageAfterFill,
                             favourite: document.getElementById('favouriteInput')?.value ?? '0'
                         });
 
@@ -5596,7 +5611,7 @@ RESPOND WITH family: "${currentFamily}" (DO NOT change this)`;
                         // 🆕 V15.01: AWAIT that fallback. It used to read the usageInfo state, which is
                         // still the previous word's at this point, so the fallback never once fired and
                         // usage_level was silently left empty whenever the model omitted the field.
-                        const magicUsage = modelUsage || await usageFallback;
+                        const magicUsage = await resolveMagicUsage(modelUsage, usageFallback); // 🆕 V15.04: shared
                         console.log('[Magic Fill] usage_level written to the database:', magicUsage ?? '(none)');
 
                         const updateDataWithHistory = {
@@ -6384,7 +6399,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                                     <h1 className="text-xl sm:text-2xl lg:text-3xl font-black italic main-gradient uppercase tracking-tighter text-center sm:text-left">
-                                        English Booster <span className="version-text">v15.03</span>
+                                        English Booster <span className="version-text">v15.04</span>
                                     </h1>
                                     {/* 🆕 V11.60: Reorganized header - title and buttons in mobile */}
                                     <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 lg:gap-3 bg-slate-800/50 p-2 px-3 lg:px-4 sm:ml-4 lg:ml-8 rounded-2xl border border-white/5 shadow-lg w-full sm:w-auto">
@@ -6535,7 +6550,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         title="Records you have edited by hand since V15.02 — already curated, so they do not need reprocessing with AI"
                                     >✍️ Manual</option>
                                     {/* 🆕 V14.92: usage classification captured during generation */}
-                                    <option value="UsageReview" title="Uncommon, rare, formal or literary — worth reviewing as a group">🔍 Worth reviewing (usage)</option>
+                                    <option value="UsageReview" title="Uncommon or rare — worth reviewing as a group">🔍 Worth reviewing (frequency)</option>
                                     <option value="UsageUncommon">· Uncommon</option>
                                     <option value="UsageRare">· Rare</option>
                                     {/* 🆕 V14.98: slash or bracket notation — needs manual cleanup */}
@@ -6651,7 +6666,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                         <i className={`fas ${findingSimilar === w.id ? 'fa-spinner fa-spin' : 'fa-link'} text-xl`}></i>
                                                     </button>
                                                     {/* Edit button */}
-                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
+                                                    <button onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(normaliseUsageLevel(w.usage_level) || ''); /* 🆕 V15.01 */ }} className="text-slate-500 hover:text-white tooltip p-1" data-tip="Edit word"><i className="fas fa-edit text-xl"></i></button>
                                                     {/* Delete button */}
                                                     <button onClick={async () => {
                                                         if(confirm('Move to recycle bin?')) {
@@ -6747,7 +6762,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                             </button>
                                             {/* 🆕 V11.11: Edit button (3rd position) */}
                                             <button 
-                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(w.usage_level || ''); /* 🆕 V15.01 */ }} 
+                                                onClick={() => { setEditingWord(w); setOriginalEditData({...w}); setShowAddModal(true); setSpellCheckResult(null); setUsageInfo(null); setMagicFillModel(null); setMagicFillSnapshot(null); setModalUsageLevel(normaliseUsageLevel(w.usage_level) || ''); /* 🆕 V15.01 */ }} 
                                                 className="p-2 text-slate-400 bg-slate-800 rounded-xl flex-1 text-xl"
                                             >
                                                 ✏️
@@ -7420,7 +7435,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {/* 🆕 V14.99: usage_level — same pattern as the Family select, so the
                                         value the AI wrote is visible here and a manual choice is kept */}
                                     <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Usage</label>
+                                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Frequency</label>
                                         {/* 🆕 V15.01: CONTROLLED. As an uncontrolled select with
                                             defaultValue, any code that wrote to it competed with React
                                             and could be silently reverted on the next render. */}
@@ -7440,7 +7455,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     {usageInfo && (
                                         <div className="sm:col-span-2 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="text-slate-500 uppercase font-black text-[9px]">Usage:</span>
+                                                <span className="text-slate-500 uppercase font-black text-[9px]">Frequency:</span>
                                                 <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
                                                     /very common|common/.test(usageInfo.usage) && !/uncommon/.test(usageInfo.usage) ? 'bg-green-500/20 text-green-400' :
                                                     /uncommon|formal|literary/.test(usageInfo.usage) ? 'bg-yellow-500/20 text-yellow-400' :
@@ -7892,7 +7907,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                                             setSpellCheckResult(null);
                                                             setUsageInfo(null);
                                                             setMagicFillModel(null); setMagicFillSnapshot(null);
-                                                            setModalUsageLevel(record.usage_level || ''); // 🆕 V15.01
+                                                            setModalUsageLevel(normaliseUsageLevel(record.usage_level) || ''); // 🆕 V15.01
                                                         }}
                                                         className="flex-shrink-0 text-indigo-300 hover:text-indigo-200 text-[10px] font-black uppercase border border-indigo-500/40 rounded-lg px-2.5 py-1"
                                                     >Open</button>
@@ -8043,7 +8058,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                         <h3 className="text-orange-300 font-black text-xs uppercase tracking-wider mb-1">⚡ Always uses Groq</h3>
                                         <p className="text-slate-500 text-[11px] mb-3">never changes, whatever the badge says</p>
                                         <ul className="text-slate-300 text-sm space-y-1.5">
-                                            {['Talk to me', 'All audio / TTS', 'AI search', 'Spell check', 'Guesswork hints', 'Selection options', 'Usage frequency badge', 'Find & Merge'].map(f => (
+                                            {['Talk to me', 'All audio / TTS', 'AI search', 'Spell check', 'Guesswork hints', 'Selection options', 'Frequency badge', 'Find & Merge'].map(f => (
                                                 <li key={f} className="flex gap-2"><span className="text-orange-400">•</span>{f}</li>
                                             ))}
                                         </ul>
@@ -8081,7 +8096,7 @@ Respond ONLY in this exact JSON format (no markdown, no backticks):
                                     <p className="text-indigo-300 text-xs sm:text-sm"><strong>Word:</strong> {improveData.vocabulary}</p>
                                     {usageInfo && (
                                         <div className="flex items-center justify-center gap-2 flex-wrap mt-1.5">
-                                            <span className="text-slate-500 uppercase font-black text-[9px]">Usage:</span>
+                                            <span className="text-slate-500 uppercase font-black text-[9px]">Frequency:</span>
                                             <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
                                                 /very common|common/.test(usageInfo.usage) && !/uncommon/.test(usageInfo.usage) ? 'bg-green-500/20 text-green-400' :
                                                 /uncommon|formal|literary/.test(usageInfo.usage) ? 'bg-yellow-500/20 text-yellow-400' :
