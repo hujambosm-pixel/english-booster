@@ -1,0 +1,33 @@
+# Normalise line endings so a tool that rewrites a file cannot turn a 40-line
+# change into an 11,600-line diff (see commit 9423ee7). Everything git detects as
+# text is stored with LF in the repository and checked out with LF.
+* text=auto eol=lf
+
+# Windows-only scripts. cmd.exe and PowerShell can misparse LF-only files, so
+# these keep CRLF. None exist in the repo today; the rule is here so that adding
+# one later does not silently break it.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary assets: never inspected or rewritten, whatever the content heuristic guesses.
+# manifest.json already points at /icon-192.png and /icon-512.png, so these are
+# expected additions rather than hypothetical ones.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.avif  binary
+*.pdf   binary
+*.zip   binary
+*.mp3   binary
+*.wav   binary
+
+# Fonts
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
